@@ -6,4 +6,4 @@ Main Idea of the game: Im not going to explain much of how the game works as tha
 
 For Speedrun times there is a global leader board that if you show me proof of your best runs I will add the best times to the global leader board for everyone to see (Best runs by the end of the year will get a special prize, ONLY IF ENOUGH PEOPLE PARTICIPATE) And obviously cheating will get you banned of the leader board and if assumed of cheating in some way ur time will not be accepts.
 
-Link To play the game is here!!! (https://hoodiethegoodie.github.io/-EchoMaze-/)
+Link To play the game is here!!! (https://hoodiethegoodie.github.io/EchoMaze2.0/)
