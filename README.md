@@ -1,44 +1,9 @@
-# Maze Game (Canvas)
+WARNING: This is still a work in progress game so there may be many bugs and glitchs If you find any feel free to let Either Developer know and we will work on fixing them
 
-This repository now contains a standalone HTML5 Canvas game (no React / Vite).
+Main Thought Process behind this game: This game was a project I started being bored out of my mind during class in school and because most games are blocked I thought I might as well make my own and because this was my first time coding a game I wanted to try to make it simple and easy to add new ideas as they came to me.
 
-The game lives under `game/` and can be opened directly in a browser via a simple static server. A root `index.html` redirects to `game/index.html` for convenience.
+Main Idea of the game: Im not going to explain much of how the game works as thats for you to figure out when playing that game. The main objective of the game is to escape the level as fast as possible as you are timed on doing so, Your main abilitys at the Moment is your shield ability (Space Bar) and your Dash Ability (Hold Shift) 
 
-## Run locally
+For Speedrun times there is a global leader board that if you show me proof of your best runs I will add the best times to the global leader board for everyone to see (Best runs by the end of the year will get a special prize, ONLY IF ENOUGH PEOPLE PARTICIPATE) And obviously cheating will get you banned of the leader board and if assumed of cheating in some way ur time will not be accepts.
 
-Use any static file server. For example, with Python installed:
-
-```bash
-cd /workspaces/codespaces-react
-python3 -m http.server 8080
-# then open http://localhost:8080/game/index.html
-```
-
-Alternatively, if your environment exposes `$BROWSER`:
-
-```bash
-$BROWSER http://localhost:8080/game/index.html
-```
-
-## Controls
-
-- Arrow keys: move
-- Shift: sprint through walls (drains stamina, 15s cooldown)
-- Space then Arrow (within 2s): jump two tiles (triggers stamina cooldown)
-- E next to yellow generator: start repair (complete 3 total)
-- R: restart after win/lose
-- Esc: cancel generator repair
-
-## Project structure
-
-- `game/index.html` — Canvas surface, UI elements, and overlay markup
-- `game/js/maze.js` — Maze generation and generator placement
-- `game/js/state.js` — Game state and rules (movement, stamina, jump, generators)
-- `game/js/input.js` — Input handling, sprint, jump timing, and generator interactions
-- `game/js/renderer.js` — Canvas rendering and UI updates
-- `index.html` — Simple redirect to `/game/index.html`
-
-## Notes
-
-- All React/Vite code was removed to avoid conflicts. If you need the previous React version, recover it from version control history.
-- The Canvas version is self-contained and does not require a build step.
+Link To play the game is here!!! (https://hoodiethegoodie.github.io/-EchoMaze-/)
