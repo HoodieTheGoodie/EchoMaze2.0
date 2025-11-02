@@ -1,0 +1,120 @@
+// config.js - Level configs, seeds, and persistence
+
+export const LEVEL_COUNT = 10;
+
+// Fixed seeds per level for deterministic mazes
+export const LEVEL_SEEDS = [
+    0,
+    87364519, // 1
+    21987643, // 2
+    55667788, // 3 (placeholder)
+    99887766, // 4
+    11223344, // 5
+    33445566, // 6
+    77778888, // 7
+    12344321, // 8
+    98761234, // 9
+    24682468  // 10
+];
+
+export function getDefaultLevelConfig(level) {
+    // Base config shared across levels
+    const base = {
+        generatorCount: 3,
+        enemyEnabled: true,
+        flyingPig: false,
+        seed: LEVEL_SEEDS[level] || 1,
+    };
+    
+    if (level === 1) {
+        return { ...base, generatorCount: 3, enemyEnabled: false };
+    }
+    if (level === 2) {
+        // Chaser only
+        return { ...base, generatorCount: 3, enemyEnabled: true, flyingPig: false };
+    }
+    if (level === 3) {
+        // Level 3 showcases the new Flying_Pig exclusively
+        return { ...base, enemyEnabled: false, flyingPig: true };
+    }
+    if (level === 4) {
+        // Both AIs enabled
+        return { ...base, enemyEnabled: true, flyingPig: true };
+    }
+    // Level 5: Only Chaser and Seeker (no Pig)
+    if (level === 5) {
+        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true };
+    }
+    // For levels 6 and above, introduce the Seeker along with the Pig
+    if (level >= 6) {
+        return { ...base, enemyEnabled: true, flyingPig: true, seeker: true };
+    }
+    // Placeholder for levels 4-10 (use base defaults for now)
+    return { ...base };
+}
+
+// Persistence keys
+const KEY_UNLOCKED = 'smg_unlockedLevel';
+const KEY_GODMODE = 'smg_godMode';
+const KEY_DEVUNLOCK = 'smg_devUnlocked';
+
+export function getUnlockedLevel() {
+    const n = parseInt(localStorage.getItem(KEY_UNLOCKED) || '1', 10);
+    return Number.isFinite(n) ? Math.max(1, Math.min(LEVEL_COUNT, n)) : 1;
+}
+
+export function setUnlockedLevel(level) {
+    const v = Math.max(1, Math.min(LEVEL_COUNT, level));
+    localStorage.setItem(KEY_UNLOCKED, String(v));
+}
+
+export function resetProgress() {
+    localStorage.setItem(KEY_UNLOCKED, '1');
+}
+
+export function isGodMode() {
+    return localStorage.getItem(KEY_GODMODE) === '1';
+}
+
+export function setGodMode(enabled) {
+    localStorage.setItem(KEY_GODMODE, enabled ? '1' : '0');
+}
+
+export function isDevUnlocked() {
+    return localStorage.getItem(KEY_DEVUNLOCK) === '1';
+}
+
+export function setDevUnlocked(enabled) {
+    localStorage.setItem(KEY_DEVUNLOCK, enabled ? '1' : '0');
+}
+
+// --- Endless defaults persistence ---
+const KEY_ENDLESS = 'smg_endless_defaults_v1';
+
+export function getEndlessDefaults() {
+    try {
+        const raw = localStorage.getItem(KEY_ENDLESS);
+        if (!raw) return { chaser: false, pig: false, seeker: false, difficulty: 'normal', generatorCount: 3 };
+        const obj = JSON.parse(raw);
+        return {
+            chaser: !!obj.chaser,
+            pig: !!obj.pig,
+            seeker: !!obj.seeker,
+            difficulty: obj.difficulty === 'super' ? 'super' : 'normal',
+            generatorCount: obj.generatorCount === 5 ? 5 : 3
+        };
+    } catch {
+        return { chaser: false, pig: false, seeker: false, difficulty: 'normal', generatorCount: 3 };
+    }
+}
+
+export function setEndlessDefaults(cfg) {
+    const norm = {
+        chaser: !!cfg.chaser,
+        pig: !!cfg.pig,
+        seeker: !!cfg.seeker,
+        difficulty: cfg.difficulty === 'super' ? 'super' : 'normal',
+        generatorCount: cfg.generatorCount === 5 ? 5 : 3
+    };
+    try { localStorage.setItem(KEY_ENDLESS, JSON.stringify(norm)); } catch {}
+}

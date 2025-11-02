@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECHO MAZE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            /* Halloween-ish gradient background */
+            background: radial-gradient(circle at 20% 20%, #3b1d0f, #1a0f1a 60%),
+                        radial-gradient(circle at 80% 30%, #2a1133, transparent 40%),
+                        linear-gradient(180deg, #1a0f1a, #0d0a0f);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            color: white;
+        }
+        
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        h1 {
+            color: #ff7b00;
+            font-size: 2.5rem;
+            margin: 0;
+            text-shadow: 0 0 10px rgba(255, 123, 0, 0.5);
+        }
+        
+        #ui-panel {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            font-size: 1.1rem;
+        }
+        
+        .ui-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .ui-label {
+            font-weight: bold;
+        }
+        
+        #canvas {
+            border: 3px solid #ff7b00;
+            background-color: #20232a;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        #instructions {
+            text-align: center;
+            font-size: 1rem;
+            color: #888;
+            line-height: 1.6;
+            max-width: 700px;
+        }
+        
+        #instructions p {
+            margin: 5px 0;
+        }
+        
+        .highlight {
+            color: #ffd166;
+            font-weight: bold;
+        }
+        
+        .status {
+            color: #61dafb;
+            font-weight: bold;
+        }
+        
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .overlay-panel {
+            background-color: #1f1b24;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            border: 3px solid #ff7b00;
+            box-shadow: 0 0 30px rgba(255, 123, 0, 0.35);
+        }
+        
+        .overlay-panel h2 {
+            font-size: 2.5rem;
+            margin: 0 0 20px 0;
+        }
+        
+        .overlay-panel p {
+            font-size: 1.3rem;
+            margin: 10px 0 20px 0;
+        }
+        
+        .overlay-panel button {
+            background-color: #ff7b00;
+            color: #1f1b24;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .overlay-panel button:hover {
+            background-color: #ff8f2b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 123, 0, 0.35);
+        }
+
+        /* Main Menu */
+        #mainMenu {
+            position: fixed;
+            inset: 0;
+            display: none; /* shown on load via JS */
+            justify-content: center;
+            align-items: center;
+            background: rgba(0,0,0,0.75);
+            z-index: 2000;
+        }
+        .menu-panel {
+            background: #121016;
+            border: 3px solid #ff7b00;
+            border-radius: 16px;
+            padding: 32px 28px;
+            width: min(720px, 92vw);
+            box-shadow: 0 0 40px rgba(255, 123, 0, 0.25);
+            text-align: center;
+        }
+        .menu-title {
+            font-size: 3rem;
+            color: #ff7b00;
+            margin-bottom: 6px;
+            text-shadow: 0 0 14px rgba(255, 123, 0, 0.45);
+        }
+        .menu-subtitle { color: #b97cff; margin-bottom: 20px; }
+        .level-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(90px, 1fr));
+            gap: 12px;
+            margin: 12px 0 20px 0;
+        }
+        .level-btn {
+            background: linear-gradient(180deg, #2a1a2f, #201126);
+            border: 2px solid #b97cff;
+            color: #fff;
+            padding: 12px 10px;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+            position: relative;
+        }
+        .level-btn:hover { filter: brightness(1.08); box-shadow: 0 0 10px rgba(185, 124, 255, 0.35);}        
+        .level-btn[disabled] { filter: grayscale(0.2) brightness(0.9); }
+        .level-btn .lock {
+            position: absolute;
+            right: 8px;
+            top: 6px;
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        .endless {
+            margin-top: 12px;
+            background: linear-gradient(180deg, #3b1d0f, #2a130a);
+            border: 2px dashed #ff7b00;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container" style="display:none;">
+    <h1>ECHO MAZE</h1>
+        
+        <div id="ui-panel">
+            <div class="ui-section">
+                <span class="ui-label">Health:</span>
+                <span id="health">❤️❤️❤️</span>
+            </div>
+            <div class="ui-section">
+                <span class="ui-label">Stamina:</span>
+                <span id="stamina">100%</span>
+                <div class="stamina-bar" style="width:160px; height:8px; border:1px solid #444; border-radius:4px; overflow:hidden;">
+                    <div id="staminaFill" style="height:100%; width:100%; background: linear-gradient(90deg, #0ff, #61dafb);"></div>
+                </div>
+                <span id="shieldStatus" title="Collision Shield" style="min-width:72px; text-align:left; font-weight:bold; color:#ff77aa;">🛡️ Ready</span>
+            </div>
+            <div class="ui-section">
+                <span class="ui-label">Generators:</span>
+                <span id="generators">0/3</span>
+            </div>
+            <div class="ui-section">
+                <span class="ui-label">Traps:</span>
+                <span id="traps">0</span>
+                <span style="font-size:0.9rem; color:#888;">(F)</span>
+            </div>
+            <div class="ui-section">
+                <span class="ui-label">Time:</span>
+                <span id="timer">00:00.000</span>
+            </div>
+            <div class="ui-section" id="streakSection" style="display:none;">
+                <span class="ui-label">Streak:</span>
+                <span id="streak">0</span>
+            </div>
+            <div class="ui-section">
+                <button id="pauseBtn" type="button" style="background-color:#ff7b00; color:#1f1b24; border:none; padding:8px 14px; border-radius:8px; font-weight:bold; cursor:pointer;">Pause</button>
+            </div>
+            <div class="ui-section" id="jumpIndicator" style="display:none"></div>
+        </div>
+        
+        <canvas id="canvas" width="600" height="600"></canvas>
+        
+        <div id="instructions">
+            <p>Use arrow keys to move</p>
+            <p>Hold <strong>Shift</strong> to sprint through walls (drains stamina, 10s recharge)</p>
+            <p>Hold <strong>Space</strong> to raise a directional shield and aim with arrows/WASD; reflect pink arcs to stagger enemies (costs 10 stamina)</p>
+            <p>Press <strong>E</strong> next to a yellow generator to repair it (3 total)</p>
+            <p>Complete all generators to unlock the exit</p>
+            <p id="status" class="status"></p>
+        </div>
+    </div>
+    
+    <div id="overlay">
+        <div class="overlay-panel">
+            <h2>Repairing Generator</h2>
+            <div class="progress" style="width: 320px; height: 14px; border: 2px solid #61dafb; border-radius: 8px; overflow: hidden; margin: 10px auto 16px;">
+                <div class="progress-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #ffd166, #61dafb);"></div>
+            </div>
+            <p class="instruction" style="min-height: 24px; margin-bottom: 16px;">Hold steady...</p>
+
+            <div class="skill-check" style="display:none;">
+                <div class="skill-check-circle" style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 3px solid #61dafb; margin: 0 auto 16px; overflow: hidden;">
+                    <div class="success-zone" style="position:absolute; inset:0; border-radius:50%;"></div>
+                    <div class="pointer" style="position:absolute; left:50%; top:50%; width:2px; height:65px; background:#ffffff; transform-origin: bottom center; transform: translate(-50%, -100%) rotate(0deg);"></div>
+                </div>
+            </div>
+
+            <button class="cancel" style="margin-top: 4px;" tabindex="-1" type="button">Cancel (Esc)</button>
+        </div>
+    </div>
+
+    <div id="pauseOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1000;">
+        <div class="overlay-panel">
+            <h2>Game Paused</h2>
+            <p>The game is paused.</p>
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button id="unpauseBtn" type="button">Unpause</button>
+                <button id="retryBtn" type="button">Retry</button>
+                <button id="returnMenuBtn" type="button">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Win Overlay -->
+    <div id="winOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1100;">
+        <div class="overlay-panel" style="position:relative; overflow:hidden;">
+            <canvas id="confettiCanvas" width="640" height="360" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></canvas>
+            <h2 style="position:relative; z-index:1;">You Win! 🎉</h2>
+            <p style="position:relative; z-index:1;">Nice work—generators repaired and exit reached.</p>
+            <div style="display:flex; gap:12px; justify-content:center; position:relative; z-index:1;">
+                <button id="nextLevelBtn" type="button">Next Level</button>
+                <button id="winReturnMenuBtn" type="button">Main Menu</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Menu Overlay -->
+    <div id="mainMenu">
+        <div class="menu-panel">
+            <div class="menu-title">ECHO MAZE</div>
+            <div class="menu-subtitle">Select a level</div>
+            <!-- Top-right controls -->
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px;">
+                <button id="trophyBtn" class="level-btn" title="Best Times" style="padding:8px 10px; font-size:0.95rem; border-color:#ffd166;">🏆</button>
+                <button id="resetProgressBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#ff7b00;">Reset Progress</button>
+                <button id="devToggleBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Dev</button>
+            </div>
+            <div id="levelsGrid" class="level-grid">
+                <button class="level-btn" data-level="1">Level 1</button>
+                <button class="level-btn" data-level="2">Level 2</button>
+                <button class="level-btn" data-level="3">Level 3</button>
+                <button class="level-btn" data-level="4">Level 4</button>
+                <button class="level-btn" data-level="5">Level 5</button>
+                <button class="level-btn" data-level="6">Level 6</button>
+                <button class="level-btn" data-level="7">Level 7</button>
+                <button class="level-btn" data-level="8">Level 8</button>
+                <button class="level-btn" data-level="9">Level 9</button>
+                <button class="level-btn" data-level="10">Level 10</button>
+            </div>
+            <button class="level-btn endless" data-level="endless">Endless Mode</button>
+            <!-- Dev Panel (hidden until unlocked) -->
+            <div id="devPanel" style="display:none; margin-top:14px; padding:12px; border:2px solid #b97cff; border-radius:10px; background:#18121f; text-align:left;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <strong style="color:#b97cff;">Dev Tools</strong>
+                    <button id="devCloseBtn" class="level-btn" style="padding:6px 10px; font-size:0.9rem;">Close</button>
+                </div>
+                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                    <input id="godModeChk" type="checkbox" />
+                    <span>God Mode</span>
+                </label>
+                <button id="unlockAllBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Unlock All Levels</button>
+                <div style="color:#888; font-size:0.9rem; margin-top:6px;">Tip: Click "Dev" and enter password: <span style="color:#ffd166; font-weight:bold;">Spooky</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Best Times Overlay -->
+    <div id="scoresOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
+        <div class="overlay-panel" style="min-width: 420px;">
+            <h2>Best Times</h2>
+            <div id="scoresList" style="text-align:left; margin:12px 0; min-width: 320px;"></div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+                <button id="scoresCloseBtn" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Endless Config Overlay -->
+    <div id="endlessOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
+        <div class="overlay-panel" style="min-width: 480px;">
+            <h2>Endless Mode</h2>
+            <p>Customize your run. Each escape increases your streak. New maze every run.</p>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; text-align:left; margin:12px 0;">
+                <div>
+                    <div class="ui-label" style="margin-bottom:6px;">AIs</div>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessChaser" type="checkbox" />
+                        <span>Chaser</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessPig" type="checkbox" />
+                        <span>Flying Pig</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessSeeker" type="checkbox" />
+                        <span>Seeker</span>
+                    </label>
+                </div>
+                <div>
+                    <div class="ui-label" style="margin-bottom:6px;">Difficulty</div>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessDiffNormal" name="endlessDiff" type="radio" value="normal" checked />
+                        <span>Normal</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessDiffSuper" name="endlessDiff" type="radio" value="super" />
+                        <span>Super Hard</span>
+                    </label>
+                </div>
+            </div>
+            <div style="margin: 6px 0 12px; text-align:left;">
+                <div class="ui-label" style="margin-bottom:6px;">Generators</div>
+                <label style="display:inline-flex; align-items:center; gap:8px; margin-right:12px;">
+                    <input id="endlessGen3" name="endlessGen" type="radio" value="3" checked />
+                    <span>3</span>
+                </label>
+                <label style="display:inline-flex; align-items:center; gap:8px;">
+                    <input id="endlessGen5" name="endlessGen" type="radio" value="5" />
+                    <span>5</span>
+                </label>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+                <button id="endlessStartBtn" type="button">Start</button>
+                <button id="endlessCancelBtn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Lightweight error surface to help diagnose loading issues
+        (function(){
+            function banner(){
+                var el = document.getElementById('errBanner');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'errBanner';
+                    el.style.cssText = 'position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:3000;background:#3d0c0c;color:#ffd1d1;padding:8px 12px;border:1px solid #ff6666;border-radius:8px;font:14px system-ui;box-shadow:0 2px 10px rgba(0,0,0,.4)';
+                    document.body.appendChild(el);
+                }
+                return el;
+            }
+            function show(msg){
+                var el = banner();
+                el.textContent = String(msg);
+            }
+            window.addEventListener('error', function(e){ show('Error: ' + (e.message||'unknown')); });
+            window.addEventListener('unhandledrejection', function(e){ show('Unhandled promise: ' + (e.reason && (e.reason.message||e.reason)) ); });
+            // Fallback: if modules didn't set __SMG_LOADED__ soon, notify
+            setTimeout(function(){
+                if (!window.__SMG_LOADED__) {
+                    show('Startup issue: game scripts did not initialize. Try hard refresh (Ctrl/Cmd+Shift+R).');
+                }
+            }, 1500);
+        })();
+    </script>
+    <!-- Cache-busting query to ensure latest modules load -->
+    <script>
+        window.__SMG_VER__ = 'v20251029_3';
+    </script>
+    <script type="module" src="js/audio.js?ver=v20251029_3"></script>
+    <script type="module" src="js/config.js?ver=v20251029_3"></script>
+    <script type="module" src="js/maze.js?ver=v20251029_3"></script>
+    <script type="module" src="js/state.js?ver=v20251029_3"></script>
+    <script type="module" src="js/renderer.js?ver=v20251029_3"></script>
+    <script type="module" src="js/input.js?ver=v20251029_3"></script>
+    <script type="module" src="js/main.js?ver=v20251029_3"></script>
+</body>
+</html>
