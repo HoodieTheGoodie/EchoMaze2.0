@@ -64,8 +64,16 @@ export function render(currentTime) {
     // Screen effect during enemy freeze (on hit)
     if (currentTime < gameState.enemiesFrozenUntil) {
         canvas.style.filter = 'grayscale(100%) contrast(110%)';
+        canvas.style.transform = 'none';
+    } else if (gameState.playerStunned) {
+        // Smooth wavy zigzag effect when stunned
+        const waveX = Math.sin(currentTime / 400) * 3; // gentle horizontal wave (3px max)
+        const waveY = Math.sin(currentTime / 500) * 2; // subtle vertical wave (2px max)
+        canvas.style.transform = `translate(${waveX}px, ${waveY}px)`;
+        canvas.style.filter = 'brightness(0.85) blur(0.5px)'; // slightly dimmed, minimal blur
     } else {
         canvas.style.filter = 'none';
+        canvas.style.transform = 'none';
     }
 
     // Clear and draw static background in one blit
@@ -263,9 +271,18 @@ function drawEnemies(currentTime) {
                 }
             }
         } else if (e.type === 'batter') {
-            // Batter visuals: brown, larger, with rage indication
+            // Batter visuals: orange, pulsates red/white when enraged
             const enraged = e.state === 'rage';
-            let baseCol = '#8B4513'; // saddle brown
+            let baseCol = '#FF8C00'; // dark orange
+
+            // Pulsate between red and white when enraged (faster)
+            if (enraged) {
+                const pulse = Math.sin(currentTime / 100) * 0.5 + 0.5; // oscillate 0-1, faster
+                const r = Math.round(255);
+                const g = Math.round(pulse * 255); // 0->255
+                const b = Math.round(pulse * 255); // 0->255
+                baseCol = `rgb(${r},${g},${b})`; // pulsates from pure red (#FF0000) to white (#FFFFFF)
+            }
 
             // Body
             ctx.fillStyle = baseCol;
@@ -274,36 +291,13 @@ function drawEnemies(currentTime) {
             ctx.fill();
 
             // Eyes (angry looking)
-            ctx.fillStyle = '#ff0000';
+            ctx.fillStyle = enraged ? '#000000' : '#8B0000'; // black eyes when raging, dark red normally
             ctx.beginPath();
             ctx.arc(cx - 3, cy - 2, 2, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
             ctx.arc(cx + 3, cy - 2, 2, 0, Math.PI * 2);
             ctx.fill();
-
-            // Rage aura
-            if (enraged) {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255,165,0,0.7)'; // orange aura
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.restore();
-                // Speed lines
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255,165,0,0.4)';
-                ctx.lineWidth = 2;
-                for (let i = 0; i < 3; i++) {
-                    const offset = (currentTime / 50 + i * 15) % 20 - 10;
-                    ctx.beginPath();
-                    ctx.moveTo(cx - r - 8 + offset, cy - 5 + i * 5);
-                    ctx.lineTo(cx - r - 2 + offset, cy - 5 + i * 5);
-                    ctx.stroke();
-                }
-                ctx.restore();
-            }
         } else {
             const isTelegraph = e.telegraphUntil && currentTime < e.telegraphUntil;
             ctx.fillStyle = isTelegraph ? '#ffa500' : '#8a2be2';

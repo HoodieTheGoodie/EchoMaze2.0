@@ -820,11 +820,12 @@ export function spawnBatter() {
         type: 'batter',
         x: found.x, y: found.y,
         fx: found.x + 0.5, fy: found.y + 0.5,
-        state: 'roam', // 'roam' | 'rage'
+        state: 'roam', // 'roam' | 'rage' | 'cooldown'
         roamDir: null, // {dx,dy}
         speedRoam: 3.5, // moderate pace
-        speedRage: 9.0, // super fast when raging
+        speedRage: 4.5, // player walking speed when raging (tiles/sec)
         rageUntil: 0,
+        cooldownUntil: 0, // after stunning player, back off for a while
         lastUpdateAt: 0,
         target: null,
         lastPathAt: 0,
@@ -1056,10 +1057,17 @@ export function updateEnemies(currentTime) {
                 localThaw = 1 - Math.min(1, remain / ENEMY_THAW_TIME);
             }
 
-            // Check if player is within 3x3 radius
+            // Check if player is within 3x3 radius (3 tiles in each direction = 7x7 grid)
             const distX = Math.abs(cx - px);
             const distY = Math.abs(cy - py);
-            const inProximity = (distX <= 1 && distY <= 1); // 3x3 grid around batter
+            const inProximity = (distX <= 3 && distY <= 3); // 7x7 grid with batter at center
+
+            // Check if cooldown expired
+            if (e.state === 'cooldown' && currentTime >= e.cooldownUntil) {
+                e.state = 'roam';
+                e.roamGoal = null;
+                e.target = null;
+            }
 
             if (e.state === 'roam') {
                 if (inProximity) {
@@ -1141,8 +1149,65 @@ export function updateEnemies(currentTime) {
                         if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
                     }
                 }
+            } else if (e.state === 'cooldown') {
+                // Cooldown: wander away from player, don't engage
+                const needNew = !e.roamGoal || (e.x === e.roamGoal.x && e.y === e.roamGoal.y);
+                if (needNew) {
+                    // Pick a goal far from player
+                    const cand = [];
+                    for (let i = 0; i < 40; i++) {
+                        const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
+                        const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
+                        if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
+                        const distToPlayer = Math.abs(rx - px) + Math.abs(ry - py);
+                        if (distToPlayer < 8) continue; // must be far from player
+                        cand.push({ x: rx, y: ry, score: distToPlayer });
+                    }
+                    if (cand.length) {
+                        cand.sort((a, b) => b.score - a.score); // furthest first
+                        e.roamGoal = cand[0];
+                        e._roamGoalSetAt = currentTime;
+                    }
+                    e.target = null;
+                }
+
+                if (!e.target && e.roamGoal) {
+                    const steps = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ];
+                    let next = { x: cx, y: cy };
+                    let bestDist = Math.abs(cx - e.roamGoal.x) + Math.abs(cy - e.roamGoal.y);
+                    for (const s of steps) {
+                        const nx = cx + s.dx, ny = cy + s.dy;
+                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                        const candDist = Math.abs(nx - e.roamGoal.x) + Math.abs(ny - e.roamGoal.y);
+                        if (candDist < bestDist) {
+                            bestDist = candDist;
+                            next = { x: nx, y: ny };
+                        }
+                    }
+                    if (next.x !== cx || next.y !== cy) {
+                        e.target = next;
+                    }
+                }
+
+                if (e.target) {
+                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
+                    const dx = tx - e.fx, dy = ty - e.fy;
+                    const dist = Math.hypot(dx, dy);
+                    const step = e.speedRoam * dt * localThaw;
+                    if (dist <= step || dist < 0.0001) {
+                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                        e._lastMoveAt = currentTime;
+                        e._lastPos = { x: e.fx, y: e.fy };
+                    } else {
+                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                        const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
+                        if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
+                    }
+                }
             } else if (e.state === 'rage') {
-                // Rage mode: chase player aggressively
+                // Rage mode: chase player at same speed as player walks
                 if (currentTime - e.lastPathAt >= e.pathInterval || !e.target) {
                     e.lastPathAt = currentTime;
                     const cx2 = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
@@ -1683,7 +1748,7 @@ function handleEnemyHit(currentTime) {
 }
 
 function handleBatterHit(currentTime) {
-    // Batter hit stuns player for 5 seconds and resets batter to roam mode
+    // Batter hit stuns player for 5 seconds and enters cooldown
     if (currentTime < gameState.playerInvincibleUntil) return;
     if (gameState.godMode) return;
 
@@ -1691,13 +1756,14 @@ function handleBatterHit(currentTime) {
     gameState.playerStunUntil = currentTime + 5000;
     setStatusMessage('STUNNED for 5 seconds! Avoid all enemies!');
 
-    // Reset batter to roam mode after successful hit
+    // Put batter into cooldown mode - backs off for 10 seconds
     const batter = gameState.enemies.find(e => e.type === 'batter');
     if (batter) {
-        batter.state = 'roam';
+        batter.state = 'cooldown';
+        batter.cooldownUntil = currentTime + 10000; // 10 seconds cooldown
         batter.proximityStartTime = 0;
         batter.target = null;
-        batter.roamGoal = null;
+        batter.roamGoal = null; // will pick new goal away from player
     }
 }
 
