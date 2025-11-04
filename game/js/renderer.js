@@ -262,6 +262,48 @@ function drawEnemies(currentTime) {
                     ctx.restore();
                 }
             }
+        } else if (e.type === 'batter') {
+            // Batter visuals: brown, larger, with rage indication
+            const enraged = e.state === 'rage';
+            let baseCol = '#8B4513'; // saddle brown
+
+            // Body
+            ctx.fillStyle = baseCol;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eyes (angry looking)
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+            ctx.arc(cx - 3, cy - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + 3, cy - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Rage aura
+            if (enraged) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255,165,0,0.7)'; // orange aura
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+                // Speed lines
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255,165,0,0.4)';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    const offset = (currentTime / 50 + i * 15) % 20 - 10;
+                    ctx.beginPath();
+                    ctx.moveTo(cx - r - 8 + offset, cy - 5 + i * 5);
+                    ctx.lineTo(cx - r - 2 + offset, cy - 5 + i * 5);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
         } else {
             const isTelegraph = e.telegraphUntil && currentTime < e.telegraphUntil;
             ctx.fillStyle = isTelegraph ? '#ffa500' : '#8a2be2';
@@ -433,11 +475,37 @@ function drawPlayer() {
     const centerX = gameState.player.x * CELL_SIZE + CELL_SIZE / 2;
     const centerY = gameState.player.y * CELL_SIZE + CELL_SIZE / 2;
     const radius = CELL_SIZE / 2 - 2;
-    
-    ctx.fillStyle = gameState.isSprinting ? '#00ffff' : '#4169E1';
+
+    // Change player color when stunned
+    let playerColor = gameState.isSprinting ? '#00ffff' : '#4169E1';
+    if (gameState.playerStunned) {
+        playerColor = '#666666'; // gray when stunned
+    }
+
+    ctx.fillStyle = playerColor;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // Draw stun effect - electric chains
+    if (gameState.playerStunned) {
+        const now = performance.now();
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,0,0.7)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const angle = (i * Math.PI / 2) + (now / 200);
+            const x1 = centerX + Math.cos(angle) * radius;
+            const y1 = centerY + Math.sin(angle) * radius;
+            const x2 = centerX + Math.cos(angle) * (radius + 8);
+            const y2 = centerY + Math.sin(angle) * (radius + 8);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
     
     if (gameState.isJumpCharging) {
         ctx.strokeStyle = '#FFD700';

@@ -141,6 +141,12 @@ export function initGame() {
     if (gameState.levelConfig.seeker) {
         spawnSeeker();
     }
+    if (gameState.levelConfig.batter) {
+        spawnBatter();
+    }
+    // Player stun state
+    gameState.playerStunned = false;
+    gameState.playerStunUntil = 0;
     // Apply a brief thaw period on level start
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
 }
@@ -277,6 +283,17 @@ function addSeekerAlert(x, y, currentTime, duration = 5000) {
 
 export function movePlayer(dx, dy, currentTime) {
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen) {
+        return false;
+    }
+
+    // Check if stun has expired
+    if (gameState.playerStunned && currentTime >= gameState.playerStunUntil) {
+        gameState.playerStunned = false;
+        setStatusMessage('Stun wore off!');
+    }
+
+    // Block movement while stunned
+    if (gameState.playerStunned) {
         return false;
     }
     
@@ -433,11 +450,12 @@ export function performJump(dx, dy, currentTime) {
 }
 
 export function startJumpCharge(currentTime) {
-    if (gameState.gameStatus !== 'playing' || 
-        gameState.isJumpCharging || 
-        gameState.stamina < 100 || 
+    if (gameState.gameStatus !== 'playing' ||
+        gameState.isJumpCharging ||
+        gameState.stamina < 100 ||
         gameState.isStaminaCoolingDown ||
-        gameState.isGeneratorUIOpen) {
+        gameState.isGeneratorUIOpen ||
+        gameState.playerStunned) {
         return;
     }
     
@@ -473,7 +491,7 @@ export function triggerStaminaCooldown(currentTime) {
 
 // --- Blocking (Space): 3s directional shield, aimable with WASD/Arrows ---
 export function startBlock(currentTime) {
-    if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen) return;
+    if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen || gameState.playerStunned) return;
     gameState.blockActive = true;
     gameState.blockUntil = currentTime + 3000;
     try { playShieldUp(); } catch {}
@@ -773,6 +791,54 @@ export function spawnSeeker() {
     gameState.enemies.push(s);
 }
 
+export function spawnBatter() {
+    if (!gameState.maze) return;
+    // Spawn Batter in a different corner from player (not top-left)
+    const corners = [
+        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 }, // bottom-right
+        { x: MAZE_WIDTH - 3, y: 2 },               // top-right
+        { x: 2, y: MAZE_HEIGHT - 3 }               // bottom-left
+    ];
+    const pick = corners[Math.floor(Math.random() * corners.length)];
+    let found = null;
+    for (let r = 0; r < 10; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                const x = Math.max(1, Math.min(MAZE_WIDTH - 2, pick.x + dx));
+                const y = Math.max(1, Math.min(MAZE_HEIGHT - 2, pick.y + dy));
+                if (isPassableForEnemy(gameState.maze[y][x])) {
+                    found = { x, y }; break;
+                }
+            }
+            if (found) break;
+        }
+        if (found) break;
+    }
+    if (!found) return;
+
+    const b = {
+        type: 'batter',
+        x: found.x, y: found.y,
+        fx: found.x + 0.5, fy: found.y + 0.5,
+        state: 'roam', // 'roam' | 'rage'
+        roamDir: null, // {dx,dy}
+        speedRoam: 3.5, // moderate pace
+        speedRage: 9.0, // super fast when raging
+        rageUntil: 0,
+        lastUpdateAt: 0,
+        target: null,
+        lastPathAt: 0,
+        pathInterval: 200,
+        proximityStartTime: 0, // tracks when player entered 3x3 radius
+        roamStepsLeft: 0,
+        roamGoal: null,
+        _roamGoalSetAt: 0,
+        _lastMoveAt: 0,
+        _lastPos: { x: found.x + 0.5, y: found.y + 0.5 }
+    };
+    gameState.enemies.push(b);
+}
+
 function updateFlyingPig(e, currentTime, px, py) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
@@ -975,6 +1041,159 @@ export function updateEnemies(currentTime) {
                 // Remain in place while stunned
                 continue;
             }
+        }
+        if (e.type === 'batter') {
+            // Batter behavior: roaming, proximity detection, rage chase, and stun on contact
+            const cx = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
+            const cy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
+            const last = e.lastUpdateAt || currentTime;
+            const dt = Math.max(0, (currentTime - last) / 1000);
+
+            // Thaw multiplier
+            let localThaw = 1;
+            if (currentTime < gameState.enemiesThawUntil) {
+                const remain = Math.max(0, gameState.enemiesThawUntil - currentTime);
+                localThaw = 1 - Math.min(1, remain / ENEMY_THAW_TIME);
+            }
+
+            // Check if player is within 3x3 radius
+            const distX = Math.abs(cx - px);
+            const distY = Math.abs(cy - py);
+            const inProximity = (distX <= 1 && distY <= 1); // 3x3 grid around batter
+
+            if (e.state === 'roam') {
+                if (inProximity) {
+                    // Start proximity timer if not already started
+                    if (!e.proximityStartTime) {
+                        e.proximityStartTime = currentTime;
+                    }
+                    // Check if player has been in proximity for 0.5 seconds
+                    if (currentTime - e.proximityStartTime >= 500) {
+                        // Activate rage mode
+                        e.state = 'rage';
+                        e.rageUntil = currentTime + 999999; // rage until contact
+                        e.target = null; // force pathing recalculation
+                        e.lastPathAt = 0;
+                    }
+                } else {
+                    // Reset proximity timer if player leaves
+                    e.proximityStartTime = 0;
+                }
+
+                // Roam behavior - similar to seeker's roam but simpler
+                const needNew = !e.roamGoal || (e.x === e.roamGoal.x && e.y === e.roamGoal.y) || (currentTime - (e._roamGoalSetAt || 0) > 8000);
+                const stuck = (currentTime - (e._lastMoveAt || 0) > 1600);
+                if (needNew || stuck) {
+                    const cand = [];
+                    for (let i = 0; i < 60; i++) {
+                        const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
+                        const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
+                        if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
+                        const md = Math.abs(rx - cx) + Math.abs(ry - cy);
+                        if (md < 5) continue;
+                        cand.push({ x: rx, y: ry, score: md });
+                    }
+                    if (cand.length) {
+                        cand.sort((a, b) => b.score - a.score);
+                        const top = Math.max(1, Math.floor(cand.length * 0.4));
+                        const pick = cand[Math.floor(Math.random() * top)];
+                        e.roamGoal = { x: pick.x, y: pick.y };
+                        e._roamGoalSetAt = currentTime;
+                    }
+                    e.target = null;
+                }
+
+                if (!e.target && e.roamGoal) {
+                    const steps = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ];
+                    let next = { x: cx, y: cy };
+                    let bestDist = Math.abs(cx - e.roamGoal.x) + Math.abs(cy - e.roamGoal.y);
+                    for (const s of steps) {
+                        const nx = cx + s.dx, ny = cy + s.dy;
+                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                        const candDist = Math.abs(nx - e.roamGoal.x) + Math.abs(ny - e.roamGoal.y);
+                        if (candDist < bestDist) {
+                            bestDist = candDist;
+                            next = { x: nx, y: ny };
+                        }
+                    }
+                    if (next.x !== cx || next.y !== cy) {
+                        e.target = next;
+                        e.roamDir = { dx: next.x - cx, dy: next.y - cy };
+                    }
+                }
+
+                if (e.target) {
+                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
+                    const dx = tx - e.fx, dy = ty - e.fy;
+                    const dist = Math.hypot(dx, dy);
+                    let speedRoam = e.speedRoam;
+                    if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
+                    const step = speedRoam * dt * localThaw;
+                    if (dist <= step || dist < 0.0001) {
+                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                        e._lastMoveAt = currentTime;
+                        e._lastPos = { x: e.fx, y: e.fy };
+                    } else {
+                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                        const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
+                        if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
+                    }
+                }
+            } else if (e.state === 'rage') {
+                // Rage mode: chase player aggressively
+                if (currentTime - e.lastPathAt >= e.pathInterval || !e.target) {
+                    e.lastPathAt = currentTime;
+                    const cx2 = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
+                    const cy2 = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
+                    e.x = cx2; e.y = cy2;
+                    let best = { x: cx2, y: cy2, d: distField[cy2][cx2] };
+                    const steps = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ];
+                    for (const s of steps) {
+                        const nx = cx2 + s.dx, ny = cy2 + s.dy;
+                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                        const nd = distField[ny][nx];
+                        if (nd < best.d) best = { x: nx, y: ny, d: nd };
+                    }
+                    if (!Number.isFinite(best.d)) {
+                        for (const s of steps) {
+                            const nx = cx2 + s.dx, ny = cy2 + s.dy;
+                            const nd = distField[ny][nx];
+                            if (Number.isFinite(nd) && isPassableForEnemy(gameState.maze[ny][nx])) { best = { x: nx, y: ny, d: nd }; break; }
+                        }
+                    }
+                    e.target = { x: best.x, y: best.y };
+                }
+
+                // Move toward target
+                if (e.target) {
+                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
+                    const dx = tx - e.fx, dy = ty - e.fy;
+                    const dist = Math.hypot(dx, dy);
+                    let speedRage = e.speedRage;
+                    if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
+                    const step = speedRage * dt * localThaw;
+                    if (dist <= step || dist < 0.0001) {
+                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                    } else {
+                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                    }
+                }
+            }
+
+            e.lastUpdateAt = currentTime;
+
+            // Collision check - stun player instead of damage
+            const pdx = (gameState.player.x + 0.5) - e.fx;
+            const pdy = (gameState.player.y + 0.5) - e.fy;
+            const pDist = Math.hypot(pdx, pdy);
+            if (pDist < 0.5) {
+                handleBatterHit(currentTime);
+            }
+            continue;
         }
         if (e.type === 'seeker') {
             // Seeker behavior: roaming with LOS-based rage
@@ -1443,6 +1662,13 @@ export function updateEnemies(currentTime) {
 function handleEnemyHit(currentTime) {
     if (currentTime < gameState.playerInvincibleUntil) return;
     if (gameState.godMode) return;
+    // Check if player is stunned - any enemy contact while stunned is instakill
+    if (gameState.playerStunned) {
+        gameState.lives = 0;
+        gameState.gameStatus = 'lost';
+        setStatusMessage('Instakill! You were hit while stunned!');
+        return;
+    }
     gameState.lives--;
     setStatusMessage('Hit! You are invincible for 2s');
     gameState.enemiesFrozenUntil = currentTime + 2000;
@@ -1456,8 +1682,27 @@ function handleEnemyHit(currentTime) {
     }
 }
 
+function handleBatterHit(currentTime) {
+    // Batter hit stuns player for 5 seconds and resets batter to roam mode
+    if (currentTime < gameState.playerInvincibleUntil) return;
+    if (gameState.godMode) return;
+
+    gameState.playerStunned = true;
+    gameState.playerStunUntil = currentTime + 5000;
+    setStatusMessage('STUNNED for 5 seconds! Avoid all enemies!');
+
+    // Reset batter to roam mode after successful hit
+    const batter = gameState.enemies.find(e => e.type === 'batter');
+    if (batter) {
+        batter.state = 'roam';
+        batter.proximityStartTime = 0;
+        batter.target = null;
+        batter.roamGoal = null;
+    }
+}
+
 export function attemptGeneratorInteraction(currentTime) {
-    if (gameState.isGeneratorUIOpen || gameState.gameStatus !== 'playing') return;
+    if (gameState.isGeneratorUIOpen || gameState.gameStatus !== 'playing' || gameState.playerStunned) return;
     
     const index = gameState.generators.findIndex(gen => {
         if (gen.completed) return false;
