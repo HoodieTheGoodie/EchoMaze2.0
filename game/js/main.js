@@ -1,7 +1,7 @@
 // main.js - Game loop and initialization
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs } from './state.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement } from './input.js';
 
@@ -13,6 +13,8 @@ export function initGame() {
     console.log('Initializing game...');
     initializeGameState();
     console.log('Game state initialized:', gameState.maze ? 'Maze created' : 'No maze!', 'Generators:', gameState.generators.length);
+    // Ensure runtime settings are applied to gameState immediately
+    try { gameState.settings = { ...getSettings() }; } catch {}
     
     // Hide overlay on restart
     const overlayEl = document.getElementById('overlay');
@@ -302,6 +304,49 @@ function wireMenuUi() {
         });
         scoresCloseBtn._wired = true;
     }
+
+    // Settings overlay wiring
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    const movementAudioChk = document.getElementById('movementAudioChk');
+    const autoMovementChk = document.getElementById('autoMovementChk');
+    const autoMovementLabel = document.getElementById('autoMovementLabel');
+    const settingsBackBtn = document.getElementById('settingsBackBtn');
+    if (settingsBtn && !settingsBtn._wired) {
+        settingsBtn.addEventListener('click', () => {
+            const s = getSettings();
+            if (movementAudioChk) movementAudioChk.checked = !!s.movementAudio;
+            if (autoMovementChk) autoMovementChk.checked = !!s.autoMovement;
+            if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${s.autoMovement ? 'ON' : 'OFF'}`;
+            if (settingsOverlay) settingsOverlay.style.display = 'flex';
+        });
+        settingsBtn._wired = true;
+    }
+    if (settingsBackBtn && !settingsBackBtn._wired) {
+        settingsBackBtn.addEventListener('click', () => {
+            if (settingsOverlay) settingsOverlay.style.display = 'none';
+        });
+        settingsBackBtn._wired = true;
+    }
+    if (movementAudioChk && !movementAudioChk._wired) {
+        movementAudioChk.addEventListener('change', () => {
+            const cur = getSettings();
+            const next = { ...cur, movementAudio: !!movementAudioChk.checked };
+            setSettings(next);
+            gameState.settings = { ...next };
+        });
+        movementAudioChk._wired = true;
+    }
+    if (autoMovementChk && !autoMovementChk._wired) {
+        autoMovementChk.addEventListener('change', () => {
+            const cur = getSettings();
+            const next = { ...cur, autoMovement: !!autoMovementChk.checked };
+            setSettings(next);
+            gameState.settings = { ...next };
+            if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${next.autoMovement ? 'ON' : 'OFF'}`;
+        });
+        autoMovementChk._wired = true;
+    }
 }
 
 function formatMs(ms) {
@@ -321,6 +366,7 @@ function showEndlessOverlay() {
     if ($('endlessChaser')) $('endlessChaser').checked = !!def.chaser;
     if ($('endlessPig')) $('endlessPig').checked = !!def.pig;
     if ($('endlessSeeker')) $('endlessSeeker').checked = !!def.seeker;
+    if ($('endlessBatter')) $('endlessBatter').checked = !!def.batter;
     if ($('endlessDiffNormal')) $('endlessDiffNormal').checked = def.difficulty !== 'super';
     if ($('endlessDiffSuper')) $('endlessDiffSuper').checked = def.difficulty === 'super';
     if ($('endlessGen3')) $('endlessGen3').checked = def.generatorCount !== 5;
@@ -339,6 +385,7 @@ function readEndlessOverlayConfig() {
         chaser: !!($('endlessChaser') && $('endlessChaser').checked),
         pig: !!($('endlessPig') && $('endlessPig').checked),
         seeker: !!($('endlessSeeker') && $('endlessSeeker').checked),
+        batter: !!($('endlessBatter') && $('endlessBatter').checked),
         difficulty: ($('endlessDiffSuper') && $('endlessDiffSuper').checked) ? 'super' : 'normal',
         generatorCount: ($('endlessGen5') && $('endlessGen5').checked) ? 5 : 3
     };

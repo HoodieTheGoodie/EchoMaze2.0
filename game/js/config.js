@@ -41,9 +41,9 @@ export function getDefaultLevelConfig(level) {
         // Both AIs enabled
         return { ...base, enemyEnabled: true, flyingPig: true };
     }
-    // Level 5: Only Chaser and Seeker (no Pig)
+    // Level 5: Chaser, Seeker, and Batter (no Pig)
     if (level === 5) {
-        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true };
+        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true, batter: true };
     }
     // Level 6: Chaser, Flying Pig, and Seeker
     if (level === 6) {
@@ -94,21 +94,23 @@ export function setDevUnlocked(enabled) {
 
 // --- Endless defaults persistence ---
 const KEY_ENDLESS = 'smg_endless_defaults_v1';
+const KEY_SETTINGS = 'smg_settings_v1';
 
 export function getEndlessDefaults() {
     try {
         const raw = localStorage.getItem(KEY_ENDLESS);
-        if (!raw) return { chaser: false, pig: false, seeker: false, difficulty: 'normal', generatorCount: 3 };
+        if (!raw) return { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
         const obj = JSON.parse(raw);
         return {
             chaser: !!obj.chaser,
             pig: !!obj.pig,
             seeker: !!obj.seeker,
+            batter: !!obj.batter,
             difficulty: obj.difficulty === 'super' ? 'super' : 'normal',
             generatorCount: obj.generatorCount === 5 ? 5 : 3
         };
     } catch {
-        return { chaser: false, pig: false, seeker: false, difficulty: 'normal', generatorCount: 3 };
+        return { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
     }
 }
 
@@ -117,8 +119,32 @@ export function setEndlessDefaults(cfg) {
         chaser: !!cfg.chaser,
         pig: !!cfg.pig,
         seeker: !!cfg.seeker,
+        batter: !!cfg.batter,
         difficulty: cfg.difficulty === 'super' ? 'super' : 'normal',
         generatorCount: cfg.generatorCount === 5 ? 5 : 3
     };
     try { localStorage.setItem(KEY_ENDLESS, JSON.stringify(norm)); } catch {}
+}
+
+// --- Settings persistence (movement audio, auto-movement) ---
+export function getSettings() {
+    try {
+        const raw = localStorage.getItem(KEY_SETTINGS);
+        if (!raw) return { movementAudio: true, autoMovement: true };
+        const obj = JSON.parse(raw);
+        return {
+            movementAudio: obj && obj.movementAudio !== false,
+            autoMovement: obj && obj.autoMovement !== false,
+        };
+    } catch {
+        return { movementAudio: true, autoMovement: true };
+    }
+}
+
+export function setSettings(settings) {
+    const s = {
+        movementAudio: settings && settings.movementAudio !== false,
+        autoMovement: settings && settings.autoMovement !== false,
+    };
+    try { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); } catch {}
 }

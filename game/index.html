@@ -299,6 +299,7 @@
             <!-- Top-right controls -->
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px;">
                 <button id="trophyBtn" class="level-btn" title="Best Times" style="padding:8px 10px; font-size:0.95rem; border-color:#ffd166;">🏆</button>
+                <button id="settingsBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#61dafb;">Settings</button>
                 <button id="resetProgressBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#ff7b00;">Reset Progress</button>
                 <button id="devToggleBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Dev</button>
             </div>
@@ -362,6 +363,10 @@
                         <input id="endlessSeeker" type="checkbox" />
                         <span>Seeker</span>
                     </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="endlessBatter" type="checkbox" />
+                        <span>Batter</span>
+                    </label>
                 </div>
                 <div>
                     <div class="ui-label" style="margin-bottom:6px;">Difficulty</div>
@@ -389,6 +394,28 @@
             <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
                 <button id="endlessStartBtn" type="button">Start</button>
                 <button id="endlessCancelBtn" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Overlay -->
+    <div id="settingsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2100;">
+        <div class="overlay-panel" style="min-width: 420px; text-align:left;">
+            <h2>Settings</h2>
+            <div style="margin:12px 0;">
+                <label style="display:flex; align-items:center; gap:10px; margin:10px 0;">
+                    <input id="movementAudioChk" type="checkbox" checked />
+                    <span>Movement Audio</span>
+                </label>
+                <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement step sounds are muted. Other sounds still play.</div>
+                <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+                    <input id="autoMovementChk" type="checkbox" checked />
+                    <span id="autoMovementLabel">Auto-Movement</span>
+                </label>
+                <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+                <button id="settingsBackBtn" type="button">Back</button>
             </div>
         </div>
     </div>

@@ -81,11 +81,11 @@ export function initGame() {
     let genCount = 3;
     if (gameState.mode === 'endless') {
         // Build a config from endless settings; use a fresh random seed each run
-        const cfg = gameState.endlessConfig || { chaser: false, pig: false, seeker: false, difficulty: 'normal', generatorCount: 3 };
+        const cfg = gameState.endlessConfig || { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
         gameState.difficulty = cfg.difficulty === 'super' ? 'super' : 'normal';
         genCount = cfg.generatorCount === 5 ? 5 : 3;
         seed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
-        gameState.levelConfig = { generatorCount: genCount, enemyEnabled: !!cfg.chaser, flyingPig: !!cfg.pig, seeker: !!cfg.seeker, seed };
+        gameState.levelConfig = { generatorCount: genCount, enemyEnabled: !!cfg.chaser, flyingPig: !!cfg.pig, seeker: !!cfg.seeker, batter: !!cfg.batter, seed };
     } else {
         if (!gameState.currentLevel) gameState.currentLevel = 1;
         gameState.levelConfig = getDefaultLevelConfig(gameState.currentLevel);
@@ -389,9 +389,11 @@ export function movePlayer(dx, dy, currentTime) {
     }
     gameState.player.x = targetX;
     gameState.player.y = targetY;
-    // Throttled step sound for movement feedback
+    // Throttled step sound for movement feedback (respect movementAudio setting)
     if (!gameState._lastStepAt || currentTime - gameState._lastStepAt > 120) {
-        try { playStep(); } catch {}
+        if (!gameState.settings || gameState.settings.movementAudio !== false) {
+            try { playStep(); } catch {}
+        }
         gameState._lastStepAt = currentTime;
     }
     
@@ -670,6 +672,9 @@ export function spawnInitialEnemy() {
     }
     if (!spawn) return;
     const e = {
+        type: 'chaser',
+        mobility: 'ground',
+        isGrounded: true,
         x: spawn.x, y: spawn.y,
         fx: spawn.x + 0.5, fy: spawn.y + 0.5,
         target: null,
@@ -707,6 +712,8 @@ export function spawnFlyingPig() {
     const start = { x: pick.x, y: pick.y };
     const pig = {
         type: 'flying_pig',
+        mobility: 'air',
+        isGrounded: false,
         x: start.x, y: start.y,
         fx: start.x + 0.5, fy: start.y + 0.5,
         state: 'flying', // 'flying' | 'weakened' | 'knocked_out'
@@ -756,6 +763,8 @@ export function spawnSeeker() {
     if (!found) return;
     const s = {
         type: 'seeker',
+        mobility: 'ground',
+        isGrounded: true,
         x: found.x, y: found.y,
         fx: found.x + 0.5, fy: found.y + 0.5,
         state: 'roam', // 'roam' | 'rage'
@@ -818,6 +827,8 @@ export function spawnBatter() {
 
     const b = {
         type: 'batter',
+        mobility: 'ground',
+        isGrounded: true,
         x: found.x, y: found.y,
         fx: found.x + 0.5, fy: found.y + 0.5,
         state: 'roam', // 'roam' | 'rage' | 'cooldown'
@@ -835,7 +846,11 @@ export function spawnBatter() {
         roamGoal: null,
         _roamGoalSetAt: 0,
         _lastMoveAt: 0,
-        _lastPos: { x: found.x + 0.5, y: found.y + 0.5 }
+        _lastPos: { x: found.x + 0.5, y: found.y + 0.5 },
+        visitLog: [],
+        avoidCenter: null,
+        avoidUntil: 0,
+        _visCheckAt: 0
     };
     gameState.enemies.push(b);
 }
@@ -1030,13 +1045,45 @@ export function updateEnemies(currentTime) {
         { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
     ];
 
+    // Shared zap trigger: apply chaser-style zap effects to any ground enemy standing on an armed trap
+    const triggerZapIfOnTile = (e) => {
+        if (!gameState.traps || !gameState.traps.length) return false;
+        if (!(e.mobility === 'ground' || e.isGrounded)) return false;
+        const ex = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
+        const ey = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
+        const tIdx = gameState.traps.findIndex(t => !t.triggered && t.x === ex && t.y === ey);
+        if (tIdx === -1) return false;
+        const trap = gameState.traps[tIdx];
+        trap.triggered = true;
+        trap.flashUntil = currentTime + 200;
+        try { playZapTrigger(); } catch {}
+        // Non-stacking: only set timers if not already within an active stun window
+        if (!(e._zapStunUntil && currentTime < e._zapStunUntil)) {
+            e._zapStunUntil = currentTime + 2000;
+            e._zapSlowUntil = currentTime + 3000;
+            e._zapFXUntil = currentTime + 500;
+            // If enraged, force exit and lock re-entry until stun ends
+            if (e.state === 'rage') {
+                e.state = 'roam';
+                if (typeof e.rageStartAt !== 'undefined') e.rageStartAt = 0;
+                if (typeof e.rageUntil !== 'undefined') e.rageUntil = 0;
+                e.target = null;
+            }
+            e._zapRageLockUntil = e._zapStunUntil;
+        } else {
+            // Already stunned: refresh brief FX flash only
+            e._zapFXUntil = Math.max(e._zapFXUntil || 0, currentTime + 200);
+        }
+        return true;
+    };
+
     for (const e of gameState.enemies) {
         if (e.type === 'flying_pig') {
             updateFlyingPig(e, currentTime, px, py);
             continue;
         }
         // Zap Trap stun/slow handling for ground enemies
-        if (e.type !== 'flying_pig') {
+        if (e.mobility === 'ground' || e.isGrounded) {
             if (e._zapStunUntil && currentTime < e._zapStunUntil) {
                 e.lastUpdateAt = currentTime;
                 // Remain in place while stunned
@@ -1076,7 +1123,7 @@ export function updateEnemies(currentTime) {
                         e.proximityStartTime = currentTime;
                     }
                     // Check if player has been in proximity for 0.5 seconds
-                    if (currentTime - e.proximityStartTime >= 500) {
+                    if (currentTime - e.proximityStartTime >= 500 && !(e._zapRageLockUntil && currentTime < e._zapRageLockUntil)) {
                         // Activate rage mode
                         e.state = 'rage';
                         e.rageUntil = currentTime + 999999; // rage until contact
@@ -1086,6 +1133,28 @@ export function updateEnemies(currentTime) {
                 } else {
                     // Reset proximity timer if player leaves
                     e.proximityStartTime = 0;
+                }
+
+                // Periodic loop detection: if staying within a small area, bias away
+                if (!e._visCheckAt || currentTime >= e._visCheckAt) {
+                    e._visCheckAt = currentTime + 800;
+                    const vx = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
+                    const vy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
+                    e.visitLog.push({ x: vx, y: vy, t: currentTime });
+                    while (e.visitLog.length > 60) e.visitLog.shift();
+                    const windowMs = 12000;
+                    const recent = e.visitLog.filter(v => currentTime - v.t <= windowMs);
+                    if (recent.length >= 16) {
+                        const uniq = new Set(recent.map(v => (v.x + 999 * v.y)));
+                        if (uniq.size < 9) {
+                            let sx = 0, sy = 0;
+                            for (const v of recent) { sx += v.x; sy += v.y; }
+                            const cx2 = Math.round(sx / recent.length), cy2 = Math.round(sy / recent.length);
+                            e.avoidCenter = { x: cx2, y: cy2 };
+                            e.avoidUntil = currentTime + 5000;
+                            e.roamGoal = null; e.target = null;
+                        }
+                    }
                 }
 
                 // Roam behavior - similar to seeker's roam but simpler
@@ -1099,7 +1168,11 @@ export function updateEnemies(currentTime) {
                         if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
                         const md = Math.abs(rx - cx) + Math.abs(ry - cy);
                         if (md < 5) continue;
-                        cand.push({ x: rx, y: ry, score: md });
+                        let score = md;
+                        if (e.avoidUntil && currentTime < e.avoidUntil && e.avoidCenter) {
+                            score += Math.abs(rx - e.avoidCenter.x) + Math.abs(ry - e.avoidCenter.y);
+                        }
+                        cand.push({ x: rx, y: ry, score });
                     }
                     if (cand.length) {
                         cand.sort((a, b) => b.score - a.score);
@@ -1132,6 +1205,23 @@ export function updateEnemies(currentTime) {
                     }
                 }
 
+                // Always-moving fallback to avoid idle freezes and oscillations
+                if (!e.target) {
+                    let neighbors = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    if (e.roamDir) {
+                        const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
+                        const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
+                        if (filtered.length) neighbors = filtered;
+                    }
+                    if (neighbors.length) {
+                        const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        e.target = { x: cx + pick.dx, y: cy + pick.dy };
+                        e.roamDir = { dx: pick.dx, dy: pick.dy };
+                    }
+                }
+
                 if (e.target) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
@@ -1147,6 +1237,23 @@ export function updateEnemies(currentTime) {
                         e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
                         const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
                         if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
+                    }
+                }
+
+                // Always-moving fallback in roam: pick a valid neighbor, avoid backtracking when possible
+                if (!e.target) {
+                    let neighbors = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    if (e.roamDir) {
+                        const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
+                        const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
+                        if (filtered.length) neighbors = filtered;
+                    }
+                    if (neighbors.length) {
+                        const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        e.target = { x: cx + pick.dx, y: cy + pick.dy };
+                        e.roamDir = { dx: pick.dx, dy: pick.dy };
                     }
                 }
             } else if (e.state === 'cooldown') {
@@ -1206,7 +1313,24 @@ export function updateEnemies(currentTime) {
                         if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
                     }
                 }
+
+                // Always-moving fallback during cooldown
+                if (!e.target) {
+                    const neighbors = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    if (neighbors.length) {
+                        const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        e.target = { x: cx + pick.dx, y: cy + pick.dy };
+                    }
+                }
             } else if (e.state === 'rage') {
+                // Exit rage immediately if under zap rage-lock
+                if (e._zapRageLockUntil && currentTime < e._zapRageLockUntil) {
+                    e.state = 'roam';
+                    e.rageUntil = 0;
+                    e.target = null;
+                }
                 // Rage mode: chase player at same speed as player walks
                 if (currentTime - e.lastPathAt >= e.pathInterval || !e.target) {
                     e.lastPathAt = currentTime;
@@ -1250,6 +1374,9 @@ export function updateEnemies(currentTime) {
             }
 
             e.lastUpdateAt = currentTime;
+
+            // Zap trap trigger (exactly like chaser)
+            triggerZapIfOnTile(e);
 
             // Collision check - stun player instead of damage
             const pdx = (gameState.player.x + 0.5) - e.fx;
@@ -1393,8 +1520,25 @@ export function updateEnemies(currentTime) {
                     }
                 }
 
+                // Always-moving fallback to keep Seeker from idling in roam
+                if (!e.target) {
+                    const neighbors = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    if (e.roamDir) {
+                        const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
+                        const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
+                        if (filtered.length) neighbors.splice(0, neighbors.length, ...filtered);
+                    }
+                    if (neighbors.length) {
+                        const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        e.target = { x: cx + pick.dx, y: cy + pick.dy };
+                        e.roamDir = { dx: pick.dx, dy: pick.dy };
+                    }
+                }
+
                 // Check LOS along facing direction (based on roamDir/target)
-                if (canSeePlayerFromEntity(e)) {
+                if (canSeePlayerFromEntity(e) && !(e._zapRageLockUntil && currentTime < e._zapRageLockUntil)) {
                     e.state = 'rage';
                     e.rageStartAt = currentTime;
                     e.rageUntil = currentTime + 3000;
@@ -1405,6 +1549,13 @@ export function updateEnemies(currentTime) {
                     try { playSeekerAlert(); } catch {}
                 }
             } else if (e.state === 'rage') {
+                // If zap rage-lock is active, drop rage immediately
+                if (e._zapRageLockUntil && currentTime < e._zapRageLockUntil) {
+                    e.state = 'roam';
+                    e.rageStartAt = 0;
+                    e.rageUntil = 0;
+                    e.target = null;
+                }
                 // Refresh rage timer if LOS is present; do not end early if LOS breaks
                 if (canSeePlayerFromEntity(e)) {
                     e.rageUntil = currentTime + 3000;
@@ -1464,6 +1615,10 @@ export function updateEnemies(currentTime) {
             }
 
             e.lastUpdateAt = currentTime;
+
+            // Zap trap trigger (exactly like chaser)
+            triggerZapIfOnTile(e);
+
             // Collision check
             const pdx = (gameState.player.x + 0.5) - e.fx;
             const pdy = (gameState.player.y + 0.5) - e.fy;
@@ -1599,29 +1754,8 @@ export function updateEnemies(currentTime) {
             e._lastMoveAt = currentTime;
         }
 
-        // Trap trigger check for ground enemies
-        if (gameState.traps && gameState.traps.length && e.type !== 'flying_pig') {
-            const ex = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
-            const ey = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
-            const tIdx = gameState.traps.findIndex(t => !t.triggered && t.x === ex && t.y === ey);
-            if (tIdx !== -1) {
-                const trap = gameState.traps[tIdx];
-                trap.triggered = true;
-                trap.flashUntil = currentTime + 200;
-                try { playZapTrigger(); } catch {}
-                // Apply stun for 2s and slow for 3s after
-                e._zapStunUntil = currentTime + 2000;
-                e._zapSlowUntil = currentTime + 3000;
-                e._zapFXUntil = currentTime + 500; // brief electric visual on entity
-                // Reset Seeker rage
-                if (e.type === 'seeker') {
-                    e.state = 'roam';
-                    e.rageStartAt = 0;
-                    e.rageUntil = 0;
-                    e.target = null;
-                }
-            }
-        }
+        // Zap trap trigger (exactly like chaser)
+        triggerZapIfOnTile(e);
 
         // Collision with player (use proximity and invincibility window)
         const pdx = (gameState.player.x + 0.5) - e.fx;

@@ -5,6 +5,8 @@ import { initGame } from './main.js';
 
 // Key state: store lowercased keys for consistency (e.g., 'a', 'arrowleft')
 const keys = {};
+// Press-latch for single-step movement when auto-movement is OFF
+const keysPressed = {};
 
 // Movement throttling so a tap only moves one tile
 const MOVE_DELAY = 120; // ms
@@ -108,12 +110,38 @@ function handleKeyDown(e) {
         if (adx !== 0 || ady !== 0) {
             setBlockAim(adx, ady);
         }
+        return;
+    }
+
+    // Single-step movement when Auto-Movement is OFF
+    if (gameState.gameStatus === 'playing' && !gameState.isGeneratorUIOpen && !gameState.isPaused) {
+        const auto = !gameState.settings || gameState.settings.autoMovement !== false;
+        if (!auto) {
+            let mdx = 0, mdy = 0;
+            if (key === 'arrowleft' || key === 'a') mdx = -1;
+            else if (key === 'arrowright' || key === 'd') mdx = 1;
+            else if (key === 'arrowup' || key === 'w') mdy = -1;
+            else if (key === 'arrowdown' || key === 's') mdy = 1;
+            if (mdx !== 0 || mdy !== 0) {
+                // Only move once per physical key press; ignore holds until keyup
+                if (!keysPressed[key]) {
+                    keysPressed[key] = true;
+                    const now = performance.now();
+                    if (now - lastMoveAt >= MOVE_DELAY) {
+                        movePlayer(mdx, mdy, now);
+                        lastMoveAt = now;
+                    }
+                }
+                return;
+            }
+        }
     }
 }
 
 function handleKeyUp(e) {
     const key = (e.key || '').toLowerCase();
     keys[key] = false;
+    keysPressed[key] = false;
 
     // Prevent Space keyup from triggering focused button clicks in overlays
     if ((e.code === 'Space' || key === ' ') && (gameState.isGeneratorUIOpen || gameState.isPaused)) {
@@ -139,6 +167,11 @@ export function processMovement(currentTime) {
 
     // While blocking, the player is immobilized and can only aim the shield
     if (gameState.blockActive) {
+        return;
+    }
+
+    // Auto-Movement OFF: no continuous movement here; handled on keydown
+    if (gameState.settings && gameState.settings.autoMovement === false) {
         return;
     }
 
