@@ -170,7 +170,7 @@ export function processMovement(currentTime) {
         return;
     }
 
-    // While blocking, the player CAN move (reworked shield behavior)
+    // While blocking, the player cannot move; movement resumes when shield ends/breaks
 
     // Auto-Movement OFF: no continuous movement here; handled on keydown
     if (gameState.settings && gameState.settings.autoMovement === false) {

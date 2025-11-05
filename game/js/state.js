@@ -129,6 +129,7 @@ export function initGame() {
     gameState.shieldParticles = [];
     gameState.screenShakeUntil = 0;
     gameState.screenShakeMag = 0;
+    // Movement lock is now implicit: player cannot move while shield is active
     // Reset speedrun timer per fresh level
     gameState.runActive = false;
     gameState.runStartAt = 0;
@@ -306,6 +307,9 @@ export function movePlayer(dx, dy, currentTime) {
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen) {
         return false;
     }
+
+    // While shield is active, player cannot move; movement re-enables when the shield ends or breaks
+    if (gameState.blockActive) return false;
 
     // Check if stun has expired
     if (gameState.playerStunned && currentTime >= gameState.playerStunUntil) {
@@ -526,6 +530,7 @@ export function startBlock(currentTime) {
     const dur = (staminaPct / 100) * BLOCK_MAX_DURATION_MS;
     gameState.blockActive = true;
     gameState.blockUntil = currentTime + dur;
+    // Movement lock is based on shield activity; no timer needed
     // consume all current stamina and trigger cooldown
     gameState.stamina = 0;
     if (!gameState.isStaminaCoolingDown) {
@@ -588,6 +593,7 @@ function onShieldBreak(currentTime) {
     // End block state, lock until full stamina
     stopBlock();
     gameState.shieldBrokenLock = true;
+    // Movement resumes because shield ends on break
     // Ensure stamina remains at 0 and cooldown is running
     gameState.stamina = 0;
     gameState.isStaminaCoolingDown = true;
@@ -1902,6 +1908,8 @@ export function updateEnemies(currentTime) {
                                 // Nudge out to avoid immediate re-collide
                                 p.x += p.vx * 0.02; p.y += p.vy * 0.02;
                                 try { playShieldReflect(); } catch {}
+                                // On successful deflection, the shield should immediately break
+                                onShieldBreak(now);
                             }
                         }
                     }
