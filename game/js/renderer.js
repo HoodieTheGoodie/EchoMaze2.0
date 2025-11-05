@@ -64,8 +64,16 @@ export function render(currentTime) {
     // Screen effect during enemy freeze (on hit)
     if (currentTime < gameState.enemiesFrozenUntil) {
         canvas.style.filter = 'grayscale(100%) contrast(110%)';
+        canvas.style.transform = 'none';
+    } else if (gameState.playerStunned) {
+        // Smooth wavy zigzag effect when stunned
+        const waveX = Math.sin(currentTime / 400) * 3; // gentle horizontal wave (3px max)
+        const waveY = Math.sin(currentTime / 500) * 2; // subtle vertical wave (2px max)
+        canvas.style.transform = `translate(${waveX}px, ${waveY}px)`;
+        canvas.style.filter = 'brightness(0.85) blur(0.5px)'; // slightly dimmed, minimal blur
     } else {
         canvas.style.filter = 'none';
+        canvas.style.transform = 'none';
     }
 
     // Clear and draw static background in one blit
@@ -262,6 +270,34 @@ function drawEnemies(currentTime) {
                     ctx.restore();
                 }
             }
+        } else if (e.type === 'batter') {
+            // Batter visuals: orange, pulsates red/white when enraged
+            const enraged = e.state === 'rage';
+            let baseCol = '#FF8C00'; // dark orange
+
+            // Pulsate between red and white when enraged (faster)
+            if (enraged) {
+                const pulse = Math.sin(currentTime / 100) * 0.5 + 0.5; // oscillate 0-1, faster
+                const r = Math.round(255);
+                const g = Math.round(pulse * 255); // 0->255
+                const b = Math.round(pulse * 255); // 0->255
+                baseCol = `rgb(${r},${g},${b})`; // pulsates from pure red (#FF0000) to white (#FFFFFF)
+            }
+
+            // Body
+            ctx.fillStyle = baseCol;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eyes (angry looking)
+            ctx.fillStyle = enraged ? '#000000' : '#8B0000'; // black eyes when raging, dark red normally
+            ctx.beginPath();
+            ctx.arc(cx - 3, cy - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + 3, cy - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
         } else {
             const isTelegraph = e.telegraphUntil && currentTime < e.telegraphUntil;
             ctx.fillStyle = isTelegraph ? '#ffa500' : '#8a2be2';
@@ -433,11 +469,37 @@ function drawPlayer() {
     const centerX = gameState.player.x * CELL_SIZE + CELL_SIZE / 2;
     const centerY = gameState.player.y * CELL_SIZE + CELL_SIZE / 2;
     const radius = CELL_SIZE / 2 - 2;
-    
-    ctx.fillStyle = gameState.isSprinting ? '#00ffff' : '#4169E1';
+
+    // Change player color when stunned
+    let playerColor = gameState.isSprinting ? '#00ffff' : '#4169E1';
+    if (gameState.playerStunned) {
+        playerColor = '#666666'; // gray when stunned
+    }
+
+    ctx.fillStyle = playerColor;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // Draw stun effect - electric chains
+    if (gameState.playerStunned) {
+        const now = performance.now();
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,0,0.7)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const angle = (i * Math.PI / 2) + (now / 200);
+            const x1 = centerX + Math.cos(angle) * radius;
+            const y1 = centerY + Math.sin(angle) * radius;
+            const x2 = centerX + Math.cos(angle) * (radius + 8);
+            const y2 = centerY + Math.sin(angle) * (radius + 8);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
     
     if (gameState.isJumpCharging) {
         ctx.strokeStyle = '#FFD700';

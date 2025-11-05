@@ -45,9 +45,13 @@ export function getDefaultLevelConfig(level) {
     if (level === 5) {
         return { ...base, enemyEnabled: true, flyingPig: false, seeker: true };
     }
-    // For levels 6 and above, introduce the Seeker along with the Pig
-    if (level >= 6) {
+    // Level 6: Chaser, Flying Pig, and Seeker
+    if (level === 6) {
         return { ...base, enemyEnabled: true, flyingPig: true, seeker: true };
+    }
+    // For levels 7 and above, add the Batter along with all other enemies
+    if (level >= 7) {
+        return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true };
     }
     // Placeholder for levels 4-10 (use base defaults for now)
     return { ...base };
