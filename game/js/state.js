@@ -2,7 +2,7 @@
 
 import { generateMaze, CELL } from './maze.js';
 import { getDefaultLevelConfig, isGodMode } from './config.js';
-import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire } from './audio.js';
+import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter } from './audio.js';
 
 export const MAZE_WIDTH = 30;
 export const MAZE_HEIGHT = 30;
@@ -124,6 +124,11 @@ export function initGame() {
     gameState.collisionShieldRechargeEnd = 0;
     gameState.collisionShieldBrokenUntil = 0;
     gameState.collisionShieldHoldStart = 0;
+    // Shield (blocking) rework state
+    gameState.shieldBrokenLock = false; // cannot re-activate until stamina is full after a break
+    gameState.shieldParticles = [];
+    gameState.screenShakeUntil = 0;
+    gameState.screenShakeMag = 0;
     // Reset speedrun timer per fresh level
     gameState.runActive = false;
     gameState.runStartAt = 0;
@@ -281,6 +286,22 @@ function addSeekerAlert(x, y, currentTime, duration = 5000) {
     }
 }
 
+// Loud noise event: cause Batter to immediately enter rage regardless of distance
+function addBatterNoiseRage(currentTime, duration = 3000) {
+    if (!gameState.enemies) return;
+    for (const e of gameState.enemies) {
+        if (e.type === 'batter') {
+            if (e._zapStunUntil && currentTime < e._zapStunUntil) continue; // ignore while zapped
+            e.state = 'rage';
+            e.rageStartAt = currentTime;
+            e.rageUntil = currentTime + duration;
+            e.target = null;
+            e.lastPathAt = 0;
+            try { playBatterRage(); } catch {}
+        }
+    }
+}
+
 export function movePlayer(dx, dy, currentTime) {
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen) {
         return false;
@@ -366,6 +387,7 @@ export function movePlayer(dx, dy, currentTime) {
                     if (!gameState.godMode) {
                         gameState.lives--;
                         if (gameState.lives <= 0) {
+                            gameState.deathCause = 'wall';
                             gameState.gameStatus = 'lost';
                         }
                     }
@@ -492,13 +514,33 @@ export function triggerStaminaCooldown(currentTime) {
 }
 
 // --- Blocking (Space): 3s directional shield, aimable with WASD/Arrows ---
+// --- Shield (Blocking) rework ---
+export const BLOCK_MAX_DURATION_MS = 2000; // full stamina lasts 2s
+export const BLOCK_DURABILITY = 1.0; // simple durability threshold
+
 export function startBlock(currentTime) {
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen || gameState.playerStunned) return;
+    if (gameState.shieldBrokenLock && (gameState.stamina < 100)) return; // lock after break until full
+    const staminaPct = Math.max(0, Math.min(100, gameState.stamina));
+    if (staminaPct <= 0) return;
+    const dur = (staminaPct / 100) * BLOCK_MAX_DURATION_MS;
     gameState.blockActive = true;
-    gameState.blockUntil = currentTime + 3000;
+    gameState.blockUntil = currentTime + dur;
+    // consume all current stamina and trigger cooldown
+    gameState.stamina = 0;
+    if (!gameState.isStaminaCoolingDown) {
+        triggerStaminaCooldown(currentTime);
+    } else {
+        // restart cooldown from now to give consistent regen window
+        gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
+    }
     try { playShieldUp(); } catch {}
-    // Using the shield costs 10 stamina immediately, regardless of cooldown state
-    gameState.stamina = Math.max(0, gameState.stamina - 10);
+    try { playShieldHum(); } catch {}
+}
+
+export function stopBlock() {
+    gameState.blockActive = false;
+    gameState.blockUntil = 0;
 }
 
 export function setBlockAim(dx, dy) {
@@ -512,6 +554,46 @@ export function updateBlock(currentTime) {
     }
 }
 
+// Event-driven shield hooks for future expansion
+function onShieldHit(source, damage, currentTime) {
+    // If damage exceeds durability, break the shield
+    if (damage >= BLOCK_DURABILITY) {
+        onShieldBreak(currentTime);
+        return 'break';
+    }
+    return 'ok';
+}
+
+function onShieldBreak(currentTime) {
+    // Visuals/feedback
+    try { playShieldShatter(); } catch {}
+    // Screen shake
+    gameState.screenShakeMag = 4;
+    gameState.screenShakeUntil = currentTime + 220;
+    // Particles
+    const cx = (gameState.player.x + 0.5);
+    const cy = (gameState.player.y + 0.5);
+    for (let i = 0; i < 24; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 3 + Math.random() * 3;
+        gameState.shieldParticles.push({
+            x: cx, y: cy,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            life: 450 + Math.random() * 300,
+            born: currentTime,
+            col: i % 2 ? 'rgba(255,255,255,0.9)' : 'rgba(255,215,0,0.9)'
+        });
+    }
+    // End block state, lock until full stamina
+    stopBlock();
+    gameState.shieldBrokenLock = true;
+    // Ensure stamina remains at 0 and cooldown is running
+    gameState.stamina = 0;
+    gameState.isStaminaCoolingDown = true;
+    gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
+}
+
 export function updateStaminaCooldown(currentTime) {
     if (gameState.isStaminaCoolingDown) {
         // Show progressive regen over the 15s cooldown
@@ -523,10 +605,13 @@ export function updateStaminaCooldown(currentTime) {
         if (currentTime >= gameState.staminaCooldownEnd) {
             gameState.stamina = 100;
             gameState.isStaminaCoolingDown = false;
+            // Unlock shield after a break once fully charged
+            if (gameState.shieldBrokenLock) gameState.shieldBrokenLock = false;
         }
     } else if (!gameState.isSprinting && gameState.stamina < 100 && gameState.gameStatus === 'playing') {
         // Small trickle regen when not on cooldown (safety)
         gameState.stamina = Math.min(100, gameState.stamina + 0.5);
+        if (gameState.stamina >= 100 && gameState.shieldBrokenLock) gameState.shieldBrokenLock = false;
     }
 }
 
@@ -833,14 +918,14 @@ export function spawnBatter() {
         fx: found.x + 0.5, fy: found.y + 0.5,
         state: 'roam', // 'roam' | 'rage' | 'cooldown'
         roamDir: null, // {dx,dy}
-        speedRoam: 3.5, // moderate pace
-        speedRage: 4.5, // player walking speed when raging (tiles/sec)
+        speedRoam: 5.2, // faster than others when roaming
+        speedRage: 7.5, // easily catches the player in rage
         rageUntil: 0,
         cooldownUntil: 0, // after stunning player, back off for a while
         lastUpdateAt: 0,
         target: null,
         lastPathAt: 0,
-        pathInterval: 200,
+        pathInterval: 120,
         proximityStartTime: 0, // tracks when player entered 3x3 radius
         roamStepsLeft: 0,
         roamGoal: null,
@@ -852,6 +937,11 @@ export function spawnBatter() {
         avoidUntil: 0,
         _visCheckAt: 0
     };
+    if (gameState.mode === 'endless' && gameState.difficulty === 'super') {
+        b.speedRoam = 6.0;
+        b.speedRage = 8.5;
+        b.pathInterval = 100;
+    }
     gameState.enemies.push(b);
 }
 
@@ -1000,8 +1090,7 @@ export function updateEnemies(currentTime) {
     if (!gameState.maze || gameState.gameStatus !== 'playing') return;
     if (!gameState.enemies || gameState.enemies.length === 0) return;
 
-    // Freeze enemies while repairing a generator to prevent hits in UI
-    if (gameState.isGeneratorUIOpen) return;
+    // Do NOT globally freeze during generator UI; we'll skip collision hits while UI is open
 
     // Freeze effect: pause enemies
     if (currentTime < gameState.enemiesFrozenUntil) return;
@@ -1021,7 +1110,7 @@ export function updateEnemies(currentTime) {
         const before = gameState.traps.length;
         const now = currentTime;
         for (const t of gameState.traps) {
-            if (!t.triggered && now >= t.expiresAt) {
+                if (!t.triggered && now >= t.expiresAt) {
                 t.triggered = true; // mark consumed
                 t.flashUntil = now + 120; // brief expire flash
                 try { playZapExpire(); } catch {}
@@ -1051,7 +1140,7 @@ export function updateEnemies(currentTime) {
         if (!(e.mobility === 'ground' || e.isGrounded)) return false;
         const ex = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
         const ey = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
-        const tIdx = gameState.traps.findIndex(t => !t.triggered && t.x === ex && t.y === ey);
+            const tIdx = gameState.traps.findIndex(t => !t.triggered && t.x === ex && t.y === ey);
         if (tIdx === -1) return false;
         const trap = gameState.traps[tIdx];
         trap.triggered = true;
@@ -1063,7 +1152,7 @@ export function updateEnemies(currentTime) {
             e._zapSlowUntil = currentTime + 3000;
             e._zapFXUntil = currentTime + 500;
             // If enraged, force exit and lock re-entry until stun ends
-            if (e.state === 'rage') {
+            if (e.state === 'rage' || e.state === 'flee' || e.state === 'cooldown') {
                 e.state = 'roam';
                 if (typeof e.rageStartAt !== 'undefined') e.rageStartAt = 0;
                 if (typeof e.rageUntil !== 'undefined') e.rageUntil = 0;
@@ -1081,6 +1170,18 @@ export function updateEnemies(currentTime) {
         if (e.type === 'flying_pig') {
             updateFlyingPig(e, currentTime, px, py);
             continue;
+        }
+        // During a coordinated stun, force other enemies to aggro toward player (unless zapped)
+        if (gameState.playerStunned && (!e._zapStunUntil || currentTime >= e._zapStunUntil)) {
+            if (e.type === 'seeker') {
+                if (e.state !== 'rage') {
+                    e.state = 'rage';
+                    e.rageStartAt = currentTime;
+                }
+                e.rageUntil = Math.max(e.rageUntil || 0, gameState.playerStunUntil || currentTime + 1);
+                e.target = null; e.lastPathAt = 0;
+            }
+            // Chaser already paths to player; no change needed
         }
         // Zap Trap stun/slow handling for ground enemies
         if (e.mobility === 'ground' || e.isGrounded) {
@@ -1116,7 +1217,57 @@ export function updateEnemies(currentTime) {
                 e.target = null;
             }
 
-            if (e.state === 'roam') {
+            // While the player is stunned, Batter must flee and never move closer to the player
+            if (gameState.playerStunned) {
+                if (e.state !== 'flee') {
+                    e.state = 'flee';
+                    e.proximityStartTime = 0;
+                    e.target = null;
+                    e.roamGoal = null;
+                }
+                // Greedy step away from the player: choose a neighbor that does NOT decrease distance
+                const curDist = Math.hypot(cx - px, cy - py);
+                const neigh = [
+                    { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                ].map(s => ({ x: cx + s.dx, y: cy + s.dy }))
+                 .filter(p => p.x>0 && p.x<MAZE_WIDTH-1 && p.y>0 && p.y<MAZE_HEIGHT-1 && isPassableForEnemy(gameState.maze[p.y][p.x]));
+                // Filter to neighbors that keep or increase distance
+                const scored = neigh.map(p => ({ ...p, d: Math.hypot(p.x - px, p.y - py) }))
+                                     .filter(p => p.d >= curDist - 1e-6);
+                if (scored.length) {
+                    scored.sort((a,b)=> b.d - a.d);
+                    const best = scored[0];
+                    e.target = { x: best.x, y: best.y };
+                } else {
+                    // No non-decreasing option: stay put (do not move toward the player)
+                    e.target = null;
+                }
+                if (e.target) {
+                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
+                    const dx = tx - e.fx, dy = ty - e.fy;
+                    const dist = Math.hypot(dx, dy);
+                    const step = e.speedRage * dt * localThaw; // flee as fast as possible
+                    if (dist <= step || dist < 0.0001) {
+                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                        e._lastMoveAt = currentTime;
+                        e._lastPos = { x: e.fx, y: e.fy };
+                    } else {
+                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                        const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
+                        if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
+                    }
+                    // Periodic flee chirp
+                    if (!e._nextFleeChirpAt || currentTime >= e._nextFleeChirpAt) {
+                        try { playBatterFlee(); } catch {}
+                        e._nextFleeChirpAt = currentTime + 250;
+                    }
+                }
+                // Leave flee when player stun ends
+                if (currentTime >= (gameState.playerStunUntil || 0)) {
+                    e.state = 'roam';
+                    e.roamGoal = null; e.target = null; e.proximityStartTime = 0;
+                }
+            } else if (e.state === 'roam') {
                 if (inProximity) {
                     // Start proximity timer if not already started
                     if (!e.proximityStartTime) {
@@ -1129,6 +1280,7 @@ export function updateEnemies(currentTime) {
                         e.rageUntil = currentTime + 999999; // rage until contact
                         e.target = null; // force pathing recalculation
                         e.lastPathAt = 0;
+                        try { playBatterRage(); } catch {}
                     }
                 } else {
                     // Reset proximity timer if player leaves
@@ -1256,74 +1408,10 @@ export function updateEnemies(currentTime) {
                         e.roamDir = { dx: pick.dx, dy: pick.dy };
                     }
                 }
-            } else if (e.state === 'cooldown') {
-                // Cooldown: wander away from player, don't engage
-                const needNew = !e.roamGoal || (e.x === e.roamGoal.x && e.y === e.roamGoal.y);
-                if (needNew) {
-                    // Pick a goal far from player
-                    const cand = [];
-                    for (let i = 0; i < 40; i++) {
-                        const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
-                        const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
-                        if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
-                        const distToPlayer = Math.abs(rx - px) + Math.abs(ry - py);
-                        if (distToPlayer < 8) continue; // must be far from player
-                        cand.push({ x: rx, y: ry, score: distToPlayer });
-                    }
-                    if (cand.length) {
-                        cand.sort((a, b) => b.score - a.score); // furthest first
-                        e.roamGoal = cand[0];
-                        e._roamGoalSetAt = currentTime;
-                    }
-                    e.target = null;
-                }
-
-                if (!e.target && e.roamGoal) {
-                    const steps = [
-                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-                    ];
-                    let next = { x: cx, y: cy };
-                    let bestDist = Math.abs(cx - e.roamGoal.x) + Math.abs(cy - e.roamGoal.y);
-                    for (const s of steps) {
-                        const nx = cx + s.dx, ny = cy + s.dy;
-                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
-                        const candDist = Math.abs(nx - e.roamGoal.x) + Math.abs(ny - e.roamGoal.y);
-                        if (candDist < bestDist) {
-                            bestDist = candDist;
-                            next = { x: nx, y: ny };
-                        }
-                    }
-                    if (next.x !== cx || next.y !== cy) {
-                        e.target = next;
-                    }
-                }
-
-                if (e.target) {
-                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
-                    const dx = tx - e.fx, dy = ty - e.fy;
-                    const dist = Math.hypot(dx, dy);
-                    const step = e.speedRoam * dt * localThaw;
-                    if (dist <= step || dist < 0.0001) {
-                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
-                        e._lastMoveAt = currentTime;
-                        e._lastPos = { x: e.fx, y: e.fy };
-                    } else {
-                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
-                        const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
-                        if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
-                    }
-                }
-
-                // Always-moving fallback during cooldown
-                if (!e.target) {
-                    const neighbors = [
-                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
-                    if (neighbors.length) {
-                        const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
-                        e.target = { x: cx + pick.dx, y: cy + pick.dy };
-                    }
-                }
+            } else if (e.state === 'flee') {
+                // Player not stunned anymore; fall back to roam next tick
+                e.state = 'roam';
+                e.roamGoal = null; e.target = null; e.proximityStartTime = 0;
             } else if (e.state === 'rage') {
                 // Exit rage immediately if under zap rage-lock
                 if (e._zapRageLockUntil && currentTime < e._zapRageLockUntil) {
@@ -1378,11 +1466,11 @@ export function updateEnemies(currentTime) {
             // Zap trap trigger (exactly like chaser)
             triggerZapIfOnTile(e);
 
-            // Collision check - stun player instead of damage
+            // Collision check - stun player instead of damage (skip while generator UI is open)
             const pdx = (gameState.player.x + 0.5) - e.fx;
             const pdy = (gameState.player.y + 0.5) - e.fy;
             const pDist = Math.hypot(pdx, pdy);
-            if (pDist < 0.5) {
+            if (pDist < 0.5 && !gameState.isGeneratorUIOpen) {
                 handleBatterHit(currentTime);
             }
             continue;
@@ -1619,11 +1707,11 @@ export function updateEnemies(currentTime) {
             // Zap trap trigger (exactly like chaser)
             triggerZapIfOnTile(e);
 
-            // Collision check
+            // Collision check (skip while generator UI is open)
             const pdx = (gameState.player.x + 0.5) - e.fx;
             const pdy = (gameState.player.y + 0.5) - e.fy;
             const pDist = Math.hypot(pdx, pdy);
-            if (pDist < 0.5) handleEnemyHit(currentTime);
+            if (pDist < 0.5 && !gameState.isGeneratorUIOpen) { gameState._lastHitType = 'seeker'; handleEnemyHit(currentTime); }
             // After movement updates below, we'll also check for traps to trigger
             // Skip other logic while stunned
             continue;
@@ -1757,13 +1845,11 @@ export function updateEnemies(currentTime) {
         // Zap trap trigger (exactly like chaser)
         triggerZapIfOnTile(e);
 
-        // Collision with player (use proximity and invincibility window)
+        // Collision with player (use proximity and invincibility window); skip during generator UI
         const pdx = (gameState.player.x + 0.5) - e.fx;
         const pdy = (gameState.player.y + 0.5) - e.fy;
         const pDist = Math.hypot(pdx, pdy);
-        if (pDist < 0.5) {
-            handleEnemyHit(currentTime);
-        }
+        if (pDist < 0.5 && !gameState.isGeneratorUIOpen) { gameState._lastHitType = 'chaser'; handleEnemyHit(currentTime); }
     }
 
     // Update projectiles (e.g., Flying_Pig half-arc)
@@ -1791,27 +1877,32 @@ export function updateEnemies(currentTime) {
                 const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
                 const dot = (pvx * fx + pvy * fy) / (pd || 1);
                 if (dot >= 0) {
-                    // If shield active and roughly facing, reflect (lenient)
+                    // If shield active and roughly facing, process hit
                     if (gameState.blockActive) {
                         const bx = Math.cos(gameState.blockAngle), by = Math.sin(gameState.blockAngle);
                         const towardPlayer = -((p.vx * bx) + (p.vy * by));
                         if (towardPlayer > 0) {
-                            // reflect: reverse velocity and angle, mark reflected
-                            p.vx = -p.vx; p.vy = -p.vy; p.angle = (p.angle + Math.PI) % (Math.PI * 2);
-                            p.reflected = true;
-                            p.sourceId = null;
-                            // Nudge out to avoid immediate re-collide
-                            p.x += p.vx * 0.02; p.y += p.vy * 0.02;
-                            try { playShieldReflect(); } catch {}
-                            // Successful reflect consumes stamina
-                            if (!gameState.isStaminaCoolingDown) {
-                                triggerStaminaCooldown(now);
+                            // Strong projectile damage (may break shield)
+                            // Pig projectile should be reflectable by the shield (no instant break)
+                            const result = onShieldHit('projectile', 0.6, now);
+                            if (result === 'break') {
+                                // Absorb projectile on break
+                                p.resolved = true;
+                            } else {
+                                // reflect: reverse velocity and angle, mark reflected
+                                p.vx = -p.vx; p.vy = -p.vy; p.angle = (p.angle + Math.PI) % (Math.PI * 2);
+                                p.reflected = true;
+                                p.sourceId = null;
+                                // Nudge out to avoid immediate re-collide
+                                p.x += p.vx * 0.02; p.y += p.vy * 0.02;
+                                try { playShieldReflect(); } catch {}
                             }
                         }
                     }
                     // If not reflected, instant kill
                     if (!p.reflected && gameState.gameStatus === 'playing' && !gameState.godMode) {
                         gameState.lives = 0;
+                        gameState.deathCause = 'pig_projectile';
                         gameState.gameStatus = 'lost';
                         setStatusMessage('You were hit by a projectile!');
                         p.resolved = true;
@@ -1864,6 +1955,7 @@ function handleEnemyHit(currentTime) {
     // Check if player is stunned - any enemy contact while stunned is instakill
     if (gameState.playerStunned) {
         gameState.lives = 0;
+        gameState.deathCause = gameState._lastHitType || 'enemy';
         gameState.gameStatus = 'lost';
         setStatusMessage('Instakill! You were hit while stunned!');
         return;
@@ -1873,6 +1965,7 @@ function handleEnemyHit(currentTime) {
     gameState.enemiesFrozenUntil = currentTime + 2000;
     gameState.playerInvincibleUntil = currentTime + 2000;
     if (gameState.lives <= 0) {
+        gameState.deathCause = gameState._lastHitType || 'enemy';
         gameState.gameStatus = 'lost';
         // Reset current run timer on death
         gameState.runActive = false;
@@ -1882,22 +1975,25 @@ function handleEnemyHit(currentTime) {
 }
 
 function handleBatterHit(currentTime) {
-    // Batter hit stuns player for 5 seconds and enters cooldown
+    // Batter hit stuns player for 4 seconds and Batter flees until stun ends
     if (currentTime < gameState.playerInvincibleUntil) return;
     if (gameState.godMode) return;
 
     gameState.playerStunned = true;
-    gameState.playerStunUntil = currentTime + 5000;
-    setStatusMessage('STUNNED for 5 seconds! Avoid all enemies!');
+    gameState.playerStunUntil = currentTime + 4000;
+    gameState.playerStunStart = currentTime;
+    setStatusMessage('STUNNED for 4 seconds!');
+    // Coordinate other enemies: aggro until stun ends
+    gameState.coordinatedAggroUntil = gameState.playerStunUntil;
 
-    // Put batter into cooldown mode - backs off for 10 seconds
+    // Put batter into flee mode - move away until stun ends
     const batter = gameState.enemies.find(e => e.type === 'batter');
     if (batter) {
-        batter.state = 'cooldown';
-        batter.cooldownUntil = currentTime + 10000; // 10 seconds cooldown
+        batter.state = 'flee';
         batter.proximityStartTime = 0;
         batter.target = null;
         batter.roamGoal = null; // will pick new goal away from player
+        try { playBatterFlee(); } catch {}
     }
 }
 
@@ -2088,10 +2184,13 @@ export function failGenerator(message) {
             // Penalize player and block generator for 10s
             gen.failCount = 0; // reset after penalty
             gen.blockedUntil = performance.now() + 10000;
+            // Only on the second fail, enrage the Batter
+            addBatterNoiseRage(performance.now(), 3500);
             if (!gameState.godMode) {
                 gameState.lives--;
             }
             if (gameState.lives <= 0) {
+                gameState.deathCause = 'generator_fail';
                 gameState.gameStatus = 'lost';
             }
             setStatusMessage('You botched it twice! -1 life. Generator blocked 10s.');

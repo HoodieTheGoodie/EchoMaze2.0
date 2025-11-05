@@ -291,6 +291,18 @@
         </div>
     </div>
     
+    <!-- Lose Overlay -->
+    <div id="loseOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1150;">
+        <div class="overlay-panel" style="min-width:420px;">
+            <h2>Game Over</h2>
+            <p id="loseTip" style="min-height: 48px; color:#ffd166;">Tip: Avoid running into walls when not sprinting.</p>
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button id="loseRestartBtn" type="button">Restart Level</button>
+                <button id="loseMenuBtn" type="button">Main Menu</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Main Menu Overlay -->
     <div id="mainMenu">
         <div class="menu-panel">

@@ -41,9 +41,9 @@ export function getDefaultLevelConfig(level) {
         // Both AIs enabled
         return { ...base, enemyEnabled: true, flyingPig: true };
     }
-    // Level 5: Chaser, Seeker, and Batter (no Pig)
+    // Level 5: Chaser and Seeker (no Pig, no Batter)
     if (level === 5) {
-        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true, batter: true };
+        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true };
     }
     // Level 6: Chaser, Flying Pig, and Seeker
     if (level === 6) {

@@ -1,6 +1,7 @@
 // main.js - Game loop and initialization
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs } from './state.js';
+import { playLose } from './audio.js';
 import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement } from './input.js';
@@ -91,6 +92,29 @@ export function initGame() {
                 showMenu();
             });
             returnMenuBtn._wired = true;
+        }
+
+        // Lose overlay buttons
+        const loseRestart = document.getElementById('loseRestartBtn');
+        if (loseRestart && !loseRestart._wired) {
+            loseRestart.addEventListener('click', () => {
+                const lo = document.getElementById('loseOverlay');
+                if (lo) lo.style.display = 'none';
+                gameState.isPaused = false;
+                initGame();
+                triggerEnemiesThaw(performance.now());
+            });
+            loseRestart._wired = true;
+        }
+        const loseMenu = document.getElementById('loseMenuBtn');
+        if (loseMenu && !loseMenu._wired) {
+            loseMenu.addEventListener('click', () => {
+                const lo = document.getElementById('loseOverlay');
+                if (lo) lo.style.display = 'none';
+                gameState.isPaused = false;
+                showMenu();
+            });
+            loseMenu._wired = true;
         }
     }
     
@@ -518,8 +542,27 @@ function postFrameChecks(currentTime) {
         handledWin = true;
         showWinOverlay();
     }
+    // Show lose overlay once when you die (level mode only)
+    if (gameState.gameStatus === 'lost' && !postFrameChecks._handledLose) {
+        postFrameChecks._handledLose = true;
+        const lo = document.getElementById('loseOverlay');
+        const tip = document.getElementById('loseTip');
+        if (tip) {
+            const cause = gameState.deathCause || 'enemy';
+            let msg = 'Tip: Stay aware of enemy behaviors and use your tools.';
+            if (cause === 'wall') msg = 'Tip: Don\'t run into walls unless sprinting through with full stamina!';
+            else if (cause === 'chaser') msg = 'Tip: Watch for chaser telegraphs, and sidestep or block its jumps.';
+            else if (cause === 'seeker') msg = 'Tip: Stay out of the Seeker\'s vision cone—break line of sight behind walls.';
+            else if (cause === 'pig_projectile') msg = 'Tip: Reflect pink arcs with your shield—aim the shield toward the incoming arc!';
+            else if (cause === 'generator_fail') msg = 'Tip: Nail those skill checks—missing twice blocks the generator and costs a life.';
+            tip.textContent = msg;
+        }
+        if (lo) lo.style.display = 'flex';
+        try { playLose(); } catch {}
+    }
     if (gameState.gameStatus === 'playing') {
         handledWin = false; // reset after next run starts
+        postFrameChecks._handledLose = false;
     }
 }
 

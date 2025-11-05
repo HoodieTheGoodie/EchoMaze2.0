@@ -87,6 +87,18 @@ export function playPigHit() {
   setTimeout(() => playTone({ freq: 520, duration: 0.06, type: 'triangle', gain: 0.06 }), 40);
 }
 
+// Subtle hum when shield is active
+export function playShieldHum() {
+  playTone({ freq: 320, duration: 0.12, type: 'sine', gain: 0.025 });
+}
+
+// Stronger shatter on shield break (vs wall shield break cue)
+export function playShieldShatter() {
+  playTone({ freq: 1100, duration: 0.06, type: 'square', gain: 0.07, attack: 0.001, release: 0.04 });
+  setTimeout(() => playTone({ freq: 700, duration: 0.06, type: 'triangle', gain: 0.06 }), 50);
+  setTimeout(() => playTone({ freq: 420, duration: 0.08, type: 'sine', gain: 0.05 }), 110);
+}
+
 // --- Chaser movement/jump cues ---
 export function playChaserTelegraph() {
   // Short rising blip
@@ -129,4 +141,24 @@ export function playZapTrigger() {
 export function playZapExpire() {
   // Gentle power-down
   playTone({ freq: 480, duration: 0.06, type: 'sine', gain: 0.04 });
+}
+
+// --- Lose cue ---
+export function playLose() {
+  // Small descending chime to indicate defeat
+  playTone({ freq: 620, duration: 0.06, type: 'triangle', gain: 0.06 });
+  setTimeout(() => playTone({ freq: 420, duration: 0.08, type: 'triangle', gain: 0.06 }), 60);
+  setTimeout(() => playTone({ freq: 280, duration: 0.10, type: 'sine', gain: 0.05 }), 140);
+}
+
+// --- Batter cues ---
+export function playBatterRage() {
+  // Low thump + short chirp to indicate aggressive state
+  playTone({ freq: 180, duration: 0.08, type: 'square', gain: 0.07, attack: 0.002, release: 0.04 });
+  setTimeout(() => playTone({ freq: 420, duration: 0.06, type: 'triangle', gain: 0.06 }), 70);
+}
+
+export function playBatterFlee() {
+  // Light quick chirp for fleeing pitter-patter; can be played periodically
+  playTone({ freq: 780, duration: 0.04, type: 'square', gain: 0.04, attack: 0.001, release: 0.03 });
 }

@@ -1,6 +1,6 @@
 // input.js - Keyboard input handling
 
-import { gameState, movePlayer, startBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap } from './state.js';
+import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap } from './state.js';
 import { initGame } from './main.js';
 
 // Key state: store lowercased keys for consistency (e.g., 'a', 'arrowleft')
@@ -78,7 +78,12 @@ function handleKeyDown(e) {
             attemptSkillCheck();
         } else if (!gameState.isGeneratorUIOpen && !gameState.isPaused) {
             e.preventDefault();
-            startBlock(performance.now());
+            // Toggle shield on Space: if active, cancel; otherwise activate
+            if (gameState.blockActive) {
+                stopBlock();
+            } else {
+                startBlock(performance.now());
+            }
         }
         return;
     }
@@ -165,10 +170,7 @@ export function processMovement(currentTime) {
         return;
     }
 
-    // While blocking, the player is immobilized and can only aim the shield
-    if (gameState.blockActive) {
-        return;
-    }
+    // While blocking, the player CAN move (reworked shield behavior)
 
     // Auto-Movement OFF: no continuous movement here; handled on keydown
     if (gameState.settings && gameState.settings.autoMovement === false) {

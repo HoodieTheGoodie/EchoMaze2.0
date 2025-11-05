@@ -60,17 +60,17 @@ export function render(currentTime) {
     if (!canvas || !ctx || !gameState.maze) return;
     if (lastMazeRef !== gameState.maze) { mazeBaseDirty = true; lastMazeRef = gameState.maze; }
     if (!mazeBaseCanvas || mazeBaseDirty) buildMazeBase();
-    
+    // Screen shake if active
+    const shaking = currentTime < (gameState.screenShakeUntil || 0);
+    const sx = shaking ? (Math.random() - 0.5) * 2 * (gameState.screenShakeMag || 3) : 0;
+    const sy = shaking ? (Math.random() - 0.5) * 2 * (gameState.screenShakeMag || 3) : 0;
+    if (shaking) ctx.save();
+    if (shaking) ctx.translate(sx, sy);
+
     // Screen effect during enemy freeze (on hit)
     if (currentTime < gameState.enemiesFrozenUntil) {
         canvas.style.filter = 'grayscale(100%) contrast(110%)';
         canvas.style.transform = 'none';
-    } else if (gameState.playerStunned) {
-        // Smooth wavy zigzag effect when stunned
-        const waveX = Math.sin(currentTime / 400) * 3; // gentle horizontal wave (3px max)
-        const waveY = Math.sin(currentTime / 500) * 2; // subtle vertical wave (2px max)
-        canvas.style.transform = `translate(${waveX}px, ${waveY}px)`;
-        canvas.style.filter = 'brightness(0.85) blur(0.5px)'; // slightly dimmed, minimal blur
     } else {
         canvas.style.filter = 'none';
         canvas.style.transform = 'none';
@@ -85,6 +85,7 @@ export function render(currentTime) {
     drawGenerators(currentTime);
     drawEnemies(currentTime);
     drawProjectiles(currentTime);
+    drawShieldParticles(currentTime);
     drawPlayer();
     drawUI();
     
@@ -104,10 +105,69 @@ export function render(currentTime) {
     if (gameState.gameStatus === 'lost') {
         drawGameOver();
     }
+    if (shaking) ctx.restore();
 }
 
 function drawEnemies(currentTime) {
     if (!gameState.enemies) return;
+    // Helpers for smooth facing and FOV rays
+    const angleLerp = (a, b, t) => {
+        // shortest-path lerp
+        let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+        if (d < -Math.PI) d += Math.PI * 2;
+        return a + d * Math.max(0, Math.min(1, t));
+    };
+    const computeDesiredAngle = (e) => {
+        // Prefer motion toward current target, then roamDir
+        let vx = 0, vy = 0;
+        if (e.target) {
+            // direction from current pos to next target center
+            const tx = (e.target.x + 0.5) - e.fx;
+            const ty = (e.target.y + 0.5) - e.fy;
+            vx = tx; vy = ty;
+        } else if (e.roamDir) {
+            vx = e.roamDir.dx; vy = e.roamDir.dy;
+        }
+        if (vx === 0 && vy === 0) return e._vizAngle ?? 0;
+        return Math.atan2(vy, vx);
+    };
+    const updateFacing = (e) => {
+        const now = currentTime;
+        const desired = computeDesiredAngle(e);
+        const lastAt = e._vizAt || now;
+        const dt = Math.max(0, Math.min(100, now - lastAt));
+        // smoothing factor ~ 12 Hz response
+        const t = dt / 120; // smaller = smoother
+        e._vizAngle = (typeof e._vizAngle === 'number') ? angleLerp(e._vizAngle, desired, t) : desired;
+        e._vizAt = now;
+        return e._vizAngle;
+    };
+    const castVisionCone = (ex, ey, angle, maxRangeTiles, halfAngleRad, stepDeg = 3) => {
+        const pts = [];
+        const maxR = Math.max(1, maxRangeTiles) * CELL_SIZE; // in pixels
+        const start = angle - halfAngleRad;
+        const end = angle + halfAngleRad;
+        for (let a = start; a <= end + 1e-6; a += (stepDeg * Math.PI / 180)) {
+            const dx = Math.cos(a);
+            const dy = Math.sin(a);
+            // march in small increments in world units (pixels)
+            const step = Math.max(2, CELL_SIZE * 0.15);
+            let dist = 0;
+            let hitX = ex, hitY = ey;
+            while (dist <= maxR) {
+                const sx = ex + dx * dist;
+                const sy = ey + dy * dist;
+                const gx = Math.floor(sx / CELL_SIZE);
+                const gy = Math.floor(sy / CELL_SIZE);
+                if (gx < 0 || gx >= MAZE_WIDTH || gy < 0 || gy >= MAZE_HEIGHT) { hitX = sx; hitY = sy; break; }
+                if (gameState.maze[gy][gx] === CELL.WALL) { break; }
+                hitX = sx; hitY = sy;
+                dist += step;
+            }
+            pts.push({ x: hitX, y: hitY });
+        }
+        return pts;
+    };
     for (const e of gameState.enemies) {
         const cx = e.fx * CELL_SIZE;
         const cy = e.fy * CELL_SIZE;
@@ -184,100 +244,71 @@ function drawEnemies(currentTime) {
                     ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
                 }
             }
-            // Vision indicator: small arrow normally, large flashing cone when enraged
-            let adx = 0, ady = 0;
-            if (e.target) { adx = (e.target.x - e.x); ady = (e.target.y - e.y); }
-            else if (e.roamDir) { adx = e.roamDir.dx; ady = e.roamDir.dy; }
-            if (Math.abs(adx) > Math.abs(ady)) { adx = adx > 0 ? 1 : -1; ady = 0; }
-            else if (Math.abs(ady) > Math.abs(adx)) { ady = ady > 0 ? 1 : -1; adx = 0; }
-            if (adx !== 0 || ady !== 0) {
-                const ang = Math.atan2(ady, adx);
+            // Smooth facing angle from movement intent
+            const ang = updateFacing(e);
 
-                if (enraged) {
-                    // Large flashing red vision cone for rage mode
-                    const visionRange = (e.detectRange || 7) * CELL_SIZE;
-                    const coneAngle = Math.PI / 3; // 60 degree cone
-                    const flashOn = Math.floor(currentTime / 200) % 2 === 0; // Flash every 200ms
-
+            // Vision/FOV: only draw in rage mode, using raycasted cone that respects walls
+            if (enraged) {
+                const rangeTiles = (e.detectRange || 7);
+                const coneAngle = Math.PI * 2 / 3; // 120° total
+                const half = coneAngle / 2;
+                const rays = castVisionCone(cx, cy, ang, rangeTiles, half, 3);
+                if (rays.length >= 2) {
                     ctx.save();
-                    ctx.translate(cx, cy);
-                    ctx.rotate(ang);
-
-                    // Flashing semi-transparent red cone
-                    const gradient = ctx.createLinearGradient(0, 0, visionRange, 0);
-                    const alpha = flashOn ? 0.3 : 0.15;
-                    gradient.addColorStop(0, `rgba(255, 68, 68, ${alpha})`);
-                    gradient.addColorStop(1, 'rgba(255, 68, 68, 0)');
-                    ctx.fillStyle = gradient;
+                    ctx.globalAlpha = 0.28;
+                    ctx.fillStyle = 'rgba(255, 68, 68, 0.28)';
                     ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.arc(0, 0, visionRange, -coneAngle / 2, coneAngle / 2);
+                    ctx.moveTo(cx, cy);
+                    for (const p of rays) ctx.lineTo(p.x, p.y);
                     ctx.closePath();
                     ctx.fill();
-
-                    // Flashing cone outline edges
-                    ctx.strokeStyle = flashOn ? 'rgba(255, 68, 68, 0.6)' : 'rgba(255, 68, 68, 0.3)';
-                    ctx.lineWidth = flashOn ? 3 : 2;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo(visionRange * Math.cos(-coneAngle / 2), visionRange * Math.sin(-coneAngle / 2));
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo(visionRange * Math.cos(coneAngle / 2), visionRange * Math.sin(coneAngle / 2));
-                    ctx.stroke();
-
-                    ctx.restore();
-                } else {
-                    // Small pulsating arrow indicator for normal mode
-                    const baseArrowLength = CELL_SIZE * 0.75; // Half the previous size
-                    // Pulsate outward using a sine wave (0.8 to 1.2 multiplier)
-                    const pulse = 1.0 + Math.sin(currentTime / 300) * 0.2;
-                    const arrowLength = baseArrowLength * pulse;
-
-                    ctx.save();
-                    ctx.translate(cx, cy);
-                    ctx.rotate(ang);
-
-                    // Draw a simple directional arrow line with pulsating opacity
-                    const opacity = 0.5 + Math.sin(currentTime / 300) * 0.15;
-                    ctx.strokeStyle = `rgba(50, 205, 50, ${opacity})`;
+                    // Soft edges
+                    ctx.globalAlpha = 0.45;
+                    ctx.strokeStyle = 'rgba(255, 68, 68, 0.35)';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.moveTo(r + 2, 0);
-                    ctx.lineTo(r + arrowLength, 0);
+                    for (let i = 0; i < rays.length; i += Math.max(1, Math.floor(rays.length / 16))) {
+                        const p = rays[i];
+                        ctx.moveTo(cx, cy);
+                        ctx.lineTo(p.x, p.y);
+                    }
                     ctx.stroke();
-
-                    // Arrow head (also pulsates)
-                    ctx.fillStyle = `rgba(50, 205, 50, ${opacity + 0.1})`;
-                    ctx.beginPath();
-                    ctx.moveTo(r + arrowLength, 0);
-                    ctx.lineTo(r + arrowLength - 6, -4);
-                    ctx.lineTo(r + arrowLength - 6, 4);
-                    ctx.closePath();
-                    ctx.fill();
-
                     ctx.restore();
                 }
             }
 
             ctx.fillStyle = baseCol;
             ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-            // Directional arrow to show facing
-            if (adx !== 0 || ady !== 0) {
-                const ang = Math.atan2(ady, adx);
+            // Directional arrow to show facing (ROAM-only) — embedded in the green body
+            if (!enraged) {
                 ctx.save();
                 ctx.translate(cx, cy);
                 ctx.rotate(ang);
-                ctx.fillStyle = '#0b3';
+                // Arrow style: black head inset into the circle with a short stem
+                const headLen = Math.max(6, r * 0.5);        // length of the head along facing
+                const headWidth = Math.max(6, r * 0.45);     // width of the head base
+                const stemLen = Math.max(6, r * 0.35);       // stem length inside the body
+                const stemWidth = Math.max(3, r * 0.18);
+
+                // Tip sits slightly inside the rim
+                const tip = r - 3;
+                const base = tip - headLen;
+
+                ctx.fillStyle = '#111';
                 ctx.beginPath();
-                ctx.moveTo(r - 2, 0);
-                ctx.lineTo(r - 10, -5);
-                ctx.lineTo(r - 10, 5);
+                // Triangle head (centered on forward axis)
+                ctx.moveTo(tip, 0);
+                ctx.lineTo(base, -headWidth * 0.5);
+                ctx.lineTo(base, headWidth * 0.5);
                 ctx.closePath();
                 ctx.fill();
+
+                // Stem as a small rectangle extending from head base inward
+                ctx.fillRect(base - stemLen, -stemWidth * 0.5, stemLen, stemWidth);
+
                 ctx.restore();
             }
-            // small eye
-            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy - 3, 2, 0, Math.PI * 2); ctx.fill();
+            // Removed the central eye dot to avoid interfering with the on-body arrow
             // rage aura
             if (enraged) {
                 ctx.save(); ctx.strokeStyle = 'rgba(255,0,0,0.35)'; ctx.lineWidth = 3;
@@ -368,6 +399,39 @@ function drawEnemies(currentTime) {
             ctx.beginPath();
             ctx.arc(cx + 3, cy - 2, 2, 0, Math.PI * 2);
             ctx.fill();
+
+            // Smooth facing and rage-only arrow + FOV cone
+            const ang = updateFacing(e);
+            if (enraged) {
+                // Vision cone (respect walls)
+                const rangeTiles = 6; // batter awareness
+                const coneAngle = Math.PI * 2 / 3; // 120°
+                const half = coneAngle / 2;
+                const rays = castVisionCone(cx, cy, ang, rangeTiles, half, 3);
+                if (rays.length >= 2) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.25;
+                    ctx.fillStyle = 'rgba(255, 68, 68, 0.25)';
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    for (const p of rays) ctx.lineTo(p.x, p.y);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+                // Direction arrow
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(ang);
+                ctx.fillStyle = '#b30b0b';
+                ctx.beginPath();
+                ctx.moveTo(r - 2, 0);
+                ctx.lineTo(r - 10, -5);
+                ctx.lineTo(r - 10, 5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
         } else {
             const isTelegraph = e.telegraphUntil && currentTime < e.telegraphUntil;
             ctx.fillStyle = isTelegraph ? '#ffa500' : '#8a2be2';
@@ -540,25 +604,36 @@ function drawPlayer() {
     const centerY = gameState.player.y * CELL_SIZE + CELL_SIZE / 2;
     const radius = CELL_SIZE / 2 - 2;
 
-    // Change player color when stunned
-    let playerColor = gameState.isSprinting ? '#00ffff' : '#4169E1';
+    // Base color (sprinting = cyan, else royal blue). During stun, fade brightness back to full by stun end.
+    const baseRGB = gameState.isSprinting ? { r: 0, g: 255, b: 255 } : { r: 65, g: 105, b: 225 };
+    let r = baseRGB.r, g = baseRGB.g, b = baseRGB.b;
     if (gameState.playerStunned) {
-        playerColor = '#666666'; // gray when stunned
+        const start = gameState.playerStunStart || (performance.now() - 1);
+        const total = Math.max(1, (gameState.playerStunUntil || (start + 4000)) - start);
+        const now = performance.now();
+        const t = Math.min(1, Math.max(0, (now - start) / total));
+        const f = 0.6 + 0.4 * t; // 60% brightness at start -> 100% at end
+        r = Math.round(baseRGB.r * f);
+        g = Math.round(baseRGB.g * f);
+        b = Math.round(baseRGB.b * f);
     }
 
-    ctx.fillStyle = playerColor;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw stun effect - electric chains
+    // Draw stun effect - electric chains; the number of chains equals remaining seconds (4..1)
     if (gameState.playerStunned) {
         const now = performance.now();
+        const remainMs = Math.max(0, (gameState.playerStunUntil || now) - now);
+        const chains = Math.max(1, Math.min(4, Math.ceil(remainMs / 1000)));
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,0,0.7)';
         ctx.lineWidth = 2;
-        for (let i = 0; i < 4; i++) {
-            const angle = (i * Math.PI / 2) + (now / 200);
+        for (let i = 0; i < chains; i++) {
+            // Distribute evenly around the circle; keep a subtle spin for life
+            const angle = (i * (2 * Math.PI / chains)) + (now / 200);
             const x1 = centerX + Math.cos(angle) * radius;
             const y1 = centerY + Math.sin(angle) * radius;
             const x2 = centerX + Math.cos(angle) * (radius + 8);
@@ -579,14 +654,21 @@ function drawPlayer() {
         ctx.stroke();
     }
 
-    // Draw blocking shield when active
+    // Draw blocking shield when active (with aura/glow)
     if (gameState.blockActive) {
         const r = Math.max(CELL_SIZE, radius + 10);
+        // Aura
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = 'rgba(255, 240, 120, 0.25)';
+        ctx.beginPath(); ctx.arc(centerX, centerY, r + 6, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        // Directional shield wedge
         ctx.save();
         ctx.translate(centerX, centerY);
         ctx.rotate(gameState.blockAngle);
-        ctx.fillStyle = 'rgba(255, 213, 0, 0.25)';
-        ctx.strokeStyle = 'rgba(255, 213, 0, 0.9)';
+        ctx.fillStyle = 'rgba(255, 213, 0, 0.28)';
+        ctx.strokeStyle = 'rgba(255, 213, 0, 0.95)';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -646,6 +728,36 @@ function drawPlayer() {
         }
         ctx.restore();
     }
+}
+
+// Shield particles
+function drawShieldParticles(currentTime) {
+    const arr = gameState.shieldParticles || [];
+    if (!arr.length) return;
+    const dtScale = 1 / 1000;
+    const keep = [];
+    for (const p of arr) {
+        const age = currentTime - p.born;
+        if (age > p.life) continue;
+        // integrate
+        const dt = Math.min(32, Math.max(0, currentTime - (p._last || currentTime))) * dtScale;
+        p._last = currentTime;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        // fade
+        const t = Math.max(0, 1 - (age / p.life));
+        const px = p.x * CELL_SIZE;
+        const py = p.y * CELL_SIZE;
+        ctx.save();
+        ctx.globalAlpha = t;
+        ctx.fillStyle = p.col || 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(px, py, 2 + (1 - t) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        keep.push(p);
+    }
+    gameState.shieldParticles = keep;
 }
 
 function drawUI() {
