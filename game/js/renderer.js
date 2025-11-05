@@ -220,10 +220,12 @@ function drawEnemies(currentTime) {
                 // Red X overlay when knocked out
                 ctx.strokeStyle = '#ff4444';
                 ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r); ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+                ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+                ctx.stroke();
             }
         } else if (e.type === 'seeker') {
-            // Seeker visuals: green normally. In rage, flash and fade toward green as timer runs out.
             const enraged = e.state === 'rage';
             let baseCol = '#32cd32'; // lime green
             if (enraged) {
@@ -371,7 +373,7 @@ function drawEnemies(currentTime) {
                     ctx.restore();
                 }
             }
-        } else if (e.type === 'batter') {
+    } else if (e.type === 'batter') {
             // Batter visuals: orange, pulsates red/white when enraged
             const enraged = e.state === 'rage';
             let baseCol = '#FF8C00'; // dark orange
@@ -430,6 +432,134 @@ function drawEnemies(currentTime) {
                 ctx.lineTo(r - 10, 5);
                 ctx.closePath();
                 ctx.fill();
+                ctx.restore();
+            }
+        } else if (e.type === 'mortar') {
+            // Mortar visuals: teal body; gray when disabled; light blue tint when frozen
+            const isDisabledVisual = (e.state === 'disabled') || !!e._disabledOverlay; // overlay shows while ability finishes
+            // Fade from gray (#555) to teal (#2bb3c0) as disabled timer approaches end
+            let baseCol = '#2bb3c0';
+            if (isDisabledVisual) {
+                const gray = { r: 85, g: 85, b: 85 };
+                const teal = { r: 43, g: 179, b: 192 };
+                const start = e._disabledStartAt || (currentTime - 1);
+                const total = Math.max(1, (e.disabledUntil || (start + 30000)) - start);
+                const remain = Math.max(0, (e.disabledUntil || (start + 30000)) - currentTime);
+                const t = 1 - Math.min(1, remain / total); // 0=>gray, 1=>teal
+                const rr = Math.round(gray.r + (teal.r - gray.r) * t);
+                const gg = Math.round(gray.g + (teal.g - gray.g) * t);
+                const bb = Math.round(gray.b + (teal.b - gray.b) * t);
+                baseCol = `rgb(${rr},${gg},${bb})`;
+            }
+            // body
+            ctx.fillStyle = baseCol;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            // Aim-phase telegraph: flash red/blue on body and draw growing area glow on target
+            if (e.state === 'aim') {
+                // Flash body overlay
+                const blink = Math.floor(currentTime / 120) % 2 === 0;
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = blink ? '#ff4444' : '#3aa3ff';
+                ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, Math.PI * 2); ctx.fill();
+                // Pulsing ring
+                ctx.globalAlpha = 0.6;
+                ctx.strokeStyle = blink ? 'rgba(255,68,68,0.85)' : 'rgba(58,163,255,0.85)';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(cx, cy, r + 5 + (blink ? 1 : -1), 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+
+                // Impact area glow for impending explosions (5x5 Chebyshev radius 2)
+                if (e.aimTarget && e.aimUntil) {
+                    const remain = Math.max(0, e.aimUntil - currentTime);
+                    const total = 2000; // aim duration from logic
+                    const t = 1 - Math.min(1, remain / total);
+                    const alpha = 0.12 + 0.45 * Math.pow(t, 1.4);
+                    const cxg = e.aimTarget.x, cyg = e.aimTarget.y;
+                    ctx.save();
+                    for (let yy = cyg - 2; yy <= cyg + 2; yy++) {
+                        for (let xx = cxg - 2; xx <= cxg + 2; xx++) {
+                            if (xx <= 0 || xx >= MAZE_WIDTH - 1 || yy <= 0 || yy >= MAZE_HEIGHT - 1) continue;
+                            if (Math.max(Math.abs(xx - cxg), Math.abs(yy - cyg)) <= 2) {
+                                ctx.fillStyle = `rgba(255, 64, 64, ${alpha.toFixed(3)})`;
+                                ctx.fillRect(xx * CELL_SIZE, yy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                            }
+                        }
+                    }
+                    ctx.restore();
+                }
+                // Second-shot glow while pending
+                if (e._didFirstExplosion && e._secondTarget && e._secondAt && currentTime < e._secondAt) {
+                    const remain2 = Math.max(0, e._secondAt - currentTime);
+                    const total2 = Math.max(1, e._secondLeadTime || 350);
+                    const t2 = 1 - Math.min(1, remain2 / total2);
+                    const alpha2 = 0.12 + 0.55 * Math.pow(t2, 1.2);
+                    const cxg2 = e._secondTarget.x, cyg2 = e._secondTarget.y;
+                    ctx.save();
+                    for (let yy = cyg2 - 2; yy <= cyg2 + 2; yy++) {
+                        for (let xx = cxg2 - 2; xx <= cxg2 + 2; xx++) {
+                            if (xx <= 0 || xx >= MAZE_WIDTH - 1 || yy <= 0 || yy >= MAZE_HEIGHT - 1) continue;
+                            if (Math.max(Math.abs(xx - cxg2), Math.abs(yy - cyg2)) <= 2) {
+                                ctx.fillStyle = `rgba(255, 64, 64, ${alpha2.toFixed(3)})`;
+                                ctx.fillRect(xx * CELL_SIZE, yy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                            }
+                        }
+                    }
+                    ctx.restore();
+                }
+
+                // aiming stance shadow / crosshairs
+                // Crosshair for the first aimed shot (if present)
+                if (e.aimTarget) {
+                    const gx = e.aimTarget.x * CELL_SIZE;
+                    const gy = e.aimTarget.y * CELL_SIZE;
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,80,80,0.9)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(gx + 4, gy + 4, CELL_SIZE - 8, CELL_SIZE - 8);
+                    ctx.beginPath();
+                    ctx.moveTo(gx + CELL_SIZE/2, gy + 6); ctx.lineTo(gx + CELL_SIZE/2, gy + CELL_SIZE - 6);
+                    ctx.moveTo(gx + 6, gy + CELL_SIZE/2); ctx.lineTo(gx + CELL_SIZE - 6, gy + CELL_SIZE/2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                // Crosshair for the pending second shot (between first explosion and resolve)
+                if (e._didFirstExplosion && e._secondTarget && e._secondAt && currentTime < e._secondAt) {
+                    const gx2 = e._secondTarget.x * CELL_SIZE;
+                    const gy2 = e._secondTarget.y * CELL_SIZE;
+                    ctx.save();
+                    // Slightly different tint to differentiate the follow-up shot
+                    ctx.strokeStyle = 'rgba(255,140,0,0.95)'; // orange
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(gx2 + 4, gy2 + 4, CELL_SIZE - 8, CELL_SIZE - 8);
+                    ctx.beginPath();
+                    ctx.moveTo(gx2 + CELL_SIZE/2, gy2 + 6); ctx.lineTo(gx2 + CELL_SIZE/2, gy2 + CELL_SIZE - 6);
+                    ctx.moveTo(gx2 + 6, gy2 + CELL_SIZE/2); ctx.lineTo(gx2 + CELL_SIZE - 6, gy2 + CELL_SIZE/2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+            // explosion shockwave (brief)
+            if (e._lastExplosionAt && currentTime - e._lastExplosionAt < 220 && e._lastExplosionCenter) {
+                const t = (currentTime - e._lastExplosionAt) / 220;
+                const alpha = 1 - t;
+                const c = e._lastExplosionCenter;
+                const cx2 = (c.x + 0.5) * CELL_SIZE;
+                const cy2 = (c.y + 0.5) * CELL_SIZE;
+                ctx.save();
+                ctx.strokeStyle = `rgba(255, 240, 220, ${alpha.toFixed(3)})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(cx2, cy2, CELL_SIZE * (1 + 2 * t), 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+            // Frozen overlay
+            if (e._frozenUntil && currentTime < e._frozenUntil) {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = '#9be7ff';
+                ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.fill();
                 ctx.restore();
             }
         } else {

@@ -2,7 +2,7 @@
 
 import { generateMaze, CELL } from './maze.js';
 import { getDefaultLevelConfig, isGodMode } from './config.js';
-import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter } from './audio.js';
+import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct } from './audio.js';
 
 export const MAZE_WIDTH = 30;
 export const MAZE_HEIGHT = 30;
@@ -57,6 +57,8 @@ export const ENEMY_THAW_TIME = 2000;
 // Teleport pad timings (ms)
 export const TELEPORT_CHARGE_TIME = 1000;
 export const TELEPORT_COOLDOWN_TIME = 1800;
+// Enemy-controlled teleports (Mortar) use a longer cooldown to avoid spam
+export const ENEMY_TELEPORT_COOLDOWN_TIME = 15000;
 
 // Skill check sequence configuration
 export const SKILL_CHECKS = [
@@ -81,11 +83,11 @@ export function initGame() {
     let genCount = 3;
     if (gameState.mode === 'endless') {
         // Build a config from endless settings; use a fresh random seed each run
-        const cfg = gameState.endlessConfig || { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
+    const cfg = gameState.endlessConfig || { chaser: false, pig: false, seeker: false, batter: false, mortar: false, difficulty: 'normal', generatorCount: 3 };
         gameState.difficulty = cfg.difficulty === 'super' ? 'super' : 'normal';
         genCount = cfg.generatorCount === 5 ? 5 : 3;
         seed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
-        gameState.levelConfig = { generatorCount: genCount, enemyEnabled: !!cfg.chaser, flyingPig: !!cfg.pig, seeker: !!cfg.seeker, batter: !!cfg.batter, seed };
+    gameState.levelConfig = { generatorCount: genCount, enemyEnabled: !!cfg.chaser, flyingPig: !!cfg.pig, seeker: !!cfg.seeker, batter: !!cfg.batter, mortar: !!cfg.mortar, seed };
     } else {
         if (!gameState.currentLevel) gameState.currentLevel = 1;
         gameState.levelConfig = getDefaultLevelConfig(gameState.currentLevel);
@@ -150,6 +152,9 @@ export function initGame() {
     if (gameState.levelConfig.batter) {
         spawnBatter();
     }
+    if (gameState.levelConfig.mortar) {
+        spawnMortar();
+    }
     // Player stun state
     gameState.playerStunned = false;
     gameState.playerStunUntil = 0;
@@ -159,6 +164,14 @@ export function initGame() {
 
 export function triggerEnemiesThaw(currentTime) {
     gameState.enemiesThawUntil = currentTime + ENEMY_THAW_TIME;
+}
+
+// Utility: clamp to maze interior
+function clampToMaze(x, y) {
+    return {
+        x: Math.max(1, Math.min(MAZE_WIDTH - 2, x)),
+        y: Math.max(1, Math.min(MAZE_HEIGHT - 2, y))
+    };
 }
 
 // --- Zap Trap placement ---
@@ -951,6 +964,57 @@ export function spawnBatter() {
     gameState.enemies.push(b);
 }
 
+// --- Mortar AI ---
+export function spawnMortar() {
+    if (!gameState.maze) return;
+    // Spawn away from player: pick far corner
+    const corners = [
+        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 },
+        { x: MAZE_WIDTH - 3, y: 2 },
+        { x: 2, y: MAZE_HEIGHT - 3 }
+    ];
+    const pick = corners[Math.floor(Math.random() * corners.length)];
+    let found = null;
+    for (let r = 0; r < 14; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                const x = Math.max(1, Math.min(MAZE_WIDTH - 2, pick.x + dx));
+                const y = Math.max(1, Math.min(MAZE_HEIGHT - 2, pick.y + dy));
+                if (isPassableForEnemy(gameState.maze[y][x])) { found = { x, y }; break; }
+            }
+            if (found) break;
+        }
+        if (found) break;
+    }
+    if (!found) return;
+    const m = {
+        type: 'mortar',
+        mobility: 'ground',
+        isGrounded: true,
+        x: found.x, y: found.y,
+        fx: found.x + 0.5, fy: found.y + 0.5,
+        state: 'roam', // 'roam' | 'aim' | 'cooldown' | 'flee' | 'disabled'
+        speedRoam: 2.6, // ~60% of seeker roam
+        speedFlee: 3.9, // 150% of roam
+        lastUpdateAt: 0,
+        target: null,
+        lastPathAt: 0,
+        pathInterval: 200,
+        roamGoal: null,
+        _roamGoalSetAt: 0,
+        nextStopAt: performance.now() + (5000 + Math.random() * 5000),
+        aimTarget: null,
+        aimUntil: 0,
+        cooldownUntil: 0,
+        fleeUntil: 0,
+        disabledUntil: 0,
+        _lastExplosionAt: 0,
+        _lastExplosionCenter: null,
+        _frozenUntil: 0
+    };
+    gameState.enemies.push(m);
+}
+
 function updateFlyingPig(e, currentTime, px, py) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
@@ -1096,7 +1160,7 @@ export function updateEnemies(currentTime) {
     if (!gameState.maze || gameState.gameStatus !== 'playing') return;
     if (!gameState.enemies || gameState.enemies.length === 0) return;
 
-    // Do NOT globally freeze during generator UI; we'll skip collision hits while UI is open
+    // During generator UI: ONLY Mortar and Batter remain active. Others freeze completely.
 
     // Freeze effect: pause enemies
     if (currentTime < gameState.enemiesFrozenUntil) return;
@@ -1173,8 +1237,18 @@ export function updateEnemies(currentTime) {
     };
 
     for (const e of gameState.enemies) {
+        // Freeze non-allowed AIs while generator UI is open
+        if (gameState.isGeneratorUIOpen && !(e.type === 'mortar' || e.type === 'batter')) {
+            e.lastUpdateAt = currentTime;
+            continue;
+        }
         if (e.type === 'flying_pig') {
             updateFlyingPig(e, currentTime, px, py);
+            continue;
+        }
+        // Skip per-enemy freeze (explosion freeze) but allow renderer to show them
+        if (e._frozenUntil && currentTime < e._frozenUntil) {
+            e.lastUpdateAt = currentTime;
             continue;
         }
         // During a coordinated stun, force other enemies to aggro toward player (unless zapped)
@@ -1197,7 +1271,7 @@ export function updateEnemies(currentTime) {
                 continue;
             }
         }
-        if (e.type === 'batter') {
+    if (e.type === 'batter') {
             // Batter behavior: roaming, proximity detection, rage chase, and stun on contact
             const cx = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
             const cy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
@@ -1481,6 +1555,324 @@ export function updateEnemies(currentTime) {
             }
             continue;
         }
+    if (e.type === 'mortar') {
+            // Mortar behavior
+            const cx = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
+            const cy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
+            const last = e.lastUpdateAt || currentTime;
+            const dt = Math.max(0, (currentTime - last) / 1000);
+
+            // Sensing uses path distance (cannot sense through walls)
+            const distToPlayer = distField[cy][cx];
+            const sensesPlayer = Number.isFinite(distToPlayer) && distToPlayer <= 8;
+            // Flee trigger if within 8 tiles via reachable path and not busy
+            if ((e.state === 'roam' || e.state === 'flee') && sensesPlayer) {
+                e.state = 'flee';
+                e.fleeUntil = currentTime + 3000; // refresh while close
+            } else if (e.state === 'flee' && (!sensesPlayer) && currentTime >= e.fleeUntil) {
+                e.state = 'roam';
+                e.target = null; e.roamGoal = null;
+            }
+
+            if (e.state === 'disabled') {
+                // Permanently or temporarily disabled
+                if (e.disabledUntil && currentTime >= e.disabledUntil) {
+                    e.state = 'roam';
+                    e.nextStopAt = currentTime + (4000 + Math.random() * 4000);
+                }
+                e.lastUpdateAt = currentTime;
+                // Tackle/self-destruct already handled via state entry
+                continue;
+            }
+
+            if (e.state === 'cooldown') {
+                if (currentTime >= e.cooldownUntil) {
+                    e.state = 'roam';
+                    e.target = null; e.roamGoal = null;
+                    e.nextStopAt = currentTime + (5000 + Math.random() * 5000);
+                }
+                e.lastUpdateAt = currentTime;
+                continue;
+            }
+
+            if (e.state === 'aim') {
+                // Two-phase aim/shot handling. First resolves at aimUntil; optional second resolves at _secondAt.
+                if (!e._didFirstExplosion && currentTime >= e.aimUntil) {
+                    // First explosion at aimTarget
+                    const center = e.aimTarget || { x: cx, y: cy };
+                    const radius = 2; // 5x5 square => Chebyshev radius 2
+                    try { playMortarExplosion(); } catch {}
+                    gameState.screenShakeMag = 5;
+                    gameState.screenShakeUntil = currentTime + 180;
+                    e._lastExplosionAt = currentTime;
+                    e._lastExplosionCenter = { ...center };
+
+                    // Player damage and stun (5s)
+                    if (Math.max(Math.abs(center.x - px), Math.abs(center.y - py)) <= radius) {
+                        if (!gameState.godMode && gameState.gameStatus === 'playing') {
+                            gameState.lives = Math.max(0, (gameState.lives || 0) - 1);
+                            gameState.playerStunned = true;
+                            gameState.playerStunUntil = currentTime + 5000;
+                            setStatusMessage('Mortar blast! STUNNED for 5s.');
+                            if (gameState.lives <= 0) {
+                                gameState.deathCause = 'mortar_explosion';
+                                gameState.gameStatus = 'lost';
+                            }
+                        }
+                    }
+                    // Freeze other enemies in radius (10s)
+                    for (const o of gameState.enemies) {
+                        if (o === e) continue;
+                        const ox = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(o.fx)));
+                        const oy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(o.fy)));
+                        if (Math.max(Math.abs(center.x - ox), Math.abs(center.y - oy)) <= radius) {
+                            o._frozenUntil = currentTime + 10000;
+                        }
+                    }
+                    // Self-hit: if mortar within radius, perma-disable
+                    if (Math.max(Math.abs(center.x - cx), Math.abs(center.y - cy)) <= radius) {
+                        e.state = 'disabled';
+                        e._disabledOverlay = false;
+                        e.disabledUntil = 0; // remainder of round
+                        try { playMortarSelfDestruct(); } catch {}
+                        // Clear aim state
+                        e.aimTarget = null; e.aimUntil = 0;
+                        e._didFirstExplosion = false; e._secondAt = 0; e._secondTarget = null;
+                    } else if (e.aimBursts === 2) {
+                        // Schedule a second shot just outside the first radius, toward player's direction
+                        const pvx = px - center.x;
+                        const pvy = py - center.y;
+                        let dir = { dx: 1, dy: 0 };
+                        if (Math.abs(pvx) > Math.abs(pvy)) dir = { dx: pvx > 0 ? 1 : -1, dy: 0 };
+                        else if (Math.abs(pvy) > Math.abs(pvx)) dir = { dx: 0, dy: pvy > 0 ? 1 : -1 };
+                        const cand = { x: center.x + dir.dx * 3, y: center.y + dir.dy * 3 };
+                        const clamped = clampToMaze(cand.x, cand.y);
+                        // Ensure passable; if not, try orthogonal fallbacks
+                        let sec = clamped;
+                        if (!isPassableForEnemy(gameState.maze[sec.y][sec.x])) {
+                            const alt1 = clampToMaze(center.x + 3, center.y);
+                            const alt2 = clampToMaze(center.x - 3, center.y);
+                            const alt3 = clampToMaze(center.x, center.y + 3);
+                            const alt4 = clampToMaze(center.x, center.y - 3);
+                            const alts = [alt1, alt2, alt3, alt4].filter(a => isPassableForEnemy(gameState.maze[a.y][a.x]));
+                            if (alts.length) sec = alts[Math.floor(Math.random() * alts.length)];
+                        }
+                        e._secondTarget = sec;
+                        e._secondLeadTime = 350;
+                        e._secondAt = currentTime + e._secondLeadTime;
+                        e._didFirstExplosion = true;
+                        // Keep state in aim; clear the initial aim lock
+                        e.aimTarget = null; e.aimUntil = 0;
+                    } else {
+                        // Single-shot path: transition either to queued disabled or cooldown
+                        if (e._disabledOverlay) {
+                            e.state = 'disabled';
+                            // keep disabledUntil as set when queued
+                        } else {
+                            e.state = 'cooldown';
+                            e.cooldownUntil = currentTime + 1500;
+                        }
+                        e.aimTarget = null; e.aimUntil = 0;
+                        e._didFirstExplosion = false;
+                        e._secondAt = 0; e._secondTarget = null;
+                    }
+                } else if (e._didFirstExplosion && e._secondAt && currentTime >= e._secondAt) {
+                    // Resolve second shot
+                    const center = e._secondTarget;
+                    const radius = 2;
+                    try { playMortarExplosion(); } catch {}
+                    gameState.screenShakeMag = 5;
+                    gameState.screenShakeUntil = currentTime + 180;
+                    e._lastExplosionAt = currentTime;
+                    e._lastExplosionCenter = { ...center };
+                    // Player damage/stun
+                    if (Math.max(Math.abs(center.x - px), Math.abs(center.y - py)) <= radius) {
+                        if (!gameState.godMode && gameState.gameStatus === 'playing') {
+                            gameState.lives = Math.max(0, (gameState.lives || 0) - 1);
+                            gameState.playerStunned = true;
+                            gameState.playerStunUntil = currentTime + 5000;
+                            setStatusMessage('Mortar blast! STUNNED for 5s.');
+                            if (gameState.lives <= 0) { gameState.deathCause = 'mortar_explosion'; gameState.gameStatus = 'lost'; }
+                        }
+                    }
+                    // Freeze other enemies
+                    for (const o of gameState.enemies) {
+                        if (o === e) continue;
+                        const ox = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(o.fx)));
+                        const oy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(o.fy)));
+                        if (Math.max(Math.abs(center.x - ox), Math.abs(center.y - oy)) <= radius) {
+                            o._frozenUntil = currentTime + 10000;
+                        }
+                    }
+                    // Self-hit second shot
+                    if (Math.max(Math.abs(center.x - cx), Math.abs(center.y - cy)) <= radius) {
+                        e.state = 'disabled';
+                        e.disabledUntil = 0;
+                        try { playMortarSelfDestruct(); } catch {}
+                    } else {
+                        // After second shot: go disabled if queued, else cooldown
+                        if (e._disabledOverlay) {
+                            e.state = 'disabled';
+                            // keep disabledUntil
+                        } else {
+                            e.state = 'cooldown';
+                            e.cooldownUntil = currentTime + 1500;
+                        }
+                    }
+                    // Clear aim and second shot bookkeeping
+                    e.aimTarget = null; e.aimUntil = 0; e._secondAt = 0; e._secondTarget = null; e._didFirstExplosion = false;
+                }
+                e.lastUpdateAt = currentTime;
+                continue;
+            }
+
+            // Movement: ROAM or FLEE (roam like seeker/batter, but slower)
+            // Choose or refresh roamGoal
+            const needNewGoal = (!e.roamGoal) || (currentTime - (e._roamGoalSetAt || 0) > 7000) || (currentTime - (e._lastMoveAt || 0) > 1600);
+            if (e.state === 'roam' && needNewGoal) {
+                let pick = null;
+                const cx2 = cx, cy2 = cy;
+                for (let i = 0; i < 80; i++) {
+                    const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
+                    const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
+                    if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
+                    const md = Math.abs(rx - cx2) + Math.abs(ry - cy2);
+                    if (md < 6) continue; // avoid tiny goals
+                    pick = { x: rx, y: ry }; break;
+                }
+                if (pick) {
+                    e.roamGoal = pick;
+                    e._roamGoalSetAt = currentTime;
+                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+                }
+            }
+            // In flee, pick far goal from player or target a teleport pad to escape
+            if (e.state === 'flee' && (!e.roamGoal || currentTime - (e._roamGoalSetAt || 0) > 2500)) {
+                let pickedGoal = null;
+                // Prefer teleport pad whose destination is far from the player and is reachable, if available
+                if (Array.isArray(gameState.teleportPads) && gameState.teleportPads.length >= 2) {
+                    let bestPad = null;
+                    let bestScore = -Infinity;
+                    for (const pad of gameState.teleportPads) {
+                        // Respect pad cooldown; Mortar won't attempt to use cooling pads
+                        if (currentTime < (pad.cooldownUntil || 0)) continue;
+                        const distFromPad = bfsDistancesFrom(gameState.maze, pad.x, pad.y);
+                        const reach = distFromPad[cy][cx];
+                        if (!Number.isFinite(reach)) continue; // can't reach origin pad
+                        const dest = gameState.teleportPads[pad.pair];
+                        const farScore = distField[dest.y][dest.x]; // farther from player is better
+                        const score = (Number.isFinite(farScore) ? farScore : -9999) - reach * 0.1; // slight bias to nearer origin
+                        if (score > bestScore) { bestScore = score; bestPad = pad; }
+                    }
+                    if (bestPad) {
+                        pickedGoal = { x: bestPad.x, y: bestPad.y };
+                    }
+                }
+                if (!pickedGoal) {
+                    // Fallback: far random cell away from player
+                    let best = { x: cx, y: cy, score: -Infinity };
+                    for (let i = 0; i < 60; i++) {
+                        const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
+                        const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
+                        if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
+                        const d = distField[ry][rx];
+                        const score = Number.isFinite(d) ? d : -9999;
+                        if (score > best.score) best = { x: rx, y: ry, score };
+                    }
+                    pickedGoal = { x: best.x, y: best.y };
+                }
+                e.roamGoal = pickedGoal;
+                e._roamGoalSetAt = currentTime;
+                e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+            }
+
+            // Opportunistic teleport while fleeing: if standing on a pad and it's ready, use it instantly
+            if (e.state === 'flee' && Array.isArray(gameState.teleportPads) && gameState.teleportPads.length >= 2) {
+                const pad = gameState.teleportPads.find(p => p.x === cx && p.y === cy);
+                if (pad && currentTime >= (pad.cooldownUntil || 0)) {
+                    const dest = gameState.teleportPads[pad.pair];
+                    if (dest) {
+                        e.fx = dest.x + 0.5; e.fy = dest.y + 0.5; e.x = dest.x; e.y = dest.y;
+                        e.target = null; e.roamGoal = null;
+                        e._lastMoveAt = currentTime;
+                        // Put both pads on a longer enemy-driven cooldown to avoid spam
+                        pad.cooldownUntil = currentTime + ENEMY_TELEPORT_COOLDOWN_TIME;
+                        dest.cooldownUntil = currentTime + ENEMY_TELEPORT_COOLDOWN_TIME;
+                    }
+                }
+            }
+
+            // Plan immediate step toward roamGoal using BFS gradient
+            if (!e.target && e.roamGoal && e._roamDist) {
+                let here = e._roamDist[cy][cx];
+                if (!Number.isFinite(here)) {
+                    // recompute if out of bounds
+                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+                    here = e._roamDist[cy][cx];
+                }
+                let best = { x: cx, y: cy, d: here };
+                for (const s of steps) {
+                    const nx = cx + s.dx, ny = cy + s.dy;
+                    if (nx<=0||nx>=MAZE_WIDTH-1||ny<=0||ny>=MAZE_HEIGHT-1) continue;
+                    if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                    const nd = e._roamDist[ny][nx];
+                    if (nd < best.d) best = { x: nx, y: ny, d: nd };
+                }
+                if (best.x !== cx || best.y !== cy) e.target = { x: best.x, y: best.y };
+            }
+            // Move toward target if any
+            if (e.target) {
+                const gx = e.target.x + 0.5, gy = e.target.y + 0.5;
+                const dx = gx - e.fx, dy = gy - e.fy;
+                const dist = Math.hypot(dx, dy);
+                const speed = (e.state === 'flee') ? e.speedFlee : e.speedRoam;
+                const step = speed * dt * thawMult;
+                if (dist <= step || dist < 0.0001) {
+                    e.fx = gx; e.fy = gy; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                    e._lastMoveAt = currentTime;
+                } else {
+                    e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                    const moved = Math.hypot(e.fx - (e._lastPos?.x || 0), e.fy - (e._lastPos?.y || 0));
+                    if (moved > 0.08) { e._lastMoveAt = currentTime; e._lastPos = { x: e.fx, y: e.fy }; }
+                }
+            }
+
+            // Random stop to aim (5–10s cadence)
+            if (e.state === 'roam' && currentTime >= (e.nextStopAt || 0)) {
+                e.state = 'aim';
+                e.aimTarget = { x: px, y: py }; // lock onto current tile
+                e.aimUntil = currentTime + 2000; // aim+travel 2s total
+                e._didFirstExplosion = false;
+                e._secondAt = 0; e._secondTarget = null;
+                e.aimBursts = (completed >= 2) ? 2 : 1;
+                try { playMortarWarning(); } catch {}
+                try { playMortarFire(); } catch {}
+            }
+
+            // Tackle: if player collides with Mortar, disable for 30s; if aiming, queue the disable but let action finish
+            const pdx = (px + 0.5) - e.fx;
+            const pdy = (py + 0.5) - e.fy;
+            if (Math.hypot(pdx, pdy) < 0.5) {
+                if (e.state === 'aim') {
+                    // Queue disable overlay and timer, but keep aim flow running
+                    if (!e._disabledOverlay) {
+                        e._disabledOverlay = true;
+                        e._disabledStartAt = currentTime;
+                        e.disabledUntil = currentTime + 30000;
+                        setStatusMessage('Mortar disabled for 30s!');
+                    }
+                } else {
+                    e.state = 'disabled';
+                    e._disabledOverlay = false;
+                    e._disabledStartAt = currentTime;
+                    e.disabledUntil = currentTime + 30000;
+                    setStatusMessage('Mortar disabled for 30s!');
+                }
+            }
+
+            e.lastUpdateAt = currentTime;
+            continue;
+        }
         if (e.type === 'seeker') {
             // Seeker behavior: roaming with LOS-based rage
             const cx = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(e.fx)));
@@ -1689,7 +2081,6 @@ export function updateEnemies(currentTime) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
                     const dist = Math.hypot(dx, dy);
-                    // Apply slow if active
                     let speedRage = e.speedRage;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
                     const step = speedRage * dt * localThaw;
@@ -1864,8 +2255,8 @@ export function updateEnemies(currentTime) {
         if (pDist < 0.5 && !gameState.isGeneratorUIOpen) { gameState._lastHitType = 'chaser'; handleEnemyHit(currentTime); }
     }
 
-    // Update projectiles (e.g., Flying_Pig half-arc)
-    if (gameState.projectiles && gameState.projectiles.length) {
+    // Update projectiles (e.g., Flying_Pig half-arc) — frozen during generator UI
+    if (!gameState.isGeneratorUIOpen && gameState.projectiles && gameState.projectiles.length) {
         const now = currentTime;
         for (const p of gameState.projectiles) {
             if (p.resolved) continue;

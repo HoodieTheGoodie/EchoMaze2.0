@@ -162,3 +162,24 @@ export function playBatterFlee() {
   // Light quick chirp for fleeing pitter-patter; can be played periodically
   playTone({ freq: 780, duration: 0.04, type: 'square', gain: 0.04, attack: 0.001, release: 0.03 });
 }
+
+// --- Mortar cues ---
+export function playMortarWarning() {
+  // Beep-beep lock tone
+  playTone({ freq: 740, duration: 0.05, type: 'triangle', gain: 0.06 });
+  setTimeout(() => playTone({ freq: 740, duration: 0.05, type: 'triangle', gain: 0.06 }), 200);
+}
+export function playMortarFire() {
+  // Low thunk launch
+  playTone({ freq: 220, duration: 0.08, type: 'sawtooth', gain: 0.07, attack: 0.002, release: 0.06 });
+}
+export function playMortarExplosion() {
+  // Heavy explosion: layered tones
+  playTone({ freq: 160, duration: 0.12, type: 'square', gain: 0.09, attack: 0.001, release: 0.08 });
+  setTimeout(() => playTone({ freq: 90, duration: 0.14, type: 'sine', gain: 0.07 }), 60);
+}
+export function playMortarSelfDestruct() {
+  // Distorted, lower pitched boom for self-hit
+  playTone({ freq: 120, duration: 0.14, type: 'square', gain: 0.09, attack: 0.001, release: 0.1 });
+  setTimeout(() => playTone({ freq: 70, duration: 0.18, type: 'sine', gain: 0.07 }), 80);
+}

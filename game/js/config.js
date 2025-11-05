@@ -23,6 +23,7 @@ export function getDefaultLevelConfig(level) {
         generatorCount: 3,
         enemyEnabled: true,
         flyingPig: false,
+        mortar: false,
         seed: LEVEL_SEEDS[level] || 1,
     };
     
@@ -49,9 +50,17 @@ export function getDefaultLevelConfig(level) {
     if (level === 6) {
         return { ...base, enemyEnabled: true, flyingPig: true, seeker: true };
     }
-    // For levels 7 and above, add the Batter along with all other enemies
-    if (level >= 7) {
-        return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true };
+    // Level 7: Chaser, Seeker, Batter (no Pig, no Mortar)
+    if (level === 7) {
+        return { ...base, enemyEnabled: true, flyingPig: false, seeker: true, batter: true, mortar: false };
+    }
+    // Level 8: Chaser, Seeker, Batter, Flying Pig (no Mortar)
+    if (level === 8) {
+        return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true, mortar: false };
+    }
+    // Levels 9-10: include all (Chaser + Pig + Seeker + Batter + Mortar)
+    if (level >= 9) {
+        return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true, mortar: true };
     }
     // Placeholder for levels 4-10 (use base defaults for now)
     return { ...base };
@@ -99,18 +108,19 @@ const KEY_SETTINGS = 'smg_settings_v1';
 export function getEndlessDefaults() {
     try {
         const raw = localStorage.getItem(KEY_ENDLESS);
-        if (!raw) return { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
+        if (!raw) return { chaser: false, pig: false, seeker: false, batter: false, mortar: false, difficulty: 'normal', generatorCount: 3 };
         const obj = JSON.parse(raw);
         return {
             chaser: !!obj.chaser,
             pig: !!obj.pig,
             seeker: !!obj.seeker,
             batter: !!obj.batter,
+            mortar: !!obj.mortar,
             difficulty: obj.difficulty === 'super' ? 'super' : 'normal',
             generatorCount: obj.generatorCount === 5 ? 5 : 3
         };
     } catch {
-        return { chaser: false, pig: false, seeker: false, batter: false, difficulty: 'normal', generatorCount: 3 };
+        return { chaser: false, pig: false, seeker: false, batter: false, mortar: false, difficulty: 'normal', generatorCount: 3 };
     }
 }
 
@@ -120,6 +130,7 @@ export function setEndlessDefaults(cfg) {
         pig: !!cfg.pig,
         seeker: !!cfg.seeker,
         batter: !!cfg.batter,
+        mortar: !!cfg.mortar,
         difficulty: cfg.difficulty === 'super' ? 'super' : 'normal',
         generatorCount: cfg.generatorCount === 5 ? 5 : 3
     };

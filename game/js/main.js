@@ -391,6 +391,7 @@ function showEndlessOverlay() {
     if ($('endlessPig')) $('endlessPig').checked = !!def.pig;
     if ($('endlessSeeker')) $('endlessSeeker').checked = !!def.seeker;
     if ($('endlessBatter')) $('endlessBatter').checked = !!def.batter;
+    if ($('endlessMortar')) $('endlessMortar').checked = !!def.mortar;
     if ($('endlessDiffNormal')) $('endlessDiffNormal').checked = def.difficulty !== 'super';
     if ($('endlessDiffSuper')) $('endlessDiffSuper').checked = def.difficulty === 'super';
     if ($('endlessGen3')) $('endlessGen3').checked = def.generatorCount !== 5;
@@ -410,6 +411,7 @@ function readEndlessOverlayConfig() {
         pig: !!($('endlessPig') && $('endlessPig').checked),
         seeker: !!($('endlessSeeker') && $('endlessSeeker').checked),
         batter: !!($('endlessBatter') && $('endlessBatter').checked),
+        mortar: !!($('endlessMortar') && $('endlessMortar').checked),
         difficulty: ($('endlessDiffSuper') && $('endlessDiffSuper').checked) ? 'super' : 'normal',
         generatorCount: ($('endlessGen5') && $('endlessGen5').checked) ? 5 : 3
     };
