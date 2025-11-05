@@ -184,14 +184,54 @@ function drawEnemies(currentTime) {
                     ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
                 }
             }
-            ctx.fillStyle = baseCol;
-            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-            // Directional arrow to show facing
+            // Vision cone indicator (drawn first so it's behind the seeker)
             let adx = 0, ady = 0;
             if (e.target) { adx = (e.target.x - e.x); ady = (e.target.y - e.y); }
             else if (e.roamDir) { adx = e.roamDir.dx; ady = e.roamDir.dy; }
             if (Math.abs(adx) > Math.abs(ady)) { adx = adx > 0 ? 1 : -1; ady = 0; }
             else if (Math.abs(ady) > Math.abs(adx)) { ady = ady > 0 ? 1 : -1; adx = 0; }
+            if (adx !== 0 || ady !== 0) {
+                const ang = Math.atan2(ady, adx);
+                const visionRange = (e.detectRange || 7) * CELL_SIZE;
+                const coneAngle = Math.PI / 3; // 60 degree cone
+
+                // Draw vision cone
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(ang);
+
+                // Semi-transparent cone showing line of sight
+                const gradient = ctx.createLinearGradient(0, 0, visionRange, 0);
+                if (enraged) {
+                    gradient.addColorStop(0, 'rgba(255, 68, 68, 0.2)');
+                    gradient.addColorStop(1, 'rgba(255, 68, 68, 0)');
+                } else {
+                    gradient.addColorStop(0, 'rgba(50, 205, 50, 0.15)');
+                    gradient.addColorStop(1, 'rgba(50, 205, 50, 0)');
+                }
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, visionRange, -coneAngle / 2, coneAngle / 2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw cone outline edges
+                ctx.strokeStyle = enraged ? 'rgba(255, 68, 68, 0.4)' : 'rgba(50, 205, 50, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(visionRange * Math.cos(-coneAngle / 2), visionRange * Math.sin(-coneAngle / 2));
+                ctx.moveTo(0, 0);
+                ctx.lineTo(visionRange * Math.cos(coneAngle / 2), visionRange * Math.sin(coneAngle / 2));
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            ctx.fillStyle = baseCol;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            // Directional arrow to show facing
             if (adx !== 0 || ady !== 0) {
                 const ang = Math.atan2(ady, adx);
                 ctx.save();

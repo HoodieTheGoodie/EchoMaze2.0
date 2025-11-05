@@ -1,3 +1,7 @@
 There looks to be a glitch where if you get hit on the teleporter the game doesn't end correctly.
 
 Abilities seem to need to reset better before a new game starts.
+
+Pause doesn't stop pig shot?
+
+Line zap on you just like stuns you.
