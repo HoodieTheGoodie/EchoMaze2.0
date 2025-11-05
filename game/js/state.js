@@ -1500,6 +1500,12 @@ export function updateEnemies(currentTime) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
                     const dist = Math.hypot(dx, dy);
+                    // Update roamDir to reflect current movement direction for consistent vision
+                    const tdx = e.target.x - cx;
+                    const tdy = e.target.y - cy;
+                    if (tdx !== 0 || tdy !== 0) {
+                        e.roamDir = { dx: tdx, dy: tdy };
+                    }
                     // Apply slow if active
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
