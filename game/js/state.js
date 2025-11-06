@@ -1,7 +1,9 @@
 // state.js - Game state management
 
 import { generateMaze, CELL } from './maze.js';
-import { getDefaultLevelConfig, isGodMode } from './config.js';
+import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN } from './config.js';
+import { updateBoss, pickBazooka, bossExplosion, fireRocketAt, damageCoreAt, loadPrepRoom, spawnBossArena } from './boss.js';
+import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct } from './audio.js';
 
 export const MAZE_WIDTH = 30;
@@ -51,6 +53,60 @@ export const gameState = {
     isPaused: false
 };
 
+// Screen fade helper used for transitions (fade overlay alpha ramp)
+gameState.screenFade = null; // { from, to, startAt, duration }
+gameState.inputLocked = false; // used for brief cutscenes
+gameState.prepPickupLocked = false; // prevent bazooka pickup before lore completes
+
+/**
+ * Disable or destroy all active enemies from the current level.
+ */
+export function disableAllEnemies() {
+    try {
+        if (gameState.enemies && gameState.enemies.length) {
+            for (const e of gameState.enemies) {
+                try { if (typeof e.destroy === 'function') e.destroy(); } catch {}
+                e.active = false;
+            }
+        }
+        // Remove all enemies entirely to avoid leftover AI ticks
+        gameState.enemies = [];
+        // Clear projectiles to avoid old rockets/minions lingering
+        gameState.projectiles = [];
+    } catch (err) {
+        console.error('disableAllEnemies error', err);
+    }
+}
+
+// Fade helpers
+export function fadeToBlack(seconds = 1.0) {
+    const now = performance.now();
+    gameState.screenFade = { from: 0, to: 1, startAt: now, duration: Math.max(1, seconds * 1000) };
+}
+export function fadeFromBlack(seconds = 1.0) {
+    const now = performance.now();
+    gameState.screenFade = { from: 1, to: 0, startAt: now, duration: Math.max(1, seconds * 1000) };
+}
+
+// Simple dialogue helper that sequences status messages
+export function showTextSequence(lines, callback, intervalMs = 2500) {
+    if (!Array.isArray(lines) || !lines.length) { if (callback) callback(); return; }
+    let idx = 0; setStatusMessage(String(lines[0]), intervalMs);
+    const id = setInterval(() => {
+        idx++;
+        if (idx < lines.length) {
+            setStatusMessage(String(lines[idx]), intervalMs);
+        } else {
+            clearInterval(id);
+            setStatusMessage('', 1);
+            if (typeof callback === 'function') callback();
+        }
+    }, intervalMs);
+}
+
+export function disablePlayerInput() { gameState.inputLocked = true; }
+export function enablePlayerInput() { gameState.inputLocked = false; }
+
 // Enemy thaw-in duration after pauses/generator UI (ms)
 export const ENEMY_THAW_TIME = 2000;
 
@@ -79,6 +135,14 @@ export const SKILL_WINDOW_MIN_START = 90; // degrees
 export function initGame() {
     // Level/meta
     gameState.godMode = isGodMode();
+    // Clear any boss/bazooka-specific carryover when starting a fresh level
+    gameState.boss = null;
+    gameState.bazooka = null;
+    gameState.bazookaPickup = null;
+    gameState.reloadPressedAt = 0;
+    gameState.interactPressedAt = 0;
+    gameState.mountedPigUntil = 0;
+    gameState.mountedPigId = null;
     let seed = 1;
     let genCount = 3;
     if (gameState.mode === 'endless') {
@@ -336,6 +400,12 @@ export function movePlayer(dx, dy, currentTime) {
     }
     
     const sprintActive = gameState.isSprinting && !gameState.isStaminaCoolingDown && gameState.stamina >= 100;
+    // If boss finale: start lava collapse only on first movement after monologue finished and before collapseStartAt set
+    if (gameState.boss && gameState.boss.defeated && gameState.boss.virusDialogueFinished && !gameState.boss.collapseStartAt) {
+        gameState.boss.collapseStartAt = currentTime; // start collapse now
+        gameState.boss.collapseRateMs = 2000; // 2s per ring per request
+    }
+    const mountedActive = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
     const steps = sprintActive ? 2 : 1;
     
     let targetX = gameState.player.x;
@@ -354,6 +424,44 @@ export function movePlayer(dx, dy, currentTime) {
         }
         
         const cellType = gameState.maze[nextY][nextX];
+        // Lava hazard on outer ring during boss phase 2 anti-camping
+        if (gameState.boss && gameState.boss.lavaActiveUntil && currentTime < gameState.boss.lavaActiveUntil) {
+            const onEdgeNext = (nextX === 1 || nextX === MAZE_WIDTH - 2 || nextY === 1 || nextY === MAZE_HEIGHT - 2);
+            if (onEdgeNext) {
+                // Block movement and apply brief damage throttle similar to wall
+                if (currentTime - (gameState.lastLavaHitTime || 0) > 600) {
+                    gameState.lastLavaHitTime = currentTime;
+                    if (!gameState.godMode) {
+                        gameState.lives--;
+                        gameState.playerInvincibleUntil = currentTime + 1200;
+                        setStatusMessage('LAVA! Stay away from the outer ring!', 1000);
+                        if (gameState.lives <= 0) { gameState.deathCause = 'lava'; gameState.gameStatus = 'lost'; }
+                    }
+                }
+                return false;
+            }
+        }
+        // Post-defeat collapsing lava hazard: rings from edges inward
+        if (gameState.boss && gameState.boss.defeated && gameState.boss.collapseStartAt) {
+            const rate = Math.max(50, gameState.boss.collapseRateMs || 400);
+            const elapsed = currentTime - gameState.boss.collapseStartAt;
+            const ringsCovered = Math.max(0, Math.floor(elapsed / rate));
+            if (ringsCovered > 0) {
+                const ring = Math.min(nextX, MAZE_WIDTH - 1 - nextX, nextY, MAZE_HEIGHT - 1 - nextY);
+                if (ring <= ringsCovered) {
+                    if (currentTime - (gameState.lastLavaHitTime || 0) > 600) {
+                        gameState.lastLavaHitTime = currentTime;
+                        if (!gameState.godMode) {
+                            gameState.lives--;
+                            gameState.playerInvincibleUntil = currentTime + 1200;
+                            setStatusMessage('LAVA IS CLOSING IN!', 1000);
+                            if (gameState.lives <= 0) { gameState.deathCause = 'lava'; gameState.gameStatus = 'lost'; }
+                        }
+                    }
+                    return false;
+                }
+            }
+        }
         
         if (cellType === CELL.GENERATOR) {
             collision = true;
@@ -361,12 +469,12 @@ export function movePlayer(dx, dy, currentTime) {
             break;
         }
         
-        if (cellType === CELL.WALL && !sprintActive) {
+        // While mounted, ignore walls entirely
+        if (cellType === CELL.WALL && !sprintActive && !mountedActive) {
             collision = true;
             break;
         }
-        
-        if (cellType === CELL.WALL && sprintActive) {
+        if (cellType === CELL.WALL && (sprintActive && !mountedActive)) {
             continue;
         }
         
@@ -379,6 +487,32 @@ export function movePlayer(dx, dy, currentTime) {
                 collision = true;
                 exitBlocked = true;
                 break;
+            }
+            // Level 10 boss override
+            if (gameState.currentLevel === 10) {
+                // If in prep room and stepping through door -> fade out then spawn arena
+                if (gameState.boss && gameState.boss.prepRoom) {
+                    fadeToBlack(1.0);
+                    setTimeout(() => { try { stopPreBossMusic(); } catch {};
+                        try { spawnBossArena(Date.now()); } catch {}
+                        try { fadeFromBlack(1.0); } catch {}
+                    }, 1000);
+                    return true;
+                }
+                // If boss has been defeated, this is the victory exit
+                if (gameState.boss && gameState.boss.defeated) {
+                    fadeToBlack(1.0);
+                    setTimeout(() => {
+                        try { finishRun(Date.now()); } catch {}
+                        gameState.gameStatus = 'won';
+                    }, 1000);
+                    return true;
+                }
+                // Otherwise, reaching exit in L10 starts the pre-boss flow
+                if (!gameState.boss?.active) {
+                    startBossTransition(currentTime);
+                    return true;
+                }
             }
             finishRun(currentTime);
             gameState.gameStatus = 'won';
@@ -475,6 +609,18 @@ export function performJump(dx, dy, currentTime) {
             cancelJumpCharge();
             return false;
         }
+        if (gameState.currentLevel === 10) {
+            cancelJumpCharge();
+            if (gameState.boss && gameState.boss.prepRoom) {
+                fadeToBlack(1.0);
+                setTimeout(() => { try { stopPreBossMusic(); } catch {}; try { spawnBossArena(Date.now()); } catch {}; try { fadeFromBlack(1.0); } catch {} }, 1000);
+                return true;
+            }
+            if (!gameState.boss?.active) {
+                startBossTransition(currentTime);
+                return true;
+            }
+        }
         finishRun(currentTime);
         gameState.gameStatus = 'won';
     }
@@ -509,6 +655,49 @@ export function startJumpCharge(currentTime) {
 export function cancelJumpCharge() {
     gameState.isJumpCharging = false;
     gameState.jumpCountdown = 0;
+}
+
+/**
+ * Begin the boss transition: clear enemies, fade to black, then load the prep room.
+ */
+export function startBossTransition(currentTime) {
+    // Disable any existing enemies/projectiles immediately
+    disableAllEnemies();
+    // Start a 1s fade to black (renderer will draw overlay when gameState.screenFade present)
+    gameState.screenFade = { from: 0, to: 1, startAt: currentTime, duration: 1000 };
+    // After fade completes, load the prep room (use real time scheduling)
+    setTimeout(() => {
+        try {
+            // ensure boss module provides loadPrepRoom
+            if (typeof loadPrepRoom === 'function') {
+                loadPrepRoom(Date.now());
+            }
+        } catch (err) { console.error('loadPrepRoom failed', err); }
+    }, 1000);
+}
+
+// Camera shake helpers
+export function triggerScreenShake(mag = 4, durationMs = 150, now = performance.now()) {
+    gameState.screenShakeMag = mag;
+    gameState.screenShakeUntil = now + durationMs;
+}
+export function clearScreenShake() {
+    gameState.screenShakeMag = 0;
+    gameState.screenShakeUntil = 0;
+}
+
+// Top-bar lore and prompt helpers
+export function showTopLore(lines, done) {
+    console.log('[lore] showing', lines);
+    gameState.prepPickupLocked = true;
+    showTextSequence(lines, () => {
+        console.log('[lore] finished');
+        if (typeof done === 'function') done();
+    });
+}
+export function showPrompt(text = 'Press E to pick up', duration = 2500) {
+    console.log('[prompt]', text);
+    setStatusMessage(text, duration);
 }
 
 export function updateJumpCharge(currentTime) {
@@ -679,7 +868,7 @@ function isPassableForEnemy(cell) {
     return cell === CELL.EMPTY || cell === CELL.EXIT || cell === CELL.TELEPAD;
 }
 
-function bfsDistancesFrom(maze, startX, startY) {
+export function bfsDistancesFrom(maze, startX, startY) {
     const w = MAZE_WIDTH, h = MAZE_HEIGHT;
     const dist = Array(h).fill(null).map(() => Array(w).fill(Infinity));
     const q = new Array(w * h);
@@ -1018,6 +1207,11 @@ export function spawnMortar() {
 function updateFlyingPig(e, currentTime, px, py) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
+        if (e.state === 'knocked_out' && e._bossSummoned) {
+            // Despawn after ride window if not mounted
+            e._despawn = true;
+            return;
+        }
         e.state = 'flying';
         // Reset motion timers to avoid massive dt teleport
         e.lastUpdateAt = currentTime;
@@ -1158,6 +1352,275 @@ function findReachableDropTile(distField, fx, fy) {
 
 export function updateEnemies(currentTime) {
     if (!gameState.maze || gameState.gameStatus !== 'playing') return;
+
+    // Handle mount state transitions and safe landing
+    const wasMounted = !!(gameState._mountedWasActive);
+    const isMounted = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
+    if (wasMounted && !isMounted) {
+        // If mount just ended and player is over an unpassable tile, relocate to nearest passable
+        const cx = Math.max(0, Math.min(MAZE_WIDTH - 1, gameState.player.x));
+        const cy = Math.max(0, Math.min(MAZE_HEIGHT - 1, gameState.player.y));
+        const cell = gameState.maze[cy][cx];
+        const isBlocked = (cell === CELL.WALL || cell === CELL.GENERATOR);
+        if (isBlocked) {
+            // radial search for nearest EMPTY/EXIT tile
+            let dest = null;
+            for (let r = 1; r <= Math.max(MAZE_WIDTH, MAZE_HEIGHT); r++) {
+                for (let y = cy - r; y <= cy + r; y++) {
+                    if (y <= 0 || y >= MAZE_HEIGHT - 1) continue;
+                    for (let x = cx - r; x <= cx + r; x++) {
+                        if (x <= 0 || x >= MAZE_WIDTH - 1) continue;
+                        const c = gameState.maze[y][x];
+                        if (c === CELL.EMPTY || c === CELL.EXIT) { dest = { x, y }; break; }
+                    }
+                    if (dest) break;
+                }
+                if (dest) break;
+            }
+            if (dest) {
+                gameState.player.x = dest.x;
+                gameState.player.y = dest.y;
+            }
+        }
+    }
+    gameState._mountedWasActive = isMounted;
+
+    // Always update projectiles, even if there are no enemies; freeze only during generator UI
+    if (!gameState.isGeneratorUIOpen && gameState.projectiles && gameState.projectiles.length) {
+        const now = currentTime;
+        for (const p of gameState.projectiles) {
+            if (p.resolved) continue;
+            // Move projectile
+            const dt = Math.max(0, (now - (p.lastUpdate || now)) / 1000);
+            p.lastUpdate = now;
+            p.x += (p.vx || 0) * dt;
+            p.y += (p.vy || 0) * dt;
+            // Smoke trail for rockets
+            if (p.type === 'rocket') {
+                if (!Array.isArray(p.smoke)) p.smoke = [];
+                p.smoke.push({ x: p.x, y: p.y, at: now });
+                if (p.smoke.length > 18) p.smoke.shift();
+            }
+            // Off-screen cleanup
+            if (p.x < -1 || p.x > MAZE_WIDTH + 1 || p.y < -1 || p.y > MAZE_HEIGHT + 1) {
+                p.resolved = true;
+                continue;
+            }
+
+            // Rocket projectile handling
+            if (p.type === 'rocket') {
+                const bx = gameState.boss && gameState.boss.core ? (gameState.boss.core.x + 0.5) : -999;
+                const by = gameState.boss && gameState.boss.core ? (gameState.boss.core.y + 0.5) : -999;
+                const dc = Math.hypot((bx - p.x), (by - p.y));
+                // Direct hit on core
+                if (dc < 0.6 && gameState.boss && gameState.boss.active) {
+                    damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, true);
+                    // Small explosion splash
+                    gameState.lastExplosionSource = 'rocket';
+                    bossExplosion(gameState.boss.core.x, gameState.boss.core.y, 1, now);
+                    try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                    console.log('[bazooka] direct hit on core');
+                    p.resolved = true;
+                    continue;
+                }
+                // Collision with enemies: blow up near Chasers/Pigs
+                if (gameState.enemies && gameState.enemies.length) {
+                    let hitIdx = -1;
+                    for (let i = 0; i < gameState.enemies.length; i++) {
+                        const e = gameState.enemies[i];
+                        if (e.type !== 'chaser' && e.type !== 'flying_pig') continue;
+                        const ex = (e.fx ?? (e.x + 0.5));
+                        const ey = (e.fy ?? (e.y + 0.5));
+                        const de = Math.hypot((ex - p.x), (ey - p.y));
+                        if (de < 0.6) { hitIdx = i; break; }
+                    }
+                    if (hitIdx >= 0) {
+                        const e = gameState.enemies[hitIdx];
+                        const gx = Math.floor((e.fx ?? (e.x + 0.5)));
+                        const gy = Math.floor((e.fy ?? (e.y + 0.5)));
+                        gameState.lastExplosionSource = 'rocket';
+                        bossExplosion(gx, gy, 1, now);
+                        try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                        p.resolved = true;
+                        continue;
+                    }
+                }
+                // Tile collision into wall -> explode
+                const gx = Math.floor(p.x), gy = Math.floor(p.y);
+                const mountedActive = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
+                if (!mountedActive && gx>0 && gx<MAZE_WIDTH-1 && gy>0 && gy<MAZE_HEIGHT-1 && gameState.maze[gy][gx] === CELL.WALL) {
+                    // Splash damage around impact tile
+                    // Damage core if within 3 tiles (splash)
+                    if (gameState.boss && gameState.boss.active) {
+                        const mc = Math.abs(gameState.boss.core.x - gx) + Math.abs(gameState.boss.core.y - gy);
+                        if (mc <= 3) damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, false);
+                    }
+                    gameState.lastExplosionSource = 'rocket';
+                    bossExplosion(gx, gy, 1, now);
+                    try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                    console.log('[bazooka] rocket exploded at', gx, gy);
+                    p.resolved = true;
+                    continue;
+                }
+            }
+
+            // Collision with player (legacy pig projectile support)
+            const pvx = (gameState.player.x + 0.5) - p.x;
+            const pvy = (gameState.player.y + 0.5) - p.y;
+            const pd = Math.hypot(pvx, pvy);
+            if (pd <= (p.radius + 0.45)) {
+                // Front half-plane relative to projectile direction
+                const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
+                const dot = (pvx * fx + pvy * fy) / (pd || 1);
+                if (dot >= 0) {
+                    // If shield active and roughly facing, process hit
+                    if (gameState.blockActive) {
+                        const bx2 = Math.cos(gameState.blockAngle), by2 = Math.sin(gameState.blockAngle);
+                        const towardPlayer = -((p.vx * bx2) + (p.vy * by2));
+                        if (towardPlayer > 0) {
+                            const result = onShieldHit('projectile', 0.6, now);
+                            if (result === 'break') {
+                                p.resolved = true;
+                            } else {
+                                p.vx = -p.vx; p.vy = -p.vy; p.angle = (p.angle + Math.PI) % (Math.PI * 2);
+                                p.reflected = true;
+                                p.sourceId = null;
+                                p.x += p.vx * 0.02; p.y += p.vy * 0.02;
+                                try { playShieldReflect(); } catch {}
+                                onShieldBreak(now);
+                            }
+                        }
+                    }
+                    if (!p.reflected && gameState.gameStatus === 'playing' && !gameState.godMode) {
+                        gameState.lives = 0;
+                        gameState.deathCause = 'pig_projectile';
+                        gameState.gameStatus = 'lost';
+                        setStatusMessage('You were hit by a projectile!');
+                        p.resolved = true;
+                        continue;
+                    }
+                }
+            }
+
+            // Collision with Flying_Pig when reflected
+            if (p.reflected) {
+                const pig = gameState.enemies && gameState.enemies.find(e => e.type === 'flying_pig' && e.state === 'flying');
+                if (pig) {
+                    const vx = pig.fx - p.x;
+                    const vy = pig.fy - p.y;
+                    const d = Math.hypot(vx, vy);
+                    if (d <= (p.radius + 0.4)) {
+                        const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
+                        const dot2 = (vx * fx + vy * fy) / (d || 1);
+                        if (dot2 >= 0) {
+                            // During the boss fight, reflected pig projectiles should knock out boss pigs (rideable), not make them unmountable
+                            if (gameState.boss && gameState.boss.active && pig._bossSummoned) {
+                                pig.state = 'knocked_out';
+                                pig.stateUntil = now + 10000;
+                                pig._stateStartAt = now;
+                                pig._rideableUntil = pig.stateUntil;
+                                pig.telegraphUntil = 0;
+                                pig.dashInfo = null;
+                                pig._dashActive = false;
+                                const distField2 = bfsDistancesFrom(gameState.maze, gameState.player.x, gameState.player.y);
+                                const drop = findReachableDropTile(distField2, pig.fx, pig.fy);
+                                pig.x = drop.x; pig.y = drop.y;
+                                pig.fx = drop.x + 0.5; pig.fy = drop.y + 0.5;
+                                pig.lastUpdateAt = now;
+                                pig._hitFlashUntil = now + 180;
+                                try { playPigHit(); } catch {}
+                                p.resolved = true;
+                            } else {
+                                pig.state = 'weakened';
+                                pig.stateUntil = now + 10000;
+                                pig._stateStartAt = now;
+                                pig.telegraphUntil = 0;
+                                pig.dashInfo = null;
+                                pig._dashActive = false;
+                                const distField2 = bfsDistancesFrom(gameState.maze, gameState.player.x, gameState.player.y);
+                                const drop = findReachableDropTile(distField2, pig.fx, pig.fy);
+                                pig.x = drop.x; pig.y = drop.y;
+                                pig.fx = drop.x + 0.5; pig.fy = drop.y + 0.5;
+                                pig.lastUpdateAt = now;
+                                pig._hitFlashUntil = now + 180;
+                                try { playPigHit(); } catch {}
+                                p.resolved = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Remove resolved ones
+        gameState.projectiles = gameState.projectiles.filter(p => !p.resolved);
+    }
+
+    // Prep room logic must run even when there are no enemies
+    if (gameState.boss && gameState.boss.prepRoom) {
+        if (gameState.bazookaPickup && !gameState.prepPickupLocked) pickBazooka(currentTime);
+        const b = gameState.boss;
+        if (b && b.ammoPickups && b.ammoPickups.length) {
+            const pressedAt = gameState.reloadPressedAt || 0;
+            const pressed = pressedAt && (currentTime - pressedAt) < 450;
+            for (const a of b.ammoPickups) {
+                const dx = Math.abs(gameState.player.x - a.x);
+                const dy = Math.abs(gameState.player.y - a.y);
+                const near = Math.max(dx, dy) <= 1;
+                if (pressed && near) {
+                    if (!gameState.bazooka) gameState.bazooka = { has: false, ammo: 0, maxAmmo: 10 };
+                    const max = gameState.bazooka.maxAmmo || 10;
+                    gameState.bazooka.ammo = max;
+                    try { import('./audio.js').then(a=>a.playReload && a.playReload()); } catch {}
+                    console.log('[prep] Reloaded to max. Ammo=', gameState.bazooka.ammo);
+                    gameState.reloadPressedAt = 0;
+                }
+            }
+            if (!b.prepDoorOpen && gameState.bazooka && gameState.bazooka.has && (gameState.bazooka.ammo || 0) > 0) {
+                const pos = b.prepDoorPos;
+                if (pos) {
+                    const newGrid = gameState.maze.map(row => row.slice());
+                    newGrid[pos.y][pos.x] = CELL.EXIT;
+                    gameState.maze = newGrid;
+                    b.prepDoorOpen = true;
+                    setStatusMessage('Door opened. Step through to the arena.', 1800);
+                }
+            }
+        }
+        return;
+    }
+
+    // Boss arena update should run even if there are no regular enemies
+    if (gameState.boss && gameState.boss.active) {
+        // Allow picking bazooka if a pickup is present (unlikely in arena but safe)
+        if (gameState.bazookaPickup) pickBazooka(currentTime);
+
+        // Arena reload at fixed ammo stations
+        const pressedAt = gameState.reloadPressedAt || 0;
+        const pressed = pressedAt && (currentTime - pressedAt) < 450;
+        const b = gameState.boss;
+        if (b && Array.isArray(b.ammoStations)) {
+            for (const s of b.ammoStations) {
+                const dx = Math.abs(gameState.player.x - s.x);
+                const dy = Math.abs(gameState.player.y - s.y);
+                const near = Math.max(dx, dy) <= 1;
+                const ready = !s.cooldownUntil || currentTime >= s.cooldownUntil;
+                if (pressed && near && ready) {
+                    if (!gameState.bazooka) gameState.bazooka = { has: false, ammo: 0, maxAmmo: 10 };
+                    const max = gameState.bazooka.maxAmmo || 10;
+                    gameState.bazooka.ammo = max;
+                    s.cooldownUntil = currentTime + (BOSS_AMMO_STATION_COOLDOWN || 30000);
+                    s.cooldownTotal = (BOSS_AMMO_STATION_COOLDOWN || 30000);
+                    try { import('./audio.js').then(a=>a.playReload && a.playReload()); } catch {}
+                    console.log('[arena] Reloaded at station. Ammo=', gameState.bazooka.ammo);
+                    gameState.reloadPressedAt = 0;
+                }
+            }
+        }
+
+        // Run boss phase/timer logic regardless of enemies present
+        updateBoss(currentTime);
+    }
+
     if (!gameState.enemies || gameState.enemies.length === 0) return;
 
     // During generator UI: ONLY Mortar and Batter remain active. Others freeze completely.
@@ -1174,6 +1637,10 @@ export function updateEnemies(currentTime) {
 
     const px = gameState.player.x;
     const py = gameState.player.y;
+
+    // (boss arena logic already executed above even if no enemies)
+
+    // (prep-room logic handled earlier even when no enemies)
 
     // Handle trap expiration and flashing
     if (gameState.traps && gameState.traps.length) {
@@ -1244,6 +1711,7 @@ export function updateEnemies(currentTime) {
         }
         if (e.type === 'flying_pig') {
             updateFlyingPig(e, currentTime, px, py);
+            if (e._despawn) continue; // will be removed in cleanup below
             continue;
         }
         // Skip per-enemy freeze (explosion freeze) but allow renderer to show them
@@ -2254,104 +2722,10 @@ export function updateEnemies(currentTime) {
         const pDist = Math.hypot(pdx, pdy);
         if (pDist < 0.5 && !gameState.isGeneratorUIOpen) { gameState._lastHitType = 'chaser'; handleEnemyHit(currentTime); }
     }
+    // Cleanup despawned boss pigs
+    gameState.enemies = gameState.enemies.filter(e => !e._despawn);
 
-    // Update projectiles (e.g., Flying_Pig half-arc) — frozen during generator UI
-    if (!gameState.isGeneratorUIOpen && gameState.projectiles && gameState.projectiles.length) {
-        const now = currentTime;
-        for (const p of gameState.projectiles) {
-            if (p.resolved) continue;
-            // Move projectile
-            const dt = Math.max(0, (now - (p.lastUpdate || now)) / 1000);
-            p.lastUpdate = now;
-            p.x += (p.vx || 0) * dt;
-            p.y += (p.vy || 0) * dt;
-            // Off-screen cleanup
-            if (p.x < -1 || p.x > MAZE_WIDTH + 1 || p.y < -1 || p.y > MAZE_HEIGHT + 1) {
-                p.resolved = true;
-                continue;
-            }
-
-            // Collision with player
-            const pvx = (gameState.player.x + 0.5) - p.x;
-            const pvy = (gameState.player.y + 0.5) - p.y;
-            const pd = Math.hypot(pvx, pvy);
-            if (pd <= (p.radius + 0.45)) {
-                // Front half-plane relative to projectile direction
-                const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-                const dot = (pvx * fx + pvy * fy) / (pd || 1);
-                if (dot >= 0) {
-                    // If shield active and roughly facing, process hit
-                    if (gameState.blockActive) {
-                        const bx = Math.cos(gameState.blockAngle), by = Math.sin(gameState.blockAngle);
-                        const towardPlayer = -((p.vx * bx) + (p.vy * by));
-                        if (towardPlayer > 0) {
-                            // Strong projectile damage (may break shield)
-                            // Pig projectile should be reflectable by the shield (no instant break)
-                            const result = onShieldHit('projectile', 0.6, now);
-                            if (result === 'break') {
-                                // Absorb projectile on break
-                                p.resolved = true;
-                            } else {
-                                // reflect: reverse velocity and angle, mark reflected
-                                p.vx = -p.vx; p.vy = -p.vy; p.angle = (p.angle + Math.PI) % (Math.PI * 2);
-                                p.reflected = true;
-                                p.sourceId = null;
-                                // Nudge out to avoid immediate re-collide
-                                p.x += p.vx * 0.02; p.y += p.vy * 0.02;
-                                try { playShieldReflect(); } catch {}
-                                // On successful deflection, the shield should immediately break
-                                onShieldBreak(now);
-                            }
-                        }
-                    }
-                    // If not reflected, instant kill
-                    if (!p.reflected && gameState.gameStatus === 'playing' && !gameState.godMode) {
-                        gameState.lives = 0;
-                        gameState.deathCause = 'pig_projectile';
-                        gameState.gameStatus = 'lost';
-                        setStatusMessage('You were hit by a projectile!');
-                        p.resolved = true;
-                        continue;
-                    }
-                }
-            }
-
-            // Collision with Flying_Pig when reflected
-            if (p.reflected) {
-                const pig = gameState.enemies.find(e => e.type === 'flying_pig' && e.state === 'flying');
-                if (pig) {
-                    const vx = pig.fx - p.x;
-                    const vy = pig.fy - p.y;
-                    const d = Math.hypot(vx, vy);
-                    if (d <= (p.radius + 0.4)) {
-                        // Ensure pig is in front half of projectile direction
-                        const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-                        const dot2 = (vx * fx + vy * fy) / (d || 1);
-                        if (dot2 >= 0) {
-                            // Enter weakened state: stop moving and allow 10s to tag for knock-out
-                            pig.state = 'weakened';
-                            pig.stateUntil = now + 10000;
-                            pig._stateStartAt = now;
-                            pig.telegraphUntil = 0;
-                            pig.dashInfo = null;
-                            pig._dashActive = false;
-                            // Drop pig onto reachable tile
-                            const distField2 = bfsDistancesFrom(gameState.maze, gameState.player.x, gameState.player.y);
-                            const drop = findReachableDropTile(distField2, pig.fx, pig.fy);
-                            pig.x = drop.x; pig.y = drop.y;
-                            pig.fx = drop.x + 0.5; pig.fy = drop.y + 0.5;
-                            pig.lastUpdateAt = now;
-                            pig._hitFlashUntil = now + 180;
-                            try { playPigHit(); } catch {}
-                            p.resolved = true;
-                        }
-                    }
-                }
-            }
-        }
-        // Remove resolved ones
-        gameState.projectiles = gameState.projectiles.filter(p => !p.resolved);
-    }
+    // (projectile updates moved to the top of this function)
 }
 
 function handleEnemyHit(currentTime) {
@@ -2367,7 +2741,10 @@ function handleEnemyHit(currentTime) {
     }
     gameState.lives--;
     setStatusMessage('Hit! You are invincible for 2s');
-    gameState.enemiesFrozenUntil = currentTime + 2000;
+    // During the boss fight, do not apply the grayscale freeze/pause effect
+    if (!(gameState.boss && gameState.boss.active)) {
+        gameState.enemiesFrozenUntil = currentTime + 2000;
+    }
     gameState.playerInvincibleUntil = currentTime + 2000;
     if (gameState.lives <= 0) {
         gameState.deathCause = gameState._lastHitType || 'enemy';

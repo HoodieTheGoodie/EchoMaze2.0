@@ -85,6 +85,9 @@ export function render(currentTime) {
     drawGenerators(currentTime);
     drawEnemies(currentTime);
     drawProjectiles(currentTime);
+    if (gameState.boss && (gameState.boss.active || gameState.boss.prepRoom)) {
+        drawBossArena(currentTime);
+    }
     drawShieldParticles(currentTime);
     drawPlayer();
     drawUI();
@@ -104,6 +107,14 @@ export function render(currentTime) {
     
     if (gameState.gameStatus === 'lost') {
         drawGameOver();
+    }
+    // Screen fade overlay for transitions
+    if (gameState.screenFade) {
+        const f = gameState.screenFade;
+        const t = Math.min(1, Math.max(0, (currentTime - (f.startAt || 0)) / (f.duration || 1)));
+        const alpha = (f.from || 0) + ((f.to || 0) - (f.from || 0)) * t;
+        ctx.save(); ctx.fillStyle = `rgba(0,0,0,${Math.max(0, Math.min(1, alpha))})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore();
+        if (t >= 1) gameState.screenFade = null;
     }
     if (shaking) ctx.restore();
 }
@@ -606,7 +617,274 @@ function drawProjectiles(currentTime) {
             ctx.arc(0, 0, Math.max(6, radius), -Math.PI/2, Math.PI/2, false);
             ctx.stroke();
             ctx.restore();
+        } else if (p.type === 'rocket') {
+            const cx = p.x * CELL_SIZE;
+            const cy = p.y * CELL_SIZE;
+
+            // Draw smoke trail if present (older first so newer draws on top)
+            if (Array.isArray(p.smoke) && p.smoke.length) {
+                ctx.save();
+                for (let i = 0; i < p.smoke.length; i++) {
+                    const node = p.smoke[i];
+                    const ageMs = Math.max(0, currentTime - (node.at || 0));
+                    // Alpha fades with age and along the trail index
+                    const ageFade = Math.max(0, 1 - ageMs / 600);
+                    const idxFade = (i + 1) / p.smoke.length; // older => smaller
+                    const alpha = Math.max(0, Math.min(0.5, 0.08 + 0.5 * ageFade * idxFade));
+                    if (alpha <= 0.01) continue;
+                    const sx = node.x * CELL_SIZE;
+                    const sy = node.y * CELL_SIZE;
+                    const r = 3 + 6 * (1 - idxFade) + 4 * (1 - ageFade);
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(160,160,160,${alpha})`;
+                    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // Rocket body
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 230, 120, 0.95)';
+            ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+            // Tiny bright trail directly opposite velocity
+            ctx.globalAlpha = 0.7;
+            ctx.strokeStyle = 'rgba(255,200,80,0.75)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(cx, cy);
+            ctx.lineTo(cx - (p.vx || 0) * 1.6, cy - (p.vy || 0) * 1.6);
+            ctx.stroke();
+            ctx.restore();
         }
+    }
+}
+
+function drawBossArena(currentTime) {
+    // Draw Core
+    const b = gameState.boss; if (!b) return;
+    if (b.core) {
+        const cx = (b.core.x + 0.5) * CELL_SIZE;
+        const cy = (b.core.y + 0.5) * CELL_SIZE;
+        const r = CELL_SIZE * 0.9;
+        // Core body color by phase
+        ctx.save();
+        // Defeat fade-out
+        if (b.defeated && b.coreFadeUntil) {
+            const total = Math.max(1, (b.coreFadeUntil - (b.defeatStartedAt || (currentTime - 1))));
+            const remain = Math.max(0, b.coreFadeUntil - currentTime);
+            const alpha = Math.max(0, Math.min(1, remain / total));
+            ctx.globalAlpha = alpha;
+        }
+        const colMap = { red: '#ff4444', purple: '#b455ff', pink: '#ff69b4' };
+        if (b.phase === 'phase2_cutscene') {
+            // Flashing red
+            const pulse = (Math.sin(currentTime / 120) * 0.5 + 0.5);
+            ctx.fillStyle = `rgba(255,68,68,${0.6 + 0.4 * pulse})`;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        } else if (b.phase === 'combo' && b.combo) {
+            const attacks = b.combo.attacks;
+            if (attacks.length === 2) {
+                // Split core: left/right hemispheres with two colors
+                ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI/2, -Math.PI/2, true); ctx.closePath();
+                ctx.fillStyle = colMap[attacks[0]] || '#7fffd4'; ctx.fill();
+                ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI/2, Math.PI/2, true); ctx.closePath();
+                ctx.fillStyle = colMap[attacks[1]] || '#7fffd4'; ctx.fill();
+            } else {
+                // Doubled single attack: full color
+                const c = colMap[attacks[0]] || '#7fffd4';
+                ctx.fillStyle = c;
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            }
+        } else {
+            let col = '#7fffd4';
+            if (b.phase === 'red') col = colMap.red;
+            else if (b.phase === 'purple') col = colMap.purple;
+            else if (b.phase === 'pink') col = colMap.pink;
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        if (!b.defeated || (b.defeated && currentTime < (b.coreFadeUntil || 0))) {
+            ctx.strokeStyle = '#0aa'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Boss telegraphs (red rings)
+    if (b.telegraphs && b.telegraphs.length) {
+        for (const t of b.telegraphs) {
+            const gx = (t.x + 0.5) * CELL_SIZE;
+            const gy = (t.y + 0.5) * CELL_SIZE;
+            const remain = Math.max(0, t.explodeAt - currentTime);
+            const total = Math.max(1, t.explodeAt - (t.spawnAt || (t.explodeAt - 2000)));
+            const prog = 1 - Math.min(1, remain / total);
+            ctx.save();
+            ctx.globalAlpha = 0.35 + 0.45 * prog;
+            ctx.strokeStyle = 'rgba(255,60,60,0.9)';
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(gx, gy, CELL_SIZE * (0.6 + prog * 1.2), 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    // Bazooka pickup
+    if (gameState.bazookaPickup) {
+        const px = (gameState.bazookaPickup.x + 0.5) * CELL_SIZE;
+        const py = (gameState.bazookaPickup.y + 0.5) * CELL_SIZE;
+        ctx.save();
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+
+        // Show E-prompt if player is nearby during prep
+        if (gameState.boss && gameState.boss.prepRoom) {
+            const dx = Math.abs(gameState.player.x - gameState.bazookaPickup.x);
+            const dy = Math.abs(gameState.player.y - gameState.bazookaPickup.y);
+            if (Math.max(dx, dy) <= 1) {
+                const tx = (gameState.player.x + 0.5) * CELL_SIZE;
+                const ty = (gameState.player.y - 0.7) * CELL_SIZE;
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                const text = 'Press E to pick up';
+                ctx.font = 'bold 12px Arial';
+                const tw = ctx.measureText(text).width + 10;
+                ctx.fillRect(tx - tw/2, ty - 14, tw, 18);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(text, tx, ty - 4);
+                ctx.restore();
+            }
+        }
+    }
+
+    // Ammo pickups (Level 10 boss prep room only)
+    if ((gameState.currentLevel === 10) && b.ammoPickups && b.ammoPickups.length) {
+        for (const a of b.ammoPickups) {
+            const ax = (a.x + 0.5) * CELL_SIZE; const ay = (a.y + 0.5) * CELL_SIZE;
+            ctx.save();
+            ctx.fillStyle = '#ffcc00'; ctx.fillRect(ax-6, ay-6, 12, 12);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(ax-8, ay-8, 16, 16);
+            // Reload prompt when near in prep room
+            if (gameState.boss && gameState.boss.prepRoom) {
+                const dx = Math.abs(gameState.player.x - a.x);
+                const dy = Math.abs(gameState.player.y - a.y);
+                if (Math.max(dx, dy) <= 1) {
+                    const text = 'Press R to reload';
+                    ctx.font = 'bold 12px Arial';
+                    const tw = ctx.measureText(text).width + 10;
+                    const tx = ax; const ty = ay - 18;
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.fillRect(tx - tw/2, ty - 12, tw, 16);
+                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(text, tx, ty - 4);
+                }
+            }
+            ctx.restore();
+        }
+    }
+
+    // Arena ammo stations with cooldown (Level 10 only)
+    if ((gameState.currentLevel === 10) && b.ammoStations && b.ammoStations.length && !b.prepRoom) {
+        for (const s of b.ammoStations) {
+            const sx = (s.x + 0.5) * CELL_SIZE;
+            const sy = (s.y + 0.5) * CELL_SIZE;
+            ctx.save();
+            // Base station tile
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillRect(sx - 7, sy - 7, 14, 14);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(sx - 9, sy - 9, 18, 18);
+
+            // Cooldown ring overlay
+            const now = performance.now();
+            const remain = Math.max(0, (s.cooldownUntil || 0) - now);
+            if (remain > 0) {
+                // Draw a pie showing cooldown progress
+                const r = 12;
+                const total = Math.max(1, (s.cooldownTotal || 30000));
+                const pct = Math.min(1, remain / total);
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.fillStyle = 'rgba(0,0,0,0.35)';
+                ctx.arc(sx, sy, r, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * pct, false);
+                ctx.closePath();
+                ctx.fill();
+            } else {
+                // Ready pulse
+                const pulse = (Math.sin(now / 180) * 0.5 + 0.5) * 0.4 + 0.2;
+                ctx.strokeStyle = `rgba(255,255,255,${pulse.toFixed(2)})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.stroke();
+                // Near prompt
+                const dx = Math.abs(gameState.player.x - s.x);
+                const dy = Math.abs(gameState.player.y - s.y);
+                if (Math.max(dx, dy) <= 1) {
+                    const text = 'Press R to reload';
+                    ctx.font = 'bold 12px Arial';
+                    const tw = ctx.measureText(text).width + 10;
+                    const tx = sx; const ty = sy - 20;
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.fillRect(tx - tw/2, ty - 12, tw, 16);
+                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(text, tx, ty - 4);
+                }
+            }
+            ctx.restore();
+        }
+    }
+
+    // Boss HP bar (hide after defeat)
+    if (b.core && !b.defeated) {
+        const barW = canvas.width * 0.5; const barH = 14; const bx = (canvas.width - barW)/2; const by = 18;
+        const pct = Math.max(0, Math.min(1, (b.core.hp || 0) / (b.core.maxHp || 1)));
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx - 2, by - 2, barW + 4, barH + 4);
+        ctx.fillStyle = '#222'; ctx.fillRect(bx, by, barW, barH);
+        ctx.fillStyle = '#ff3355'; ctx.fillRect(bx, by, barW * pct, barH);
+        ctx.strokeStyle = '#fff'; ctx.strokeRect(bx, by, barW, barH);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText('THE CORE', bx + barW/2, by - 2);
+        ctx.restore();
+    }
+
+    // Virus monologue overlay bar (appears after door fade; replaces boss HP region)
+    if (b.defeated && (b.virusDialogueActive || b.virusDialogueFinished) && b.virusDialogueLines) {
+        const barW = canvas.width * 0.75; const barH = 32; const bx = (canvas.width - barW)/2; const by = 12;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(bx - 6, by - 6, barW + 12, barH + 12);
+        ctx.strokeStyle = '#ffdd33'; ctx.lineWidth = 3; ctx.strokeRect(bx - 6, by - 6, barW + 12, barH + 12);
+        const idx = Math.min(b.virusDialogueIndex, b.virusDialogueLines.length - 1);
+        const line = b.virusDialogueActive ? b.virusDialogueLines[idx] : (b.virusDialogueFinished ? 'ESCAPE!' : '');
+        ctx.font = 'bold 16px Arial';
+        ctx.fillStyle = '#ffdd33';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(line, bx + barW/2, by + barH/2);
+        ctx.restore();
+    }
+
+    // Ammo HUD (top-right) — only Level 10 and after bazooka is picked up
+    if ((gameState.currentLevel === 10) && gameState.bazooka && gameState.bazooka.has) {
+        const ammo = gameState.bazooka.ammo || 0;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(canvas.width - 160, 8, 150, 28);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        const mounting = (gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
+        const suffix = mounting ? ' (Mounted)' : '';
+        ctx.fillText(`Rockets: ${ammo}/${gameState.bazooka.maxAmmo || 0}${suffix}`, canvas.width - 12, 22);
+        ctx.restore();
+    }
+
+    // Top-bar lore/status (only in Level 10 prep room): draw over canvas top for visibility
+    if ((gameState.currentLevel === 10) && gameState.boss && gameState.boss.prepRoom && gameState.statusMessage) {
+        const text = String(gameState.statusMessage);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(0, 0, canvas.width, 28);
+        ctx.fillStyle = '#ffd166'; // high-contrast warm yellow
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(text, canvas.width/2, 14);
+        ctx.restore();
     }
 }
 
@@ -620,6 +898,92 @@ function drawDynamicMazeOverlays() {
                 ctx.fillStyle = incomplete ? '#8B0000' : '#00ff00';
                 ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             }
+        }
+    }
+
+    // Lava/door overlays (boss-related)
+    const b = gameState.boss;
+    const now = performance.now();
+    // Boss victory door overlay (red door while blocked)
+    // Victory door draw logic (center): visible pre-defeat; fades in post-core-fade
+    if (b && b.victoryDoor) {
+        const vx = b.victoryDoor.x * CELL_SIZE;
+        const vy = b.victoryDoor.y * CELL_SIZE;
+        let showDoor = false;
+        let alpha = 1.0;
+        if (!b.defeated) { showDoor = true; alpha = 1.0; }
+        else if (b.defeated && b.doorFadeStartAt) {
+            const now = performance.now();
+            if (now >= b.doorFadeStartAt) {
+                showDoor = true;
+                const total = Math.max(1, (b.doorFadeUntil || (b.doorFadeStartAt + 1)) - b.doorFadeStartAt);
+                const remain = Math.max(0, (b.doorFadeUntil || 0) - now);
+                alpha = 1 - Math.min(1, remain / total);
+            }
+        }
+        if (showDoor) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = 'rgba(200,0,0,0.95)';
+            ctx.fillRect(vx, vy, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = '#330000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(vx + 1, vy + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            ctx.restore();
+        }
+    }
+
+    // Lava overlay on outer ring during boss phase 2 anti-camping
+    if (b && b.lavaWarnUntil && now < b.lavaWarnUntil && !(b.lavaActiveUntil && now < b.lavaActiveUntil)) {
+        // Warning overlay: yellow/orange pulsing
+        ctx.save();
+        const pulse = Math.sin(now / 120) * 0.25 + 0.75;
+        const warnCol = `rgba(255, 180, 0, ${0.35 + 0.25 * pulse})`;
+        for (let x = 1; x < MAZE_WIDTH - 1; x++) {
+            ctx.fillStyle = warnCol;
+            ctx.fillRect(x * CELL_SIZE, 1 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(x * CELL_SIZE, (MAZE_HEIGHT - 2) * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+        for (let y = 1; y < MAZE_HEIGHT - 1; y++) {
+            ctx.fillStyle = warnCol;
+            ctx.fillRect(1 * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect((MAZE_WIDTH - 2) * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+        ctx.restore();
+    }
+    if (b && b.lavaActiveUntil && now < b.lavaActiveUntil) {
+        ctx.save();
+        const lavaCol = 'rgba(255, 80, 0, 0.65)';
+        for (let x = 1; x < MAZE_WIDTH - 1; x++) {
+            ctx.fillStyle = lavaCol;
+            ctx.fillRect(x * CELL_SIZE, 1 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(x * CELL_SIZE, (MAZE_HEIGHT - 2) * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+        for (let y = 1; y < MAZE_HEIGHT - 1; y++) {
+            ctx.fillStyle = lavaCol;
+            ctx.fillRect(1 * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect((MAZE_WIDTH - 2) * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+        ctx.restore();
+    }
+    // Post-defeat collapsing lava from edges inward
+    if (b && b.defeated && b.collapseStartAt) {
+        const rate = Math.max(50, b.collapseRateMs || 400);
+        const elapsed = now - b.collapseStartAt;
+        const ringsCovered = Math.max(0, Math.floor(elapsed / rate));
+        if (ringsCovered > 0) {
+            ctx.save();
+            const lavaCol = 'rgba(255, 60, 0, 0.55)';
+            for (let y = 1; y < MAZE_HEIGHT - 1; y++) {
+                for (let x = 1; x < MAZE_WIDTH - 1; x++) {
+                    const ring = Math.min(x, MAZE_WIDTH - 1 - x, y, MAZE_HEIGHT - 1 - y);
+                    if (ring <= ringsCovered) {
+                        ctx.fillStyle = lavaCol;
+                        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    }
+                }
+            }
+            ctx.restore();
         }
     }
     
@@ -752,6 +1116,75 @@ function drawPlayer() {
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // Wings + timer ring while mounted (flight mode)
+    const nowT = performance.now();
+    if (gameState.mountedPigUntil && nowT < gameState.mountedPigUntil) {
+        // Soft white wings on both sides, with a gentle flap
+        const flap = Math.sin(nowT / 180) * 4; // +/-4px
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        // Left wing
+        ctx.beginPath();
+        ctx.moveTo(centerX - radius - 3, centerY);
+        ctx.lineTo(centerX - radius - 10, centerY - 8 - flap);
+        ctx.lineTo(centerX - radius - 10, centerY + 8 + flap);
+        ctx.closePath(); ctx.fill();
+        // Right wing
+        ctx.beginPath();
+        ctx.moveTo(centerX + radius + 3, centerY);
+        ctx.lineTo(centerX + radius + 10, centerY - 8 - flap);
+        ctx.lineTo(centerX + radius + 10, centerY + 8 + flap);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+
+        // Yellow countdown ring showing remaining flight time
+        const start = gameState.mountedPigStart || (gameState.mountedPigUntil - 4000);
+        const total = Math.max(1, gameState.mountedPigUntil - start);
+        const remain = Math.max(0, gameState.mountedPigUntil - nowT);
+        const t = 1 - Math.min(1, remain / total); // 0->1 progress
+        const R = radius + 8;
+        // Faint base ring
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.25)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(centerX, centerY, R, 0, Math.PI * 2); ctx.stroke();
+        // Progress arc from top, clockwise
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+        ctx.lineWidth = 3;
+        const startAng = -Math.PI / 2;
+        ctx.beginPath(); ctx.arc(centerX, centerY, R, startAng, startAng + t * Math.PI * 2); ctx.stroke();
+        ctx.restore();
+    }
+
+    // Wings visual while mounted (flight mode)
+    const mountedActive = !!(gameState.mountedPigUntil && performance.now() < gameState.mountedPigUntil);
+    if (mountedActive) {
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        // Gentle flap animation
+        const t = performance.now() / 200;
+        const flap = Math.sin(t) * 0.2;
+        ctx.rotate(flap);
+        ctx.fillStyle = 'rgba(255, 240, 255, 0.85)';
+        ctx.strokeStyle = 'rgba(220, 180, 255, 0.9)';
+        ctx.lineWidth = 1.5;
+        // Left wing
+        ctx.beginPath();
+        ctx.moveTo(-radius * 0.2, -radius * 0.4);
+        ctx.quadraticCurveTo(-radius * 1.8, -radius * 0.2, -radius * 1.9, 0);
+        ctx.quadraticCurveTo(-radius * 1.4, radius * 0.3, -radius * 0.3, radius * 0.1);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // Right wing
+        ctx.beginPath();
+        ctx.moveTo(radius * 0.2, -radius * 0.4);
+        ctx.quadraticCurveTo(radius * 1.8, -radius * 0.2, radius * 1.9, 0);
+        ctx.quadraticCurveTo(radius * 1.4, radius * 0.3, radius * 0.3, radius * 0.1);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+    }
 
     // Draw stun effect - electric chains; the number of chains equals remaining seconds (4..1)
     if (gameState.playerStunned) {
@@ -902,7 +1335,11 @@ function drawUI() {
     const streakEl = ui.streak;
     const streakSection = ui.streakSection;
     
-    healthEl.textContent = '❤️'.repeat(gameState.lives);
+    if (gameState.fakeZeroHp) {
+        healthEl.textContent = '0';
+    } else {
+        healthEl.textContent = '❤️'.repeat(gameState.lives);
+    }
     
     const staminaPct = Math.floor(gameState.stamina);
     staminaEl.textContent = `${staminaPct}%`;

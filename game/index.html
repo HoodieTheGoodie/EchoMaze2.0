@@ -280,13 +280,34 @@
 
     <!-- Win Overlay -->
     <div id="winOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:1100;">
-        <div class="overlay-panel" style="position:relative; overflow:hidden;">
+        <div class="overlay-panel" style="position:relative; overflow:hidden; max-width:720px;">
             <canvas id="confettiCanvas" width="640" height="360" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></canvas>
             <h2 style="position:relative; z-index:1;">You Win! 🎉</h2>
-            <p style="position:relative; z-index:1;">Nice work—generators repaired and exit reached.</p>
+            <p id="winMsg" style="position:relative; z-index:1;">Nice work—generators repaired and exit reached.</p>
             <div style="display:flex; gap:12px; justify-content:center; position:relative; z-index:1;">
                 <button id="nextLevelBtn" type="button">Next Level</button>
                 <button id="winReturnMenuBtn" type="button">Main Menu</button>
+                <button id="creditsBtn" type="button" style="display:none;">Credits</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credits Overlay -->
+    <div id="creditsOverlay" style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.9); z-index:1200;">
+        <div style="position:absolute; inset:10% 15%; background:#121016; border:3px solid #ff7b00; border-radius:14px; padding:16px; display:flex; flex-direction:column;">
+            <h2 style="color:#ff7b00; text-align:center; margin-bottom:8px;">Credits</h2>
+            <div style="flex:1; overflow:auto; padding:8px; color:#eee; line-height:1.6;">
+                <p>Echo Maze 2.0</p>
+                <p>Design & Code: You</p>
+                <p>Assistant Engineering: GitHub Copilot</p>
+                <p>Special Thanks: Friends and testers</p>
+                <hr style="border-color:#333; margin:12px 0;" />
+                <p>Built with HTML5 Canvas and plain JavaScript.</p>
+                <p>Thank you for playing!</p>
+                <div style="height:320px"></div>
+            </div>
+            <div style="display:flex; justify-content:center; gap:12px; padding-top:8px;">
+                <button id="creditsMenuBtn" type="button">Main Menu</button>
             </div>
         </div>
     </div>
@@ -337,6 +358,10 @@
                 <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
                     <input id="godModeChk" type="checkbox" />
                     <span>Great Mode</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                    <input id="skipPreBossChk" type="checkbox" />
+                    <span>Skip to Pre-Boss (Level 10)</span>
                 </label>
                 <button id="unlockAllBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Unlock All Levels</button>
                 <div style="color:#888; font-size:0.9rem; margin-top:6px;">Tip: Click "Dev" and enter password: <span style="color:#ffd166; font-weight:bold;">Spooky</span></div>
