@@ -1,4 +1,4 @@
-// input.js - Keyboard input handling
+// input.js - Keyboard input handling (+ Mobile integration)
 
 import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap } from './state.js';
 import { initGame } from './main.js';
@@ -12,10 +12,30 @@ const keysPressed = {};
 const MOVE_DELAY = 120; // ms
 let lastMoveAt = 0;
 
+// Mobile: touch input integration (initialized from main.js)
+let touchInputInitialized = false;
+
 export function setupInputHandlers() {
     document.addEventListener('keydown', handleKeyDown, { passive: false });
     document.addEventListener('keyup', handleKeyUp, { passive: false });
 }
+
+// Mobile: Initialize touch handlers (called from main.js)
+export function setupMobileInput(controls) {
+    if (touchInputInitialized || !controls) return;
+
+    // Dynamically import touch-input module
+    import('./touch-input.js').then(module => {
+        module.initTouchInput(controls, handleKeyDown, handleKeyUp);
+        touchInputInitialized = true;
+        console.log('Mobile touch input initialized');
+    }).catch(err => {
+        console.warn('Touch input not available:', err);
+    });
+}
+
+// Mobile: Export handlers for touch events to use
+export { handleKeyDown, handleKeyUp };
 
 function handleKeyDown(e) {
     const key = (e.key || '').toLowerCase();

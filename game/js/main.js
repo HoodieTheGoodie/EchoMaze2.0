@@ -4,7 +4,25 @@ import { initGame as initializeGameState, gameState, updateStaminaCooldown, upda
 import { playLose } from './audio.js';
 import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings } from './config.js';
 import { render } from './renderer.js';
-import { setupInputHandlers, processMovement } from './input.js';
+import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
+
+// Mobile: Lazy load mobile controls (only load if needed)
+let mobileControlsModule = null;
+async function loadMobileControls() {
+    if (!mobileControlsModule) {
+        try {
+            mobileControlsModule = await import('./mobile-controls.js');
+        } catch (err) {
+            console.log('Mobile controls not available');
+            mobileControlsModule = {
+                initMobileControls: () => null,
+                showMobileControls: () => {},
+                hideMobileControls: () => {}
+            };
+        }
+    }
+    return mobileControlsModule;
+}
 
 let gameRunning = false;
 let lastFrameTime = 0;
@@ -216,6 +234,9 @@ function showMenu() {
     const devBtn = document.getElementById('devToggleBtn');
     if (resetBtn) resetBtn.style.display = 'inline-block';
     if (devBtn) devBtn.style.display = 'inline-block';
+
+    // Mobile: Hide controls when in menu
+    loadMobileControls().then(m => m.hideMobileControls());
 }
 
 function startLevel(level) {
@@ -226,6 +247,10 @@ function startLevel(level) {
     const gameContainer = document.getElementById('game-container');
     if (menu) menu.style.display = 'none';
     if (gameContainer) gameContainer.style.display = 'flex';
+
+    // Mobile: Show controls when game starts
+    loadMobileControls().then(m => m.showMobileControls());
+
     initGame();
 }
 
@@ -432,6 +457,10 @@ function startEndlessRun(cfg) {
     if (gameContainer) gameContainer.style.display = 'flex';
     gameState.mode = 'endless';
     gameState.endlessConfig = { ...cfg, streak: (gameState.endlessConfig && gameState.endlessConfig.streak) || 0 };
+
+    // Mobile: Show controls when game starts
+    loadMobileControls().then(m => m.showMobileControls());
+
     initGame();
 }
 
@@ -569,9 +598,18 @@ function postFrameChecks(currentTime) {
 }
 
 // Start app (robust to being loaded after DOM is ready)
-function startApp() {
+async function startApp() {
     // Signal that modules loaded successfully
     window.__SMG_LOADED__ = true;
+
+    // Mobile: Initialize virtual controls if on touch device
+    const mobile = await loadMobileControls();
+    const mobileControls = mobile.initMobileControls();
+    if (mobileControls) {
+        setupMobileInput(mobileControls);
+        console.log('Mobile controls ready');
+    }
+
     wireMenuUi();
     showMenu();
 }
