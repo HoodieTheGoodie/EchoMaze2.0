@@ -62,8 +62,14 @@ export function initMobileControls() {
 
     // Check if controls already exist (prevent duplicates)
     if (!document.getElementById('mobile-controls')) {
-        // Insert controls into DOM
-        document.body.insertAdjacentHTML('beforeend', controlsHTML);
+        // Insert controls into game container (not body)
+        const gameContainer = document.getElementById('game-container');
+        if (gameContainer) {
+            gameContainer.insertAdjacentHTML('beforeend', controlsHTML);
+        } else {
+            // Fallback if game-container doesn't exist
+            document.body.insertAdjacentHTML('beforeend', controlsHTML);
+        }
     }
 
     // Add game-active class when game starts (for CSS to show controls)

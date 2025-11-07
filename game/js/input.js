@@ -91,7 +91,7 @@ function handleKeyDown(e) {
     }
 
     // Space: skill check while repairing OR start blocking otherwise
-    if (e.code === 'Space') {
+    if (e.code === 'Space' || key === ' ') {
         if (gameState.isGeneratorUIOpen && gameState.skillCheckState) {
             e.preventDefault();
             e.stopPropagation();
