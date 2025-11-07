@@ -73,6 +73,18 @@
         font-size: 0.9rem !important;
     }
 
+    /* Show mobile-only elements only on mobile */
+    [data-mobile-only] {
+        display: block !important;
+    }
+}
+
+/* Hide mobile-only elements on desktop */
+@media (min-width: 769px) {
+    [data-mobile-only] {
+        display: none !important;
+    }
+
     /* Overlays - Better mobile sizing */
     .overlay-panel {
         padding: 24px 20px !important;
@@ -119,12 +131,12 @@
    MOBILE CONTROLS - Virtual D-Pad & Buttons
    ======================================== */
 
-/* Controls Container - flex item that fills remaining vertical space */
+/* Controls Container - simple block element stacked below canvas */
 #mobile-controls {
     display: none; /* Hidden by default, shown via JS on mobile */
     position: relative;
     width: 100%;
-    flex: 1; /* Take up all remaining space after canvas and UI */
+    /* No height - let it size naturally based on content */
     pointer-events: auto;
     z-index: 500;
     touch-action: none;
@@ -137,11 +149,10 @@
     }
 }
 
-/* D-Pad Container (Left Side) - vertically centered */
+/* D-Pad Container (Left Side) */
 .mobile-dpad {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
     left: 20px;
     width: 130px;
     height: 130px;
@@ -227,11 +238,10 @@
     transform: translateY(-50%) scale(0.95);
 }
 
-/* Action Buttons Container (Right Side) - vertically centered */
+/* Action Buttons Container (Right Side) */
 .mobile-actions {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
     right: 20px;
     width: 150px;
     height: 150px;
