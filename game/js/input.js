@@ -92,17 +92,29 @@ function handleKeyDown(e) {
 
     // Space: skill check while repairing OR start blocking otherwise
     if (e.code === 'Space' || key === ' ') {
+        console.log('[INPUT] Space detected - gameState:', {
+            isGeneratorUIOpen: gameState.isGeneratorUIOpen,
+            isPaused: gameState.isPaused,
+            blockActive: gameState.blockActive,
+            gameStatus: gameState.gameStatus,
+            stamina: gameState.stamina,
+            shieldBrokenLock: gameState.shieldBrokenLock,
+            playerStunned: gameState.playerStunned
+        });
+
         if (gameState.isGeneratorUIOpen && gameState.skillCheckState) {
             e.preventDefault();
             e.stopPropagation();
             attemptSkillCheck();
         } else if (!gameState.isGeneratorUIOpen && !gameState.isPaused) {
             e.preventDefault();
+            console.log('[INPUT] Attempting to toggle shield, stamina:', gameState.stamina);
             // Toggle shield on Space: if active, cancel; otherwise activate
             if (gameState.blockActive) {
                 stopBlock();
             } else {
-                startBlock(performance.now());
+                const result = startBlock(performance.now());
+                console.log('[INPUT] startBlock result:', result, 'blockActive now:', gameState.blockActive);
             }
         }
         return;
