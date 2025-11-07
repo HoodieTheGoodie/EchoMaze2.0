@@ -120,7 +120,7 @@
     position: relative;
     width: 100%;
     height: 180px;
-    margin-top: auto;
+    margin-top: 5px;
     pointer-events: auto;
     z-index: 500;
     touch-action: none;
@@ -178,8 +178,8 @@
 
 .dpad-btn:active {
     background: linear-gradient(135deg, rgba(255, 123, 0, 0.9), rgba(255, 123, 0, 0.7));
-    transform: scale(0.95);
     box-shadow: 0 0 15px rgba(255, 123, 0, 0.6);
+    /* Note: transform moved to specific button styles to preserve positioning */
 }
 
 /* D-Pad Positions */
@@ -189,10 +189,18 @@
     transform: translateX(-50%);
 }
 
+.dpad-up:active {
+    transform: translateX(-50%) scale(0.95);
+}
+
 .dpad-down {
     bottom: 0;
     left: 50%;
     transform: translateX(-50%);
+}
+
+.dpad-down:active {
+    transform: translateX(-50%) scale(0.95);
 }
 
 .dpad-left {
@@ -201,10 +209,18 @@
     transform: translateY(-50%);
 }
 
+.dpad-left:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
 .dpad-right {
     right: 0;
     top: 50%;
     transform: translateY(-50%);
+}
+
+.dpad-right:active {
+    transform: translateY(-50%) scale(0.95);
 }
 
 /* Action Buttons Container (Right Side) */

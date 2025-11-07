@@ -60,8 +60,11 @@ export function initMobileControls() {
         </div>
     `;
 
-    // Insert controls into DOM
-    document.body.insertAdjacentHTML('beforeend', controlsHTML);
+    // Check if controls already exist (prevent duplicates)
+    if (!document.getElementById('mobile-controls')) {
+        // Insert controls into DOM
+        document.body.insertAdjacentHTML('beforeend', controlsHTML);
+    }
 
     // Add game-active class when game starts (for CSS to show controls)
     document.body.classList.add('game-active');
