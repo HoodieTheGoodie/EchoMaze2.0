@@ -5,3 +5,5 @@ Abilities seem to need to reset better before a new game starts.
 Pause doesn't stop pig shot?
 
 Line zap on you just like stuns you.
+
+Update the timer to stop when the game ends.

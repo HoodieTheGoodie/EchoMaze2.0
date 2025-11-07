@@ -3,9 +3,56 @@
 import { gameState, SKILL_CHECK_ROTATION_TIME, MAZE_WIDTH, MAZE_HEIGHT, TELEPORT_CHARGE_TIME, COLLISION_SHIELD_RECHARGE_TIME, COLLISION_SHIELD_BREAK_FLASH, getRunClock } from './state.js';
 import { CELL } from './maze.js';
 
-const CELL_SIZE = 20;
+let CELL_SIZE = 20; // Changed to let for responsive scaling
 const canvas = document.getElementById('canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
+
+// Offscreen cached background for static maze (walls/floor)
+let mazeBaseCanvas = null;
+let mazeBaseDirty = true;
+let lastMazeRef = null;
+
+// Mobile: Responsive canvas scaling
+let canvasScale = 1;
+export function updateCanvasSize() {
+    if (!canvas) return;
+
+    // Check if mobile (screen width < 768px)
+    const isMobile = window.innerWidth <= 768;
+
+    if (isMobile) {
+        // Portrait mode: fit canvas to screen
+        const maxSize = Math.min(
+            window.innerWidth - 20,  // Leave 10px margin on each side
+            window.innerHeight - 400 // Leave room for title + UI + controls
+        );
+        const targetSize = Math.min(maxSize, 500); // Cap at 500px
+
+        // Update canvas size
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+
+        // Recalculate cell size to fit
+        CELL_SIZE = Math.floor(targetSize / 30); // 30x30 maze
+        canvasScale = targetSize / 600;
+
+        // Mark maze as dirty to rebuild with new cell size
+        mazeBaseDirty = true;
+    } else {
+        // Desktop: standard size
+        canvas.width = 600;
+        canvas.height = 600;
+        CELL_SIZE = 20;
+        canvasScale = 1;
+        mazeBaseDirty = true;
+    }
+}
+
+// Call on load and resize
+if (typeof window !== 'undefined') {
+    window.addEventListener('resize', updateCanvasSize);
+    updateCanvasSize(); // Initial call
+}
 // Cache UI elements to reduce per-frame query costs
 const ui = {
     overlay: document.getElementById('overlay'),
@@ -25,11 +72,6 @@ const FLOOR_COLOR = '#6b3f1d'; // darker orange floor for contrast
 ctx && (ctx.font = '14px Arial');
 
 console.log('Renderer loaded - Canvas:', canvas, 'Context:', ctx);
-
-// Offscreen cached background for static maze (walls/floor)
-let mazeBaseCanvas = null;
-let mazeBaseDirty = true;
-let lastMazeRef = null;
 
 function buildMazeBase() {
     if (!canvas || !gameState.maze) return;
