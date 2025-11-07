@@ -1,6 +1,7 @@
 // audio.js - Simple Web Audio cues for skill checks
 
 let ctx = null;
+let preBossLoopId = null;
 
 function getCtx() {
   if (!ctx) {
@@ -182,4 +183,60 @@ export function playMortarSelfDestruct() {
   // Distorted, lower pitched boom for self-hit
   playTone({ freq: 120, duration: 0.14, type: 'square', gain: 0.09, attack: 0.001, release: 0.1 });
   setTimeout(() => playTone({ freq: 70, duration: 0.18, type: 'sine', gain: 0.07 }), 80);
+}
+
+// --- Simple pre-boss background loop ---
+export function startPreBossMusic() {
+  if (preBossLoopId) return;
+  const pattern = () => {
+    // Low ominous pulse + airy overtones
+    playTone({ freq: 140, duration: 0.35, type: 'sine', gain: 0.05 });
+    setTimeout(() => playTone({ freq: 210, duration: 0.28, type: 'triangle', gain: 0.045 }), 160);
+    setTimeout(() => playTone({ freq: 420, duration: 0.22, type: 'sawtooth', gain: 0.03 }), 320);
+    setTimeout(() => playTone({ freq: 280, duration: 0.25, type: 'sine', gain: 0.035 }), 560);
+  };
+  pattern();
+  preBossLoopId = setInterval(pattern, 1200);
+}
+
+export function stopPreBossMusic() {
+  if (preBossLoopId) {
+    clearInterval(preBossLoopId);
+    preBossLoopId = null;
+  }
+}
+
+// --- Rocket SFX ---
+export function playRocketFire() {
+  // Quick whoosh on fire
+  playTone({ freq: 360, duration: 0.08, type: 'sawtooth', gain: 0.07, attack: 0.002, release: 0.06 });
+}
+export function playRocketExplosion() {
+  // Punchy layered boom
+  playTone({ freq: 200, duration: 0.12, type: 'square', gain: 0.09, attack: 0.001, release: 0.08 });
+  setTimeout(() => playTone({ freq: 120, duration: 0.14, type: 'sine', gain: 0.07 }), 50);
+}
+
+// --- Reload SFX ---
+export function playReload() {
+  // A quick mechanical click + chirp
+  playTone({ freq: 420, duration: 0.05, type: 'square', gain: 0.06, attack: 0.001, release: 0.04 });
+  setTimeout(() => playTone({ freq: 820, duration: 0.06, type: 'triangle', gain: 0.05 }), 40);
+}
+
+// --- Boss Warning SFX (intro cutscene loop) ---
+let _warnInterval = null;
+export function startBossWarningLoop() {
+  stopBossWarningLoop();
+  const playBeep = () => {
+    playTone({ freq: 520, duration: 0.18, type: 'sawtooth', gain: 0.22, attack: 0.002, release: 0.04 });
+  };
+  playBeep();
+  _warnInterval = setInterval(playBeep, 400);
+}
+export function stopBossWarningLoop() {
+  if (_warnInterval) {
+    clearInterval(_warnInterval);
+    _warnInterval = null;
+  }
 }

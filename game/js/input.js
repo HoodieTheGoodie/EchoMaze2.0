@@ -18,6 +18,7 @@ let touchInputInitialized = false;
 export function setupInputHandlers() {
     document.addEventListener('keydown', handleKeyDown, { passive: false });
     document.addEventListener('keyup', handleKeyUp, { passive: false });
+    document.addEventListener('mousedown', handleMouseDown, { passive: false });
 }
 
 // Mobile: Initialize touch handlers (called from main.js)
@@ -39,6 +40,12 @@ export { handleKeyDown, handleKeyUp };
 
 function handleKeyDown(e) {
     const key = (e.key || '').toLowerCase();
+    if (gameState.inputLocked) {
+        // While input is locked (cutscenes), ignore gameplay inputs entirely
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
     // Prevent page scroll for arrow keys and space universally while game is focused
     if (key === 'arrowup' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowright' || key === ' ' || e.code === 'Space') {
         e.preventDefault();
@@ -46,9 +53,12 @@ function handleKeyDown(e) {
     }
     keys[key] = true;
 
-    // Restart game (R)
+    // R key: reload at ammo box during gameplay, restart otherwise
     if (e.code === 'KeyR' || key === 'r') {
-        if (gameState.gameStatus !== 'playing') {
+        if (gameState.gameStatus === 'playing' && !gameState.isPaused) {
+            // Mark a reload attempt for state logic to process (prep or arena)
+            gameState.reloadPressedAt = performance.now();
+        } else if (gameState.gameStatus !== 'playing') {
             initGame();
         }
         return;
@@ -73,11 +83,22 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Generator interaction (E)
+    // Generator interaction (E) or boss interactions (pickup/mount)
     if (e.code === 'KeyE' || key === 'e') {
         if (gameState.gameStatus === 'playing' && !gameState.isGeneratorUIOpen) {
             if (gameState.isPaused) return; // ignore while paused
-            attemptGeneratorInteraction(performance.now());
+            const now = performance.now();
+            if (gameState.boss && (gameState.boss.active || gameState.boss.prepRoom)) {
+                // Try mount pig first
+                import('./boss.js').then(mod => { try { mod.tryMountPig(now); } catch {} });
+                // Then bazooka pickup if present
+                if (gameState.bazookaPickup) {
+                    gameState.interactPressedAt = now;
+                    import('./boss.js').then(mod => { try { mod.pickBazooka(now); } catch {} });
+                }
+            } else {
+                attemptGeneratorInteraction(now);
+            }
         }
         return;
     }
@@ -163,6 +184,23 @@ function handleKeyDown(e) {
     }
 }
 
+function handleMouseDown(e) {
+    if (e.button !== 0) return; // left click only
+    if (gameState.gameStatus !== 'playing' || gameState.isPaused) return;
+    if (!(gameState.boss && gameState.boss.active)) return;
+    if (!(gameState.bazooka && gameState.bazooka.has && gameState.bazooka.ammo > 0)) return;
+    // Map click to grid tile
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / 20); // CELL_SIZE=20
+    const y = Math.floor((e.clientY - rect.top) / 20);
+    // Fire rocket toward clicked tile using state helper
+    import('./boss.js').then(mod => {
+        mod.fireRocketAt(x, y, performance.now());
+    });
+}
+
 function handleKeyUp(e) {
     const key = (e.key || '').toLowerCase();
     keys[key] = false;
@@ -186,7 +224,7 @@ function handleKeyUp(e) {
 }
 
 export function processMovement(currentTime) {
-    if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen || gameState.isPaused) {
+    if (gameState.inputLocked || gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen || gameState.isPaused) {
         return;
     }
 

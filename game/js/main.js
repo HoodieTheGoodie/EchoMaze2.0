@@ -1,8 +1,8 @@
 // main.js - Game loop and initialization
 
-import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs } from './state.js';
+import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
 import { playLose } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 
@@ -235,9 +235,11 @@ function showMenu() {
         stopGameLoop();
         gameState.isPaused = true;
     const godChk = document.getElementById('godModeChk');
+    const skipPreBossChk = document.getElementById('skipPreBossChk');
     if (isDevUnlocked()) {
         if (devPanel) devPanel.style.display = 'block';
         if (godChk) godChk.checked = isGodMode();
+        if (skipPreBossChk) skipPreBossChk.checked = isSkipPreBossEnabled();
     } else if (devPanel) {
         devPanel.style.display = 'none';
     }
@@ -264,6 +266,10 @@ function startLevel(level) {
     loadMobileControls().then(m => m.showMobileControls());
 
     initGame();
+    // Dev convenience: if Level 10 and skip toggle is ON, jump straight to pre-boss transition
+    if (level === 10 && isSkipPreBossEnabled()) {
+        try { startBossTransition(performance.now()); } catch {}
+    }
 }
 
 function wireMenuUi() {
@@ -305,11 +311,18 @@ function wireMenuUi() {
     }
 
     const godChk = document.getElementById('godModeChk');
+    const skipPreBossChk = document.getElementById('skipPreBossChk');
     if (godChk && !godChk._wired) {
         godChk.addEventListener('change', () => {
             setGodMode(godChk.checked);
         });
         godChk._wired = true;
+    }
+    if (skipPreBossChk && !skipPreBossChk._wired) {
+        skipPreBossChk.addEventListener('change', () => {
+            setSkipPreBossEnabled(!!skipPreBossChk.checked);
+        });
+        skipPreBossChk._wired = true;
     }
 
     const unlockAllBtn = document.getElementById('unlockAllBtn');
@@ -556,6 +569,38 @@ function showWinOverlay() {
         menuBtn._wired = true;
     }
     launchConfetti();
+
+    // Wire credits button for final escape scenario
+    const creditsBtn = document.getElementById('creditsBtn');
+    if (creditsBtn && !creditsBtn._wired) {
+        creditsBtn.addEventListener('click', () => {
+            const c = document.getElementById('creditsOverlay');
+            if (c) c.style.display = 'block';
+        });
+        creditsBtn._wired = true;
+    }
+    const creditsMenuBtn = document.getElementById('creditsMenuBtn');
+    if (creditsMenuBtn && !creditsMenuBtn._wired) {
+        creditsMenuBtn.addEventListener('click', () => {
+            const c = document.getElementById('creditsOverlay');
+            if (c) c.style.display = 'none';
+            stopConfetti();
+            showMenu();
+        });
+        creditsMenuBtn._wired = true;
+    }
+    // If this was Level 10 escape (boss defeated), alter messaging
+    if (gameState.currentLevel === 10 && gameState.boss && gameState.boss.postEscapeStarted) {
+        const winMsg = document.getElementById('winMsg');
+        if (winMsg) winMsg.textContent = 'You survived the final collapse!';
+        if (creditsBtn) creditsBtn.style.display = 'inline-block';
+        // Hide next level button
+        const nextBtn2 = document.getElementById('nextLevelBtn');
+        if (nextBtn2) { nextBtn2.style.display = 'none'; }
+        // Hide main menu here to force Credits first
+        const menuBtn2 = document.getElementById('winReturnMenuBtn');
+        if (menuBtn2) { menuBtn2.style.display = 'none'; }
+    }
 }
 
 function postFrameChecks(currentTime) {

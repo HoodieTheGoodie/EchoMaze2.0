@@ -66,10 +66,27 @@ export function getDefaultLevelConfig(level) {
     return { ...base };
 }
 
+// --- Boss (Level 10) tuning constants ---
+export const BOSS_CORE_HP = 1000;
+export const BOSS_PHASE_DUR = 20000; // ms
+export const BAZOOKA_MAX_AMMO = 10;
+export const BAZOOKA_START_AMMO = 10;
+export const BAZOOKA_DIRECT_DMG = 120;
+export const BAZOOKA_SPLASH_DMG = 40;
+export const PIG_MOUNT_TIME = 6000; // ms
+export const MORTAR_WARNING_SEC = 2; // seconds
+export const MORTAR_EXPLOSION_SIZE = 5; // tiles (5x5)
+export const MORTAR_PLAYER_STUN = 5; // seconds
+export const EXPLOSION_FREEZE_ENEMY = 10000; // ms
+export const MAX_ACTIVE_PIGS = 6;
+export const MAX_ACTIVE_SEEKERS = 3;
+export const BOSS_AMMO_STATION_COOLDOWN = 30000; // ms
+
 // Persistence keys
 const KEY_UNLOCKED = 'smg_unlockedLevel';
 const KEY_GODMODE = 'smg_godMode';
 const KEY_DEVUNLOCK = 'smg_devUnlocked';
+const KEY_SKIP_PREBOSS = 'smg_skip_preboss';
 
 export function getUnlockedLevel() {
     const n = parseInt(localStorage.getItem(KEY_UNLOCKED) || '1', 10);
@@ -99,6 +116,14 @@ export function isDevUnlocked() {
 
 export function setDevUnlocked(enabled) {
     localStorage.setItem(KEY_DEVUNLOCK, enabled ? '1' : '0');
+}
+
+// Dev convenience: Skip directly to pre-boss area on Level 10
+export function isSkipPreBossEnabled() {
+    return localStorage.getItem(KEY_SKIP_PREBOSS) === '1';
+}
+export function setSkipPreBossEnabled(enabled) {
+    localStorage.setItem(KEY_SKIP_PREBOSS, enabled ? '1' : '0');
 }
 
 // --- Endless defaults persistence ---
