@@ -51,12 +51,15 @@ function setupTouchButton(button, key, keyDownHandler, keyUpHandler) {
         e.preventDefault();
         e.stopPropagation();
 
+        console.log('[TOUCH] Button touched:', key);
+
         // Track this touch
         const touch = e.changedTouches[0];
         activeTouches.set(touch.identifier, { button, key });
 
         // Simulate keyboard event
         const fakeEvent = createKeyboardEvent('keydown', key);
+        console.log('[TOUCH] Sending keydown:', key, fakeEvent);
         keyDownHandler(fakeEvent);
 
         // Visual feedback

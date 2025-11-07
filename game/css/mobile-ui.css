@@ -47,13 +47,14 @@
         width: 100px !important;
     }
 
-    /* Canvas - Responsive sizing for portrait */
+    /* Canvas - Responsive sizing for portrait, make room for controls below */
     #canvas {
-        width: min(100vw - 20px, 100vh - 400px) !important;
-        height: min(100vw - 20px, 100vh - 400px) !important;
+        width: min(100vw - 20px, calc(100vh - 480px)) !important;
+        height: min(100vw - 20px, calc(100vh - 480px)) !important;
         border-width: 2px !important;
-        max-width: 500px;
-        max-height: 500px;
+        max-width: 380px;
+        max-height: 380px;
+        flex-shrink: 0;
     }
 
     /* Instructions - Hide on mobile to save space */
@@ -113,17 +114,17 @@
    MOBILE CONTROLS - Virtual D-Pad & Buttons
    ======================================== */
 
-/* Controls Container */
+/* Controls Container - positioned below canvas in flow */
 #mobile-controls {
     display: none; /* Hidden by default, shown via JS on mobile */
-    position: fixed;
-    bottom: 0;
-    left: 0;
+    position: relative;
     width: 100%;
-    height: 240px;
-    pointer-events: none;
+    height: 180px;
+    margin-top: auto;
+    pointer-events: auto;
     z-index: 500;
     touch-action: none;
+    flex-shrink: 0;
 }
 
 /* Show controls on mobile when game is active */
@@ -133,13 +134,13 @@
     }
 }
 
-/* D-Pad Container (Bottom Left) */
+/* D-Pad Container (Left Side) */
 .mobile-dpad {
     position: absolute;
-    bottom: 20px;
+    bottom: 10px;
     left: 20px;
-    width: 140px;
-    height: 140px;
+    width: 130px;
+    height: 130px;
     pointer-events: auto;
 }
 
@@ -206,13 +207,13 @@
     transform: translateY(-50%);
 }
 
-/* Action Buttons Container (Bottom Right) */
+/* Action Buttons Container (Right Side) */
 .mobile-actions {
     position: absolute;
-    bottom: 20px;
+    bottom: 10px;
     right: 20px;
-    width: 160px;
-    height: 160px;
+    width: 150px;
+    height: 150px;
     pointer-events: auto;
 }
 
