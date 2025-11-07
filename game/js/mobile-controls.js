@@ -131,3 +131,13 @@ export function setSprintActive(isActive) {
         }
     }
 }
+
+/**
+ * Show mobile skill check button during generator repair
+ */
+export function showMobileSkillCheckButton(show) {
+    const btn = document.getElementById('mobileSkillCheckBtn');
+    if (btn) {
+        btn.style.display = show ? 'block' : 'none';
+    }
+}

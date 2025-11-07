@@ -1013,7 +1013,15 @@ function drawGeneratorOverlay(currentTime) {
     progressBar.style.width = `${gameState.generatorProgress}%`;
     
     if (gameState.skillCheckState) {
-        instruction.textContent = 'Press SPACE when the pointer is in the yellow zone!';
+        // Show mobile button on touch devices, otherwise show keyboard instruction
+        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (isMobile) {
+            instruction.textContent = 'Tap the button when pointer is in yellow zone!';
+            const mobileBtn = document.getElementById('mobileSkillCheckBtn');
+            if (mobileBtn) mobileBtn.style.display = 'block';
+        } else {
+            instruction.textContent = 'Press SPACE when the pointer is in the yellow zone!';
+        }
         skillCheckContainer.style.display = 'block';
         
         const pointer = skillCheckContainer.querySelector('.pointer');
@@ -1036,6 +1044,9 @@ function drawGeneratorOverlay(currentTime) {
     } else {
         instruction.textContent = 'Hold steady...';
         skillCheckContainer.style.display = 'none';
+        // Hide mobile button when not in skill check
+        const mobileBtn = document.getElementById('mobileSkillCheckBtn');
+        if (mobileBtn) mobileBtn.style.display = 'none';
     }
 
     // Subtle flash feedback on success/fail

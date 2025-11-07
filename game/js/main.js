@@ -59,6 +59,18 @@ export function initGame() {
             cancelBtn._wired = true;
         }
 
+        // Wire mobile skill check button
+        const mobileSkillBtn = document.getElementById('mobileSkillCheckBtn');
+        if (mobileSkillBtn && !mobileSkillBtn._wired) {
+            mobileSkillBtn.addEventListener('click', async () => {
+                if (gameState.isGeneratorUIOpen && gameState.skillCheckState) {
+                    const { attemptSkillCheck } = await import('./state.js');
+                    attemptSkillCheck();
+                }
+            });
+            mobileSkillBtn._wired = true;
+        }
+
         // Wire Pause button and pause overlay controls
         const pauseBtn = document.getElementById('pauseBtn');
         if (pauseBtn && !pauseBtn._wired) {
