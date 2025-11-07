@@ -119,17 +119,15 @@
    MOBILE CONTROLS - Virtual D-Pad & Buttons
    ======================================== */
 
-/* Controls Container - positioned below canvas in flow */
+/* Controls Container - flex item that fills remaining vertical space */
 #mobile-controls {
     display: none; /* Hidden by default, shown via JS on mobile */
     position: relative;
     width: 100%;
-    height: 160px;
-    margin-top: 0;
+    flex: 1; /* Take up all remaining space after canvas and UI */
     pointer-events: auto;
     z-index: 500;
     touch-action: none;
-    flex-shrink: 0;
 }
 
 /* Show controls on mobile when game is active */
@@ -139,10 +137,11 @@
     }
 }
 
-/* D-Pad Container (Left Side) */
+/* D-Pad Container (Left Side) - vertically centered */
 .mobile-dpad {
     position: absolute;
-    bottom: 10px;
+    top: 50%;
+    transform: translateY(-50%);
     left: 20px;
     width: 130px;
     height: 130px;
@@ -228,10 +227,11 @@
     transform: translateY(-50%) scale(0.95);
 }
 
-/* Action Buttons Container (Right Side) */
+/* Action Buttons Container (Right Side) - vertically centered */
 .mobile-actions {
     position: absolute;
-    bottom: 10px;
+    top: 50%;
+    transform: translateY(-50%);
     right: 20px;
     width: 150px;
     height: 150px;
