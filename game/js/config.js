@@ -129,6 +129,7 @@ export function setSkipPreBossEnabled(enabled) {
 // --- Endless defaults persistence ---
 const KEY_ENDLESS = 'smg_endless_defaults_v1';
 const KEY_SETTINGS = 'smg_settings_v1';
+const KEY_SECRET_UNLOCK = 'smg_secret_unlocked_v1';
 
 export function getEndlessDefaults() {
     try {
@@ -183,4 +184,12 @@ export function setSettings(settings) {
         autoMovement: settings && settings.autoMovement !== false,
     };
     try { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); } catch {}
+}
+
+// --- Secret unlock (after beating the game) ---
+export function isSecretUnlocked() {
+    try { return localStorage.getItem(KEY_SECRET_UNLOCK) === '1'; } catch { return false; }
+}
+export function setSecretUnlocked(enabled) {
+    try { localStorage.setItem(KEY_SECRET_UNLOCK, enabled ? '1' : '0'); } catch {}
 }

@@ -298,21 +298,20 @@
     </div>
 
     <!-- Credits Overlay -->
-    <div id="creditsOverlay" style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.9); z-index:1200;">
+    <div id="creditsOverlay" style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.9); z-index:3500;">
         <div style="position:absolute; inset:10% 15%; background:#121016; border:3px solid #ff7b00; border-radius:14px; padding:16px; display:flex; flex-direction:column;">
             <h2 style="color:#ff7b00; text-align:center; margin-bottom:8px;">Credits</h2>
             <div style="flex:1; overflow:auto; padding:8px; color:#eee; line-height:1.6;">
-                <p>Echo Maze 2.0</p>
-                <p>Design & Code: You</p>
-                <p>Assistant Engineering: GitHub Copilot</p>
-                <p>Special Thanks: Friends and testers</p>
-                <hr style="border-color:#333; margin:12px 0;" />
-                <p>Built with HTML5 Canvas and plain JavaScript.</p>
-                <p>Thank you for playing!</p>
-                <div style="height:320px"></div>
+                <p style="margin-bottom:8px;">Devloped by Hoodie/Will and Scott Eifel</p>
+                <p style="white-space:pre-wrap; margin-bottom:12px;">Hey thanks for playing my game! I made this in my free time as I was bored and wanted to try something new. Now that the game is finished that doesnt mean I will be stopping as I have many planned games for the future, such as a 2 Player Game and a Tower Defense game that will all be connect to a main story. If any bugs are found I will still be updating this game to fix them so I wont just be fully done with this game.</p>
+                <div style="height:12px;"></div>
+                <div style="color:#aaa; font-size:10px; word-break:break-all;">
+                    8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M
+                </div>
+                <div style="height:200px"></div>
             </div>
             <div style="display:flex; justify-content:center; gap:12px; padding-top:8px;">
-                <button id="creditsMenuBtn" type="button">Main Menu</button>
+                <button id="creditsMenuBtn" type="button" data-close-credits="1">Main Menu</button>
             </div>
         </div>
     </div>
@@ -459,6 +458,9 @@
                     <span id="autoMovementLabel">Auto-Movement</span>
                 </label>
                 <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
+                <div style="display:flex; justify-content:center; margin-top:16px;">
+                    <button id="viewCreditsBtn" type="button" style="display:none; border-color:#ffd166;">View Credits</button>
+                </div>
             </div>
             <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
                 <button id="settingsBackBtn" type="button">Back</button>

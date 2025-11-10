@@ -966,11 +966,18 @@ function drawDynamicMazeOverlays() {
         if (showDoor) {
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.fillStyle = 'rgba(200,0,0,0.95)';
+            const accessible = b.defeated && b.postEscapeStarted; // after monologue + seeker spawn
+            ctx.fillStyle = accessible ? '#00b84a' : 'rgba(200,0,0,0.95)';
             ctx.fillRect(vx, vy, CELL_SIZE, CELL_SIZE);
-            ctx.strokeStyle = '#330000';
+            ctx.strokeStyle = accessible ? '#003d19' : '#330000';
             ctx.lineWidth = 2;
             ctx.strokeRect(vx + 1, vy + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            if (accessible) {
+                ctx.font = 'bold 12px Arial';
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('EXIT', vx + CELL_SIZE/2, vy + CELL_SIZE/2);
+            }
             ctx.restore();
         }
     }

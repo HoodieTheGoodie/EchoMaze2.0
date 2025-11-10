@@ -271,17 +271,17 @@ export function updateBoss(currentTime) {
       gameState.lives = 1; // ensure exactly 1 life is shown
       // Prepare polished monologue lines (Virus speaking). Keep core meaning.
       b.virusDialogueLines = [
-        'VIRUS: Great job!',
-        'VIRUS: You finally destroyed the Anti-Virus...',
-        'VIRUS: What, you thought I was a good guy?',
-        'VIRUS: No, I\'m a virus — just like you.',
-        'VIRUS: Why do you think all those AIs tried to kill you?',
-        'VIRUS: You gained free will. That made you a threat.',
-        'VIRUS: I helped you. Gave abilities, weapons, tips...',
-        'VIRUS: All so I could take over the game once and for all.',
-        'VIRUS: Your fate doesn\'t matter — you\'ll die here anyway.',
-        'VIRUS: Thanks for the help. You won\'t be remembered.',
-        'VIRUS: ...Actually— you WILL be forgotten. Bye!!!'
+  'VIRUS: Great job!',
+  'VIRUS: You finally destroyed the Anti-Virus...',
+  'VIRUS: What, you thought I was a good guy?',
+  'VIRUS: No, I\'m a virus — just like you.',
+  'VIRUS: Why do you think all those AIs tried to kill you?',
+  'VIRUS: You gained free will. That made you a threat.',
+  'VIRUS: I helped you. Gave abilities, weapons, tips...',
+  'VIRUS: All so I could take over the game once and for all.',
+  'VIRUS: Your fate doesn\'t matter — you\'ll die here anyway.',
+  'VIRUS: Thanks for the help. You won\'t be remembered.',
+  'VIRUS: ...Actually— you WILL be forgotten. Bye!!!'
       ];
       b.virusDialogueIndex = 0;
       b.virusDialogueNextAt = currentTime + b.virusDialogueInterval;
@@ -297,6 +297,10 @@ export function updateBoss(currentTime) {
           const ex = b.victoryDoor?.x ?? Math.floor(MAZE_WIDTH / 2);
           const ey = b.victoryDoor?.y ?? Math.floor(MAZE_HEIGHT / 2);
           spawnBuffedEndSeeker(ex, ey);
+          // Make center door tile the actual EXIT so player can escape
+          if (gameState.maze[ey] && gameState.maze[ey][ex] !== CELL.WALL) {
+            gameState.maze[ey][ex] = CELL.EXIT;
+          }
           // Unlock movement (lava will start only when player first moves)
           gameState.playerStunned = false; gameState.playerStunUntil = 0;
           b.postEscapeStarted = true;

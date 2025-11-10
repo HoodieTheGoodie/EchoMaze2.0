@@ -2,7 +2,7 @@
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
 import { playLose } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 
@@ -392,6 +392,9 @@ function wireMenuUi() {
             if (movementAudioChk) movementAudioChk.checked = !!s.movementAudio;
             if (autoMovementChk) autoMovementChk.checked = !!s.autoMovement;
             if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${s.autoMovement ? 'ON' : 'OFF'}`;
+            // Reveal credits button if unlocked (after beating the game)
+            const creditsBtn = document.getElementById('viewCreditsBtn');
+            if (creditsBtn) creditsBtn.style.display = isSecretUnlocked() ? 'inline-block' : 'none';
             if (settingsOverlay) settingsOverlay.style.display = 'flex';
         });
         settingsBtn._wired = true;
@@ -420,6 +423,25 @@ function wireMenuUi() {
             if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${next.autoMovement ? 'ON' : 'OFF'}`;
         });
         autoMovementChk._wired = true;
+    }
+    // Settings: View Credits button opens the Credits overlay
+    const viewCreditsBtn = document.getElementById('viewCreditsBtn');
+    if (viewCreditsBtn && !viewCreditsBtn._wired) {
+        viewCreditsBtn.addEventListener('click', () => {
+            const c = document.getElementById('creditsOverlay');
+            if (c) c.style.display = 'block';
+        });
+        viewCreditsBtn._wired = true;
+    }
+    // Credits overlay: Main Menu button should always close credits and show the menu
+    const creditsMenuBtnGlobal = document.getElementById('creditsMenuBtn');
+    if (creditsMenuBtnGlobal && !creditsMenuBtnGlobal._globalWired) {
+        creditsMenuBtnGlobal.addEventListener('click', () => {
+            const c = document.getElementById('creditsOverlay');
+            if (c) c.style.display = 'none';
+            showMenu();
+        });
+        creditsMenuBtnGlobal._globalWired = true;
     }
 }
 
@@ -600,6 +622,8 @@ function showWinOverlay() {
         // Hide main menu here to force Credits first
         const menuBtn2 = document.getElementById('winReturnMenuBtn');
         if (menuBtn2) { menuBtn2.style.display = 'none'; }
+    // Unlock secret/credits persistence
+    setSecretUnlocked(true);
     }
 }
 
