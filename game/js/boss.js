@@ -1,7 +1,9 @@
 // boss.js - Level 10 Boss Controller (The Core)
 
 import { gameState, MAZE_WIDTH, MAZE_HEIGHT, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake } from './state.js';
-import { startPreBossMusic, stopPreBossMusic } from './audio.js';
+import { startPreBossMusic, stopPreBossMusic, playExplosion } from './audio.js';
+import { particles } from './particles.js';
+import { CELL_SIZE } from './renderer.js';
 import { CELL, generateMaze } from './maze.js';
 import { 
   BOSS_CORE_HP, BOSS_PHASE_DUR,
@@ -106,7 +108,8 @@ export function loadPrepRoom(currentTime) {
       "You finally made it to the CORE...",
       "Defeat the CORE to beat the game.",
       "Pick up the bazooka (it's unloaded).",
-      "Then go to the ammo box and press R to reload."
+      "Then go to the ammo box and press R to reload.",
+      "(Press H to skip this dialog)"
     ], () => {
       try { enablePlayerInput(); } catch {};
       gameState.prepPickupLocked = false;
@@ -704,6 +707,13 @@ export function tryMountPig(currentTime) {
 
 export function bossExplosion(cx, cy, radius, currentTime) {
   const src = gameState.lastExplosionSource || 'unknown';
+  
+  // Play explosion sound and spawn explosion particles with debris
+  try { playExplosion(); } catch {}
+  const explosionX = (cx + 0.5) * CELL_SIZE;
+  const explosionY = (cy + 0.5) * CELL_SIZE;
+  particles.spawn('explosion', explosionX, explosionY, 35, { color: '#ff4400' });
+  
   // Damage player (like Mortar)
   const pd = Math.max(Math.abs(gameState.player.x - cx), Math.abs(gameState.player.y - cy));
   if (pd <= radius) {
@@ -712,6 +722,11 @@ export function bossExplosion(cx, cy, radius, currentTime) {
       gameState.playerStunned = true;
       gameState.playerStunUntil = currentTime + 4000;
       gameState.playerStunStart = currentTime;
+      // Check for death
+      if (gameState.lives <= 0) {
+        gameState.deathCause = src === 'rocket' ? 'own_rocket' : 'boss_explosion';
+        gameState.gameStatus = 'lost';
+      }
     }
   }
   // Freeze enemies in radius

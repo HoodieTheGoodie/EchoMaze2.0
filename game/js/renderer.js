@@ -2,8 +2,11 @@
 
 import { gameState, SKILL_CHECK_ROTATION_TIME, MAZE_WIDTH, MAZE_HEIGHT, TELEPORT_CHARGE_TIME, COLLISION_SHIELD_RECHARGE_TIME, COLLISION_SHIELD_BREAK_FLASH, getRunClock } from './state.js';
 import { CELL } from './maze.js';
+import { particles } from './particles.js';
+import { getLevelColor } from './config.js';
 
-let CELL_SIZE = 20; // Changed to let for responsive scaling
+// Export CELL_SIZE so other modules can convert tile to pixel coordinates
+export let CELL_SIZE = 20; // Changed to let for responsive scaling
 const canvas = document.getElementById('canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
 
@@ -67,7 +70,7 @@ const ui = {
     streakSection: document.getElementById('streakSection'),
     skill: null
 };
-const FLOOR_COLOR = '#6b3f1d'; // darker orange floor for contrast
+const FLOOR_COLOR = '#2a2a2a'; // dark gray floor for cyberpunk aesthetic
 // Improve text rendering for timer
 ctx && (ctx.font = '14px Arial');
 
@@ -79,6 +82,12 @@ function buildMazeBase() {
     mazeBaseCanvas.width = canvas.width;
     mazeBaseCanvas.height = canvas.height;
     const bctx = mazeBaseCanvas.getContext('2d');
+    
+    // Get level color for neon walls
+    const level = gameState.currentLevel || 1;
+    const color = getLevelColor(level);
+    const neonColor = color.css;
+    
     // Draw static walls/floor only (no exit/generators)
     for (let y = 0; y < MAZE_HEIGHT; y++) {
         for (let x = 0; x < MAZE_WIDTH; x++) {
@@ -86,8 +95,50 @@ function buildMazeBase() {
             const px = x * CELL_SIZE;
             const py = y * CELL_SIZE;
             if (cellType === CELL.WALL) {
-                bctx.fillStyle = '#333';
+                // Dark base
+                bctx.fillStyle = '#0a0a0a';
                 bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                
+                // Check each side - only draw neon if adjacent cell is NOT a wall
+                bctx.save();
+                bctx.shadowBlur = 6;
+                bctx.shadowColor = neonColor;
+                bctx.strokeStyle = neonColor;
+                bctx.lineWidth = 2;
+                
+                // Top edge
+                if (y > 0 && gameState.maze[y - 1][x] !== CELL.WALL) {
+                    bctx.beginPath();
+                    bctx.moveTo(px, py);
+                    bctx.lineTo(px + CELL_SIZE, py);
+                    bctx.stroke();
+                }
+                
+                // Bottom edge
+                if (y < MAZE_HEIGHT - 1 && gameState.maze[y + 1][x] !== CELL.WALL) {
+                    bctx.beginPath();
+                    bctx.moveTo(px, py + CELL_SIZE);
+                    bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE);
+                    bctx.stroke();
+                }
+                
+                // Left edge
+                if (x > 0 && gameState.maze[y][x - 1] !== CELL.WALL) {
+                    bctx.beginPath();
+                    bctx.moveTo(px, py);
+                    bctx.lineTo(px, py + CELL_SIZE);
+                    bctx.stroke();
+                }
+                
+                // Right edge
+                if (x < MAZE_WIDTH - 1 && gameState.maze[y][x + 1] !== CELL.WALL) {
+                    bctx.beginPath();
+                    bctx.moveTo(px + CELL_SIZE, py);
+                    bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE);
+                    bctx.stroke();
+                }
+                
+                bctx.restore();
             } else {
                 bctx.fillStyle = FLOOR_COLOR;
                 bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
@@ -150,6 +201,14 @@ export function render(currentTime) {
     if (gameState.gameStatus === 'lost') {
         drawGameOver();
     }
+    
+    // Update and render particle system
+    if (particles) {
+        const deltaTime = 16; // Approximate frame time
+        particles.update(deltaTime);
+        particles.render(ctx, currentTime);
+    }
+    
     // Screen fade overlay for transitions
     if (gameState.screenFade) {
         const f = gameState.screenFade;
@@ -1143,9 +1202,85 @@ function drawGenerators(currentTime) {
 }
 
 function drawPlayer() {
-    const centerX = gameState.player.x * CELL_SIZE + CELL_SIZE / 2;
-    const centerY = gameState.player.y * CELL_SIZE + CELL_SIZE / 2;
+    // Calculate player position with jump animation
+    let playerX = gameState.player.x;
+    let playerY = gameState.player.y;
+    let jumpProgress = 0;
+    let isJumping = false;
+    
+    // Check for active jump animation
+    if (gameState.jumpAnimation && gameState.jumpAnimation.active) {
+        const now = performance.now();
+        const elapsed = now - gameState.jumpAnimation.startTime;
+        const progress = Math.min(1, elapsed / gameState.jumpAnimation.duration);
+        
+        if (progress < 1) {
+            // Interpolate between start and end positions
+            playerX = gameState.jumpAnimation.startX + 
+                     (gameState.jumpAnimation.endX - gameState.jumpAnimation.startX) * progress;
+            playerY = gameState.jumpAnimation.startY + 
+                     (gameState.jumpAnimation.endY - gameState.jumpAnimation.startY) * progress;
+            jumpProgress = progress;
+            isJumping = true;
+        } else {
+            // Animation complete
+            gameState.jumpAnimation.active = false;
+        }
+    }
+    
+    const centerX = playerX * CELL_SIZE + CELL_SIZE / 2;
+    const centerY = playerY * CELL_SIZE + CELL_SIZE / 2;
     const radius = CELL_SIZE / 2 - 2;
+
+    // Add jump arc effect (parabolic motion effect) - MUCH MORE VISIBLE
+    let jumpOffset = 0;
+    if (isJumping) {
+        // Create a bigger arc: peaks at 50% progress
+        jumpOffset = -Math.sin(jumpProgress * Math.PI) * CELL_SIZE * 1.5; // Increased from 0.8 to 1.5
+    }
+
+    // Draw motion blur trail during jump - MORE VISIBLE
+    if (isJumping) {
+        const trailSteps = 8; // Increased from 5 to 8
+        for (let i = 0; i < trailSteps; i++) {
+            const t = jumpProgress - (i * 0.08); // Tighter spacing
+            if (t > 0 && t < 1) {
+                const tx = (gameState.jumpAnimation.startX + 
+                           (gameState.jumpAnimation.endX - gameState.jumpAnimation.startX) * t) * CELL_SIZE + CELL_SIZE / 2;
+                const ty = (gameState.jumpAnimation.startY + 
+                           (gameState.jumpAnimation.endY - gameState.jumpAnimation.startY) * t) * CELL_SIZE + CELL_SIZE / 2;
+                const tOffset = -Math.sin(t * Math.PI) * CELL_SIZE * 1.5;
+                const alpha = 0.3 - (i * 0.035); // More opaque trails
+                
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#00BFFF'; // Brighter cyan
+                ctx.beginPath();
+                ctx.arc(tx, ty + tOffset, radius * 0.9, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+        
+        // Add speed lines during jump
+        ctx.save();
+        const angle = Math.atan2(
+            gameState.jumpAnimation.endY - gameState.jumpAnimation.startY,
+            gameState.jumpAnimation.endX - gameState.jumpAnimation.startX
+        );
+        ctx.translate(centerX, centerY + jumpOffset);
+        ctx.rotate(angle);
+        ctx.strokeStyle = `rgba(0, 191, 255, ${0.4 * (1 - jumpProgress)})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+            const offset = (i - 1.5) * 6;
+            ctx.beginPath();
+            ctx.moveTo(-radius * 2, offset);
+            ctx.lineTo(-radius * 1.2, offset);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
 
     // Base color (sprinting = cyan, else royal blue). During stun, fade brightness back to full by stun end.
     const baseRGB = gameState.isSprinting ? { r: 0, g: 255, b: 255 } : { r: 65, g: 105, b: 225 };
@@ -1161,29 +1296,31 @@ function drawPlayer() {
         b = Math.round(baseRGB.b * f);
     }
 
+    // Draw player with jump offset
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY + jumpOffset, radius, 0, Math.PI * 2);
     ctx.fill();
 
     // Wings + timer ring while mounted (flight mode)
     const nowT = performance.now();
     if (gameState.mountedPigUntil && nowT < gameState.mountedPigUntil) {
+        const mountCenterY = centerY + jumpOffset;
         // Soft white wings on both sides, with a gentle flap
         const flap = Math.sin(nowT / 180) * 4; // +/-4px
         ctx.save();
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         // Left wing
         ctx.beginPath();
-        ctx.moveTo(centerX - radius - 3, centerY);
-        ctx.lineTo(centerX - radius - 10, centerY - 8 - flap);
-        ctx.lineTo(centerX - radius - 10, centerY + 8 + flap);
+        ctx.moveTo(centerX - radius - 3, mountCenterY);
+        ctx.lineTo(centerX - radius - 10, mountCenterY - 8 - flap);
+        ctx.lineTo(centerX - radius - 10, mountCenterY + 8 + flap);
         ctx.closePath(); ctx.fill();
         // Right wing
         ctx.beginPath();
-        ctx.moveTo(centerX + radius + 3, centerY);
-        ctx.lineTo(centerX + radius + 10, centerY - 8 - flap);
-        ctx.lineTo(centerX + radius + 10, centerY + 8 + flap);
+        ctx.moveTo(centerX + radius + 3, mountCenterY);
+        ctx.lineTo(centerX + radius + 10, mountCenterY - 8 - flap);
+        ctx.lineTo(centerX + radius + 10, mountCenterY + 8 + flap);
         ctx.closePath(); ctx.fill();
         ctx.restore();
 
@@ -1197,12 +1334,12 @@ function drawPlayer() {
         ctx.save();
         ctx.strokeStyle = 'rgba(255, 215, 0, 0.25)';
         ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(centerX, centerY, R, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(centerX, mountCenterY, R, 0, Math.PI * 2); ctx.stroke();
         // Progress arc from top, clockwise
         ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
         ctx.lineWidth = 3;
         const startAng = -Math.PI / 2;
-        ctx.beginPath(); ctx.arc(centerX, centerY, R, startAng, startAng + t * Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(centerX, mountCenterY, R, startAng, startAng + t * Math.PI * 2); ctx.stroke();
         ctx.restore();
     }
 
@@ -1210,7 +1347,7 @@ function drawPlayer() {
     const mountedActive = !!(gameState.mountedPigUntil && performance.now() < gameState.mountedPigUntil);
     if (mountedActive) {
         ctx.save();
-        ctx.translate(centerX, centerY);
+        ctx.translate(centerX, centerY + jumpOffset);
         // Gentle flap animation
         const t = performance.now() / 200;
         const flap = Math.sin(t) * 0.2;
@@ -1240,6 +1377,7 @@ function drawPlayer() {
         const now = performance.now();
         const remainMs = Math.max(0, (gameState.playerStunUntil || now) - now);
         const chains = Math.max(1, Math.min(4, Math.ceil(remainMs / 1000)));
+        const stunCenterY = centerY + jumpOffset;
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,0,0.7)';
         ctx.lineWidth = 2;
@@ -1247,9 +1385,9 @@ function drawPlayer() {
             // Distribute evenly around the circle; keep a subtle spin for life
             const angle = (i * (2 * Math.PI / chains)) + (now / 200);
             const x1 = centerX + Math.cos(angle) * radius;
-            const y1 = centerY + Math.sin(angle) * radius;
+            const y1 = stunCenterY + Math.sin(angle) * radius;
             const x2 = centerX + Math.cos(angle) * (radius + 8);
-            const y2 = centerY + Math.sin(angle) * (radius + 8);
+            const y2 = stunCenterY + Math.sin(angle) * (radius + 8);
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
@@ -1259,25 +1397,27 @@ function drawPlayer() {
     }
     
     if (gameState.isJumpCharging) {
+        const chargeCenterY = centerY + jumpOffset;
         ctx.strokeStyle = '#FFD700';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius + 5, 0, Math.PI * 2);
+        ctx.arc(centerX, chargeCenterY, radius + 5, 0, Math.PI * 2);
         ctx.stroke();
     }
 
     // Draw blocking shield when active (with aura/glow)
     if (gameState.blockActive) {
+        const shieldCenterY = centerY + jumpOffset;
         const r = Math.max(CELL_SIZE, radius + 10);
         // Aura
         ctx.save();
         ctx.globalAlpha = 0.25;
         ctx.fillStyle = 'rgba(255, 240, 120, 0.25)';
-        ctx.beginPath(); ctx.arc(centerX, centerY, r + 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(centerX, shieldCenterY, r + 6, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
         // Directional shield wedge
         ctx.save();
-        ctx.translate(centerX, centerY);
+        ctx.translate(centerX, shieldCenterY);
         ctx.rotate(gameState.blockAngle);
         ctx.fillStyle = 'rgba(255, 213, 0, 0.28)';
         ctx.strokeStyle = 'rgba(255, 213, 0, 0.95)';
@@ -1295,13 +1435,14 @@ function drawPlayer() {
 
     // Collision Shield visuals
     const now = performance.now();
+    const collisionCenterY = centerY + jumpOffset;
     if (gameState.collisionShieldState === 'active') {
         // Pink outline with subtle pulse
         const pulse = Math.sin(now / 180) * 0.25 + 0.75;
         ctx.save();
         ctx.strokeStyle = `rgba(255, 119, 170, ${0.6 * pulse})`;
         ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(centerX, centerY, radius + 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2); ctx.stroke();
         ctx.restore();
     } else if (gameState.collisionShieldState === 'recharging' && gameState.collisionShieldRechargeEnd) {
         // Faint ring plus progress arc from top, clockwise
@@ -1311,12 +1452,12 @@ function drawPlayer() {
         // Base faint ring
         ctx.strokeStyle = 'rgba(255, 119, 170, 0.18)';
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(centerX, centerY, radius + 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2); ctx.stroke();
         // Progress arc
         ctx.strokeStyle = 'rgba(255, 119, 170, 0.55)';
         ctx.lineWidth = 3;
         const start = -Math.PI / 2;
-        ctx.beginPath(); ctx.arc(centerX, centerY, radius + 4, start, start + t * Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, start, start + t * Math.PI * 2); ctx.stroke();
         ctx.restore();
     }
 

@@ -240,3 +240,24 @@ export function stopBossWarningLoop() {
     _warnInterval = null;
   }
 }
+
+// --- Enemy Hit SFX ---
+export function playEnemyHit() {
+  // Harsh descending impact sound when player is hit by enemy
+  playTone({ freq: 420, duration: 0.08, type: 'square', gain: 0.09, attack: 0.001, release: 0.05 });
+  setTimeout(() => playTone({ freq: 200, duration: 0.10, type: 'sawtooth', gain: 0.08 }), 60);
+}
+
+// --- Wall Collision SFX ---
+export function playWallHit() {
+  // Short thud sound when hitting a wall
+  playTone({ freq: 180, duration: 0.06, type: 'square', gain: 0.07, attack: 0.001, release: 0.04 });
+}
+
+// --- Explosion SFX ---
+export function playExplosion() {
+  // Deep explosive boom with rumble
+  playTone({ freq: 80, duration: 0.15, type: 'square', gain: 0.12, attack: 0.001, release: 0.1 });
+  setTimeout(() => playTone({ freq: 50, duration: 0.20, type: 'sine', gain: 0.09 }), 40);
+  setTimeout(() => playTone({ freq: 120, duration: 0.12, type: 'sawtooth', gain: 0.08 }), 80);
+}

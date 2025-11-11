@@ -4,7 +4,9 @@ import { generateMaze, CELL } from './maze.js';
 import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN } from './config.js';
 import { updateBoss, pickBazooka, bossExplosion, fireRocketAt, damageCoreAt, loadPrepRoom, spawnBossArena } from './boss.js';
 import { stopPreBossMusic } from './audio.js';
-import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct } from './audio.js';
+import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
+import { particles } from './particles.js';
+import { CELL_SIZE } from './renderer.js';
 
 export const MAZE_WIDTH = 30;
 export const MAZE_HEIGHT = 30;
@@ -98,10 +100,25 @@ export function showTextSequence(lines, callback, intervalMs = 2500) {
             setStatusMessage(String(lines[idx]), intervalMs);
         } else {
             clearInterval(id);
+            gameState.textSequenceIntervalId = null;
             setStatusMessage('', 1);
             if (typeof callback === 'function') callback();
         }
     }, intervalMs);
+    gameState.textSequenceIntervalId = id;
+    gameState.textSequenceCallback = callback;
+}
+
+export function skipTextSequence() {
+    if (gameState.textSequenceIntervalId) {
+        clearInterval(gameState.textSequenceIntervalId);
+        gameState.textSequenceIntervalId = null;
+        setStatusMessage('', 1);
+        if (typeof gameState.textSequenceCallback === 'function') {
+            gameState.textSequenceCallback();
+            gameState.textSequenceCallback = null;
+        }
+    }
 }
 
 export function disablePlayerInput() { gameState.inputLocked = true; }
@@ -542,6 +559,11 @@ export function movePlayer(dx, dy, currentTime) {
                             gameState.gameStatus = 'lost';
                         }
                     }
+                    // Play wall hit sound and spawn dust particles
+                    try { playWallHit(); } catch {}
+                    const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                    const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                    particles.spawn('wallHit', px, py, 8);
                 }
             }
         }
@@ -624,6 +646,17 @@ export function performJump(dx, dy, currentTime) {
         finishRun(currentTime);
         gameState.gameStatus = 'won';
     }
+    
+    // Store jump animation data BEFORE changing position
+    gameState.jumpAnimation = {
+        active: true,
+        startX: gameState.player.x,
+        startY: gameState.player.y,
+        endX: landingX,
+        endY: landingY,
+        startTime: currentTime,
+        duration: 200 // 200ms animation (fast but visible)
+    };
     
     gameState.player.x = landingX;
     gameState.player.y = landingY;
@@ -1496,6 +1529,11 @@ export function updateEnemies(currentTime) {
                         gameState.deathCause = 'pig_projectile';
                         gameState.gameStatus = 'lost';
                         setStatusMessage('You were hit by a projectile!');
+                        // Play hit sound and spawn damage particles at player position
+                        try { playEnemyHit(); } catch {}
+                        const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                        const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                        particles.spawn('damage', px, py, 20);
                         p.resolved = true;
                         continue;
                     }
@@ -2070,6 +2108,10 @@ export function updateEnemies(currentTime) {
                     const center = e.aimTarget || { x: cx, y: cy };
                     const radius = 2; // 5x5 square => Chebyshev radius 2
                     try { playMortarExplosion(); } catch {}
+                    try { playExplosion(); } catch {}
+                    const explosionX = (center.x + 0.5) * CELL_SIZE;
+                    const explosionY = (center.y + 0.5) * CELL_SIZE;
+                    particles.spawn('explosion', explosionX, explosionY, 30, { color: '#ff6600' });
                     gameState.screenShakeMag = 5;
                     gameState.screenShakeUntil = currentTime + 180;
                     e._lastExplosionAt = currentTime;
@@ -2082,6 +2124,11 @@ export function updateEnemies(currentTime) {
                             gameState.playerStunned = true;
                             gameState.playerStunUntil = currentTime + 5000;
                             setStatusMessage('Mortar blast! STUNNED for 5s.');
+                            // Play hit sound and spawn damage particles at player position
+                            try { playEnemyHit(); } catch {}
+                            const playerX = (gameState.player.x + 0.5) * CELL_SIZE;
+                            const playerY = (gameState.player.y + 0.5) * CELL_SIZE;
+                            particles.spawn('damage', playerX, playerY, 20);
                             if (gameState.lives <= 0) {
                                 gameState.deathCause = 'mortar_explosion';
                                 gameState.gameStatus = 'lost';
@@ -2149,6 +2196,10 @@ export function updateEnemies(currentTime) {
                     const center = e._secondTarget;
                     const radius = 2;
                     try { playMortarExplosion(); } catch {}
+                    try { playExplosion(); } catch {}
+                    const explosionX = (center.x + 0.5) * CELL_SIZE;
+                    const explosionY = (center.y + 0.5) * CELL_SIZE;
+                    particles.spawn('explosion', explosionX, explosionY, 30, { color: '#ff6600' });
                     gameState.screenShakeMag = 5;
                     gameState.screenShakeUntil = currentTime + 180;
                     e._lastExplosionAt = currentTime;
@@ -2160,6 +2211,11 @@ export function updateEnemies(currentTime) {
                             gameState.playerStunned = true;
                             gameState.playerStunUntil = currentTime + 5000;
                             setStatusMessage('Mortar blast! STUNNED for 5s.');
+                            // Play hit sound and spawn damage particles at player position
+                            try { playEnemyHit(); } catch {}
+                            const playerX = (gameState.player.x + 0.5) * CELL_SIZE;
+                            const playerY = (gameState.player.y + 0.5) * CELL_SIZE;
+                            particles.spawn('damage', playerX, playerY, 20);
                             if (gameState.lives <= 0) { gameState.deathCause = 'mortar_explosion'; gameState.gameStatus = 'lost'; }
                         }
                     }
@@ -2746,6 +2802,13 @@ function handleEnemyHit(currentTime) {
         gameState.enemiesFrozenUntil = currentTime + 2000;
     }
     gameState.playerInvincibleUntil = currentTime + 2000;
+    
+    // Play hit sound and spawn damage particles at player position
+    try { playEnemyHit(); } catch {}
+    const px = (gameState.player.x + 0.5) * CELL_SIZE;
+    const py = (gameState.player.y + 0.5) * CELL_SIZE;
+    particles.spawn('damage', px, py, 15);
+    
     if (gameState.lives <= 0) {
         gameState.deathCause = gameState._lastHitType || 'enemy';
         gameState.gameStatus = 'lost';
@@ -2767,6 +2830,12 @@ function handleBatterHit(currentTime) {
     setStatusMessage('STUNNED for 4 seconds!');
     // Coordinate other enemies: aggro until stun ends
     gameState.coordinatedAggroUntil = gameState.playerStunUntil;
+    
+    // Play hit sound and spawn damage particles at player position
+    try { playEnemyHit(); } catch {}
+    const px = (gameState.player.x + 0.5) * CELL_SIZE;
+    const py = (gameState.player.y + 0.5) * CELL_SIZE;
+    particles.spawn('damage', px, py, 15);
 
     // Put batter into flee mode - move away until stun ends
     const batter = gameState.enemies.find(e => e.type === 'batter');

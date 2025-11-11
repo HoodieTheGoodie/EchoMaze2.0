@@ -2,6 +2,21 @@
 
 export const LEVEL_COUNT = 10;
 
+// Get color for current level (blue at level 1 -> red at level 10)
+export function getLevelColor(level) {
+    // Clamp level to 1-10
+    const l = Math.max(1, Math.min(LEVEL_COUNT, level));
+    
+    // Level 1 = blue (0, 246, 255), Level 10 = red (255, 0, 0)
+    const t = (l - 1) / (LEVEL_COUNT - 1); // 0.0 at level 1, 1.0 at level 10
+    
+    const r = Math.round(0 + t * 255);
+    const g = Math.round(246 - t * 246);
+    const b = Math.round(255 - t * 255);
+    
+    return { r, g, b, css: `rgb(${r}, ${g}, ${b})`, rgba: (alpha) => `rgba(${r}, ${g}, ${b}, ${alpha})` };
+}
+
 // Fixed seeds per level for deterministic mazes
 export const LEVEL_SEEDS = [
     0,

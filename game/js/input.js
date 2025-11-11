@@ -40,6 +40,16 @@ export { handleKeyDown, handleKeyUp };
 
 function handleKeyDown(e) {
     const key = (e.key || '').toLowerCase();
+    
+    // Allow H key to skip dialog even when input is locked (prep room)
+    if ((e.code === 'KeyH' || key === 'h') && gameState.boss && gameState.boss.prepRoom && gameState.inputLocked) {
+        import('./state.js').then(m => {
+            if (m.skipTextSequence) m.skipTextSequence();
+        });
+        e.preventDefault();
+        return;
+    }
+    
     if (gameState.inputLocked) {
         // While input is locked (cutscenes), ignore gameplay inputs entirely
         e.preventDefault();
@@ -138,8 +148,15 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Toggle Seeker debug overlay (H)
+    // Toggle Seeker debug overlay (H) / Skip dialog in prep room
     if (e.code === 'KeyH' || key === 'h') {
+        // Skip dialog in prep room
+        if (gameState.boss && gameState.boss.prepRoom) {
+            import('./state.js').then(m => {
+                if (m.skipTextSequence) m.skipTextSequence();
+            });
+        }
+        // Toggle debug overlay
         if (!gameState.isGeneratorUIOpen) {
             gameState.debugSeeker = !gameState.debugSeeker;
         }

@@ -6,6 +6,9 @@ import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMo
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 
+// Expose gameState to window for background renderer
+window.gameState = gameState;
+
 // Mobile: Lazy load mobile controls (only load if needed)
 let mobileControlsModule = null;
 async function loadMobileControls() {
@@ -291,7 +294,7 @@ function wireMenuUi() {
                 if (devPanel) devPanel.style.display = devPanel.style.display === 'none' ? 'block' : 'none';
             } else {
                 const pwd = prompt('Enter dev password:');
-                if (pwd === 'Spooky') {
+                if (pwd === '271000skib') {
                     setDevUnlocked(true);
                     if (devPanel) devPanel.style.display = 'block';
                     const godChk = document.getElementById('godModeChk');
