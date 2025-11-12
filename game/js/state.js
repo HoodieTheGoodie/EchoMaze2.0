@@ -1633,13 +1633,16 @@ export function updateEnemies(currentTime) {
                         if (towardPlayer > 0) {
                             const result = onShieldHit('projectile', 0.6, now);
                             if (result === 'break') {
+                                // Shield broke from damage - destroy projectile without reflection
                                 p.resolved = true;
                             } else {
+                                // Shield blocks and reflects projectile back at pig
                                 p.vx = -p.vx; p.vy = -p.vy; p.angle = (p.angle + Math.PI) % (Math.PI * 2);
                                 p.reflected = true;
                                 p.sourceId = null;
                                 p.x += p.vx * 0.02; p.y += p.vy * 0.02;
                                 try { playShieldReflect(); } catch {}
+                                // Shield breaks after successfully reflecting (with particles and effects)
                                 onShieldBreak(now);
                             }
                         }
