@@ -81,6 +81,23 @@ export function getDefaultLevelConfig(level) {
     return { ...base };
 }
 
+// --- Level Intro Tips (with subtle evil narrator hints) ---
+export function getLevelTip(level) {
+    const tips = {
+        1: "Welcome. Fix the generators. Leave. Simple, isn't it?",
+        2: "Ah, a Chaser appears. It wanders... until it sees you. Then it *leaps*. How thrilling.",
+        3: "Flying Pigs telegraph their dash with a pulse. Predictable creatures... for now.",
+        4: "Two enemy types. The maze grows... *crowded*. Stay alert. Or don't. I'll be watching either way.",
+        5: "Seekers patrol methodically. When they spot you, they *enrage*. Fast. Relentless. Delightful.",
+        6: "Three enemy types. The system is functioning as intended. You're doing so well... keep going.",
+        7: "Batters charge when close. Reflect their attack to stagger them. Very clever of you... if you survive.",
+        8: "Four threats now. The protocols are... escalating. Don't worry, it's all part of the *design*.",
+        9: "Mortars. They fire explosive projectiles. Dodge them. Or embrace the chaos. I'm not here to judge... yet.",
+        10: "Final level. The Core awaits. Everything has led to this moment. I wonder... will you escape?"
+    };
+    return tips[level] || "The maze shifts. Adapt or fail.";
+}
+
 // --- Boss (Level 10) tuning constants ---
 export const BOSS_CORE_HP = 1000;
 export const BOSS_PHASE_DUR = 20000; // ms
@@ -102,6 +119,7 @@ const KEY_UNLOCKED = 'smg_unlockedLevel';
 const KEY_GODMODE = 'smg_godMode';
 const KEY_DEVUNLOCK = 'smg_devUnlocked';
 const KEY_SKIP_PREBOSS = 'smg_skip_preboss';
+const KEY_BAZOOKA_MODE = 'smg_bazookaMode';
 
 export function getUnlockedLevel() {
     const n = parseInt(localStorage.getItem(KEY_UNLOCKED) || '1', 10);
@@ -182,14 +200,15 @@ export function setEndlessDefaults(cfg) {
 export function getSettings() {
     try {
         const raw = localStorage.getItem(KEY_SETTINGS);
-        if (!raw) return { movementAudio: true, autoMovement: true };
+        if (!raw) return { movementAudio: true, autoMovement: true, simplifiedUI: false };
         const obj = JSON.parse(raw);
         return {
             movementAudio: obj && obj.movementAudio !== false,
             autoMovement: obj && obj.autoMovement !== false,
+            simplifiedUI: obj && obj.simplifiedUI === true,
         };
     } catch {
-        return { movementAudio: true, autoMovement: true };
+        return { movementAudio: true, autoMovement: true, simplifiedUI: false };
     }
 }
 
@@ -197,6 +216,7 @@ export function setSettings(settings) {
     const s = {
         movementAudio: settings && settings.movementAudio !== false,
         autoMovement: settings && settings.autoMovement !== false,
+        simplifiedUI: settings && settings.simplifiedUI === true,
     };
     try { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); } catch {}
 }
@@ -207,4 +227,12 @@ export function isSecretUnlocked() {
 }
 export function setSecretUnlocked(enabled) {
     try { localStorage.setItem(KEY_SECRET_UNLOCK, enabled ? '1' : '0'); } catch {}
+}
+
+// --- Bazooka Mode (secret cheat) ---
+export function isBazookaMode() {
+    try { return localStorage.getItem(KEY_BAZOOKA_MODE) === '1'; } catch { return false; }
+}
+export function setBazookaMode(enabled) {
+    try { localStorage.setItem(KEY_BAZOOKA_MODE, enabled ? '1' : '0'); } catch {}
 }

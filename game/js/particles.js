@@ -279,3 +279,71 @@ export class ParticleSystem {
 
 // Export singleton instance
 export const particles = new ParticleSystem();
+
+// Add lightning particles for wall jump
+export function addElectricParticles(startX, startY, endX, endY) {
+    const particleCount = 15;
+    
+    for (let i = 0; i < particleCount; i++) {
+        const t = i / particleCount;
+        const x = startX + (endX - startX) * t;
+        const y = startY + (endY - startY) * t;
+        
+        // Main lightning trail particles
+        particles.particles.push({
+            x: x + (Math.random() - 0.5) * 0.3,
+            y: y + (Math.random() - 0.5) * 0.3,
+            vx: (Math.random() - 0.5) * 0.8,
+            vy: (Math.random() - 0.5) * 0.8,
+            life: 1.0,
+            decay: 0.05,
+            size: 3 + Math.random() * 2,
+            color: `rgba(0, 255, 255, ${0.8 + Math.random() * 0.2})`,
+            sparkle: true
+        });
+        
+        // Electric spark particles
+        if (Math.random() > 0.5) {
+            particles.particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 1.5,
+                vy: (Math.random() - 0.5) * 1.5,
+                life: 1.0,
+                decay: 0.08,
+                size: 2 + Math.random() * 1,
+                color: `rgba(255, 255, 100, ${0.6 + Math.random() * 0.4})`
+            });
+        }
+    }
+    
+    // Add burst particles at start and end positions
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const speed = 0.5 + Math.random() * 0.5;
+        
+        // Start position burst
+        particles.particles.push({
+            x: startX,
+            y: startY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: 0.06,
+            size: 2 + Math.random() * 2,
+            color: `rgba(100, 200, 255, ${0.7 + Math.random() * 0.3})`
+        });
+        
+        // End position burst
+        particles.particles.push({
+            x: endX,
+            y: endY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: 0.06,
+            size: 2 + Math.random() * 2,
+            color: `rgba(100, 200, 255, ${0.7 + Math.random() * 0.3})`
+        });
+    }
+}

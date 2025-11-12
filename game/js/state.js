@@ -1,7 +1,7 @@
 // state.js - Game state management
 
 import { generateMaze, CELL } from './maze.js';
-import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN } from './config.js';
+import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN, isBazookaMode } from './config.js';
 import { updateBoss, pickBazooka, bossExplosion, fireRocketAt, damageCoreAt, loadPrepRoom, spawnBossArena } from './boss.js';
 import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
@@ -241,6 +241,18 @@ export function initGame() {
     gameState.playerStunUntil = 0;
     // Apply a brief thaw period on level start
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
+
+    // SECRET: Bazooka Mode (regenerating ammo cheat)
+    if (isBazookaMode()) {
+        gameState.bazooka = { 
+            has: true, 
+            ammo: 15, 
+            maxAmmo: 15,
+            lastRegenTime: performance.now()
+        };
+        // Track wall health for bazooka mode
+        gameState.wallHealth = {};
+    }
 }
 
 export function triggerEnemiesThaw(currentTime) {
@@ -600,7 +612,7 @@ export function movePlayer(dx, dy, currentTime) {
     return true;
 }
 
-export function performJump(dx, dy, currentTime) {
+export async function performJump(dx, dy, currentTime) {
     if (!gameState.isJumpCharging) return false;
     
     const landingX = gameState.player.x + dx * 2;
@@ -657,6 +669,16 @@ export function performJump(dx, dy, currentTime) {
         startTime: currentTime,
         duration: 200 // 200ms animation (fast but visible)
     };
+    
+    // Create lightning particles for wall jump effect
+    const { addElectricParticles } = await import('./particles.js');
+    addElectricParticles(gameState.player.x, gameState.player.y, landingX, landingY);
+    
+    // Play electric zap sound
+    try {
+        const { playWallJump } = await import('./audio.js');
+        playWallJump();
+    } catch {}
     
     gameState.player.x = landingX;
     gameState.player.y = landingY;
@@ -785,12 +807,42 @@ export function stopBlock() {
 
 export function setBlockAim(dx, dy) {
     if (dx === 0 && dy === 0) return;
-    gameState.blockAngle = Math.atan2(dy, dx);
+    const targetAngle = Math.atan2(dy, dx);
+    
+    // Store target angle for smooth animation
+    if (!gameState.blockTargetAngle) {
+        gameState.blockTargetAngle = targetAngle;
+        gameState.blockAngle = targetAngle;
+    } else {
+        gameState.blockTargetAngle = targetAngle;
+    }
 }
 
 export function updateBlock(currentTime) {
     if (gameState.blockActive && currentTime >= gameState.blockUntil) {
         gameState.blockActive = false;
+    }
+    
+    // Smoothly rotate shield towards target angle
+    if (gameState.blockActive && gameState.blockTargetAngle !== undefined) {
+        const current = gameState.blockAngle;
+        const target = gameState.blockTargetAngle;
+        
+        // Calculate shortest rotation direction
+        let diff = target - current;
+        
+        // Normalize to -PI to PI range
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        
+        // Smooth rotation speed (radians per frame at 60fps)
+        const rotationSpeed = 0.25; // Adjust this for faster/slower rotation
+        
+        if (Math.abs(diff) < 0.01) {
+            gameState.blockAngle = target;
+        } else {
+            gameState.blockAngle += Math.sign(diff) * Math.min(Math.abs(diff), rotationSpeed);
+        }
     }
 }
 
@@ -856,6 +908,22 @@ export function updateStaminaCooldown(currentTime) {
     }
 }
 
+// SECRET: Bazooka Mode - Regenerate ammo (1 per second up to max 15)
+export function updateBazookaAmmo(currentTime) {
+    if (!isBazookaMode() || !gameState.bazooka || !gameState.bazooka.has) return;
+    
+    const maxAmmo = 15;
+    if (gameState.bazooka.ammo < maxAmmo) {
+        const timeSinceLastRegen = currentTime - (gameState.bazooka.lastRegenTime || currentTime);
+        if (timeSinceLastRegen >= 1000) { // 1 second = 1 ammo
+            const regenCount = Math.floor(timeSinceLastRegen / 1000);
+            gameState.bazooka.ammo = Math.min(maxAmmo, gameState.bazooka.ammo + regenCount);
+            gameState.bazooka.lastRegenTime = currentTime;
+        }
+    } else {
+        gameState.bazooka.lastRegenTime = currentTime;
+    }
+}
 // --- Speedrun timing helpers ---
 function msToClock(ms) {
     const totalMs = Math.max(0, Math.floor(ms));
@@ -1447,12 +1515,25 @@ export function updateEnemies(currentTime) {
                 const dc = Math.hypot((bx - p.x), (by - p.y));
                 // Direct hit on core
                 if (dc < 0.6 && gameState.boss && gameState.boss.active) {
-                    damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, true);
+                    const mounted = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
+                    if (!mounted) {
+                        // Show IMMUNE effect when not mounted
+                        if (!gameState.immuneEffects) gameState.immuneEffects = [];
+                        gameState.immuneEffects.push({
+                            x: gameState.boss.core.x,
+                            y: gameState.boss.core.y,
+                            startTime: now,
+                            duration: 1500
+                        });
+                        console.log('[bazooka] core is IMMUNE (not mounted)');
+                    } else {
+                        damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, true);
+                        console.log('[bazooka] direct hit on core');
+                    }
                     // Small explosion splash
                     gameState.lastExplosionSource = 'rocket';
                     bossExplosion(gameState.boss.core.x, gameState.boss.core.y, 1, now);
                     try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
-                    console.log('[bazooka] direct hit on core');
                     p.resolved = true;
                     continue;
                 }
@@ -1482,6 +1563,26 @@ export function updateEnemies(currentTime) {
                 const gx = Math.floor(p.x), gy = Math.floor(p.y);
                 const mountedActive = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
                 if (!mountedActive && gx>0 && gx<MAZE_WIDTH-1 && gy>0 && gy<MAZE_HEIGHT-1 && gameState.maze[gy][gx] === CELL.WALL) {
+                    // SECRET: Bazooka Mode allows destroying inner walls (not outer ring, generators, or exit)
+                    const isOuterRing = (gx === 0 || gx === MAZE_WIDTH-1 || gy === 0 || gy === MAZE_HEIGHT-1);
+                    const isGenerator = gameState.generators && gameState.generators.some(g => g.x === gx && g.y === gy);
+                    const isExit = gameState.maze[gy][gx] === CELL.EXIT;
+                    if (isBazookaMode() && !isOuterRing && !isGenerator && !isExit) {
+                        // Track wall health (2 hits to destroy)
+                        if (!gameState.wallHealth) gameState.wallHealth = {};
+                        const wallKey = `${gx},${gy}`;
+                        const currentHealth = gameState.wallHealth[wallKey] || 2;
+                        gameState.wallHealth[wallKey] = currentHealth - 1;
+                        
+                        if (gameState.wallHealth[wallKey] <= 0) {
+                            // Wall destroyed after 2 hits
+                            gameState.maze[gy][gx] = CELL.EMPTY;
+                            delete gameState.wallHealth[wallKey];
+                            console.log('[bazooka mode] destroyed inner wall at', gx, gy);
+                        } else {
+                            console.log('[bazooka mode] damaged wall at', gx, gy, '- health:', gameState.wallHealth[wallKey]);
+                        }
+                    }
                     // Splash damage around impact tile
                     // Damage core if within 3 tiles (splash)
                     if (gameState.boss && gameState.boss.active) {
