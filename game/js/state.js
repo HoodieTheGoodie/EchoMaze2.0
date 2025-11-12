@@ -1,7 +1,7 @@
 // state.js - Game state management
 
 import { generateMaze, CELL } from './maze.js';
-import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN } from './config.js';
+import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN, isBazookaMode } from './config.js';
 import { updateBoss, pickBazooka, bossExplosion, fireRocketAt, damageCoreAt, loadPrepRoom, spawnBossArena } from './boss.js';
 import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
@@ -241,6 +241,18 @@ export function initGame() {
     gameState.playerStunUntil = 0;
     // Apply a brief thaw period on level start
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
+
+    // SECRET: Bazooka Mode (regenerating ammo cheat)
+    if (isBazookaMode()) {
+        gameState.bazooka = { 
+            has: true, 
+            ammo: 15, 
+            maxAmmo: 15,
+            lastRegenTime: performance.now()
+        };
+        // Track wall health for bazooka mode
+        gameState.wallHealth = {};
+    }
 }
 
 export function triggerEnemiesThaw(currentTime) {
@@ -548,6 +560,10 @@ export function movePlayer(dx, dy, currentTime) {
                 gameState.collisionShieldRechargeEnd = currentTime + COLLISION_SHIELD_RECHARGE_TIME;
                 gameState.collisionShieldHoldStart = 0;
                 try { playShieldBreak(); } catch {}
+                // VISUAL POLISH: Shield shatter particles
+                const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                particles.spawnShieldShatter(px, py);
             } else {
                 // Life penalty unless in god mode, throttle by 500ms
                 if (currentTime - (gameState.lastCollisionTime || 0) > 500) {
@@ -600,7 +616,7 @@ export function movePlayer(dx, dy, currentTime) {
     return true;
 }
 
-export function performJump(dx, dy, currentTime) {
+export async function performJump(dx, dy, currentTime) {
     if (!gameState.isJumpCharging) return false;
     
     const landingX = gameState.player.x + dx * 2;
@@ -657,6 +673,28 @@ export function performJump(dx, dy, currentTime) {
         startTime: currentTime,
         duration: 200 // 200ms animation (fast but visible)
     };
+    
+    // Create lightning particles for wall jump effect
+    const { addElectricParticles } = await import('./particles.js');
+    addElectricParticles(gameState.player.x, gameState.player.y, landingX, landingY);
+    
+    // VISUAL POLISH: Dash afterimages along the path
+    const startPx = (gameState.player.x + 0.5) * CELL_SIZE;
+    const startPy = (gameState.player.y + 0.5) * CELL_SIZE;
+    particles.spawnDashAfterimage(startPx, startPy, { dx, dy });
+    
+    // VISUAL POLISH: Landing shockwave at destination
+    const landPx = (landingX + 0.5) * CELL_SIZE;
+    const landPy = (landingY + 0.5) * CELL_SIZE;
+    setTimeout(() => {
+        particles.spawnLandingShockwave(landPx, landPy);
+    }, 200); // Spawn when landing completes
+    
+    // Play electric zap sound
+    try {
+        const { playWallJump } = await import('./audio.js');
+        playWallJump();
+    } catch {}
     
     gameState.player.x = landingX;
     gameState.player.y = landingY;
@@ -785,12 +823,42 @@ export function stopBlock() {
 
 export function setBlockAim(dx, dy) {
     if (dx === 0 && dy === 0) return;
-    gameState.blockAngle = Math.atan2(dy, dx);
+    const targetAngle = Math.atan2(dy, dx);
+    
+    // Store target angle for smooth animation
+    if (!gameState.blockTargetAngle) {
+        gameState.blockTargetAngle = targetAngle;
+        gameState.blockAngle = targetAngle;
+    } else {
+        gameState.blockTargetAngle = targetAngle;
+    }
 }
 
 export function updateBlock(currentTime) {
     if (gameState.blockActive && currentTime >= gameState.blockUntil) {
         gameState.blockActive = false;
+    }
+    
+    // Smoothly rotate shield towards target angle
+    if (gameState.blockActive && gameState.blockTargetAngle !== undefined) {
+        const current = gameState.blockAngle;
+        const target = gameState.blockTargetAngle;
+        
+        // Calculate shortest rotation direction
+        let diff = target - current;
+        
+        // Normalize to -PI to PI range
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        
+        // Smooth rotation speed (radians per frame at 60fps)
+        const rotationSpeed = 0.25; // Adjust this for faster/slower rotation
+        
+        if (Math.abs(diff) < 0.01) {
+            gameState.blockAngle = target;
+        } else {
+            gameState.blockAngle += Math.sign(diff) * Math.min(Math.abs(diff), rotationSpeed);
+        }
     }
 }
 
@@ -856,6 +924,22 @@ export function updateStaminaCooldown(currentTime) {
     }
 }
 
+// SECRET: Bazooka Mode - Regenerate ammo (1 per second up to max 15)
+export function updateBazookaAmmo(currentTime) {
+    if (!isBazookaMode() || !gameState.bazooka || !gameState.bazooka.has) return;
+    
+    const maxAmmo = 15;
+    if (gameState.bazooka.ammo < maxAmmo) {
+        const timeSinceLastRegen = currentTime - (gameState.bazooka.lastRegenTime || currentTime);
+        if (timeSinceLastRegen >= 1000) { // 1 second = 1 ammo
+            const regenCount = Math.floor(timeSinceLastRegen / 1000);
+            gameState.bazooka.ammo = Math.min(maxAmmo, gameState.bazooka.ammo + regenCount);
+            gameState.bazooka.lastRegenTime = currentTime;
+        }
+    } else {
+        gameState.bazooka.lastRegenTime = currentTime;
+    }
+}
 // --- Speedrun timing helpers ---
 function msToClock(ms) {
     const totalMs = Math.max(0, Math.floor(ms));
@@ -1237,7 +1321,7 @@ export function spawnMortar() {
     gameState.enemies.push(m);
 }
 
-function updateFlyingPig(e, currentTime, px, py) {
+function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
         if (e.state === 'knocked_out' && e._bossSummoned) {
@@ -1302,7 +1386,7 @@ function updateFlyingPig(e, currentTime, px, py) {
                 const remain = Math.max(0, gameState.enemiesThawUntil - currentTime);
                 thawMult = 1 - Math.min(1, remain / ENEMY_THAW_TIME);
             }
-            const step = e.circleSpeed * dt * thawMult;
+            const step = e.circleSpeed * dt * thawMult * bazookaSpeedMult;
             if (cdist > 0.001) {
                 const m = Math.min(step, cdist);
                 e.fx += (cdx / cdist) * m;
@@ -1386,6 +1470,9 @@ function findReachableDropTile(distField, fx, fy) {
 export function updateEnemies(currentTime) {
     if (!gameState.maze || gameState.gameStatus !== 'playing') return;
 
+    // BAZOOKA MODE: Speed multiplier for all enemies (makes them faster and more aggressive)
+    const bazookaSpeedMult = isBazookaMode() ? 1.4 : 1.0; // 40% faster in bazooka mode
+
     // Handle mount state transitions and safe landing
     const wasMounted = !!(gameState._mountedWasActive);
     const isMounted = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
@@ -1447,12 +1534,25 @@ export function updateEnemies(currentTime) {
                 const dc = Math.hypot((bx - p.x), (by - p.y));
                 // Direct hit on core
                 if (dc < 0.6 && gameState.boss && gameState.boss.active) {
-                    damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, true);
+                    const mounted = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
+                    if (!mounted) {
+                        // Show IMMUNE effect when not mounted
+                        if (!gameState.immuneEffects) gameState.immuneEffects = [];
+                        gameState.immuneEffects.push({
+                            x: gameState.boss.core.x,
+                            y: gameState.boss.core.y,
+                            startTime: now,
+                            duration: 1500
+                        });
+                        console.log('[bazooka] core is IMMUNE (not mounted)');
+                    } else {
+                        damageCoreAt(gameState.boss.core.x, gameState.boss.core.y, true);
+                        console.log('[bazooka] direct hit on core');
+                    }
                     // Small explosion splash
                     gameState.lastExplosionSource = 'rocket';
                     bossExplosion(gameState.boss.core.x, gameState.boss.core.y, 1, now);
                     try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
-                    console.log('[bazooka] direct hit on core');
                     p.resolved = true;
                     continue;
                 }
@@ -1482,6 +1582,26 @@ export function updateEnemies(currentTime) {
                 const gx = Math.floor(p.x), gy = Math.floor(p.y);
                 const mountedActive = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
                 if (!mountedActive && gx>0 && gx<MAZE_WIDTH-1 && gy>0 && gy<MAZE_HEIGHT-1 && gameState.maze[gy][gx] === CELL.WALL) {
+                    // SECRET: Bazooka Mode allows destroying inner walls (not outer ring, generators, or exit)
+                    const isOuterRing = (gx === 0 || gx === MAZE_WIDTH-1 || gy === 0 || gy === MAZE_HEIGHT-1);
+                    const isGenerator = gameState.generators && gameState.generators.some(g => g.x === gx && g.y === gy);
+                    const isExit = gameState.maze[gy][gx] === CELL.EXIT;
+                    if (isBazookaMode() && !isOuterRing && !isGenerator && !isExit) {
+                        // Track wall health (2 hits to destroy)
+                        if (!gameState.wallHealth) gameState.wallHealth = {};
+                        const wallKey = `${gx},${gy}`;
+                        const currentHealth = gameState.wallHealth[wallKey] || 2;
+                        gameState.wallHealth[wallKey] = currentHealth - 1;
+                        
+                        if (gameState.wallHealth[wallKey] <= 0) {
+                            // Wall destroyed after 2 hits - keep in wallHealth with 0 value for rendering
+                            gameState.maze[gy][gx] = CELL.EMPTY;
+                            gameState.wallHealth[wallKey] = 0; // Keep track of destroyed walls
+                            console.log('[bazooka mode] destroyed inner wall at', gx, gy);
+                        } else {
+                            console.log('[bazooka mode] damaged wall at', gx, gy, '- health:', gameState.wallHealth[wallKey]);
+                        }
+                    }
                     // Splash damage around impact tile
                     // Damage core if within 3 tiles (splash)
                     if (gameState.boss && gameState.boss.active) {
@@ -1748,7 +1868,7 @@ export function updateEnemies(currentTime) {
             continue;
         }
         if (e.type === 'flying_pig') {
-            updateFlyingPig(e, currentTime, px, py);
+            updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult);
             if (e._despawn) continue; // will be removed in cleanup below
             continue;
         }
@@ -1832,7 +1952,7 @@ export function updateEnemies(currentTime) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
                     const dist = Math.hypot(dx, dy);
-                    const step = e.speedRage * dt * localThaw; // flee as fast as possible
+                    const step = e.speedRage * dt * localThaw * bazookaSpeedMult; // flee as fast as possible
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -1966,7 +2086,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
-                    const step = speedRoam * dt * localThaw;
+                    const step = speedRoam * dt * localThaw * bazookaSpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -2038,7 +2158,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRage = e.speedRage;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
-                    const step = speedRage * dt * localThaw;
+                    const step = speedRage * dt * localThaw * bazookaSpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     } else {
@@ -2344,13 +2464,13 @@ export function updateEnemies(currentTime) {
                 }
                 if (best.x !== cx || best.y !== cy) e.target = { x: best.x, y: best.y };
             }
-            // Move toward target if any
+            // Move toward target if any (MORTAR)
             if (e.target) {
                 const gx = e.target.x + 0.5, gy = e.target.y + 0.5;
                 const dx = gx - e.fx, dy = gy - e.fy;
                 const dist = Math.hypot(dx, dy);
                 const speed = (e.state === 'flee') ? e.speedFlee : e.speedRoam;
-                const step = speed * dt * thawMult;
+                const step = speed * dt * thawMult * bazookaSpeedMult;
                 if (dist <= step || dist < 0.0001) {
                     e.fx = gx; e.fy = gy; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     e._lastMoveAt = currentTime;
@@ -2516,10 +2636,10 @@ export function updateEnemies(currentTime) {
                     if (tdx !== 0 || tdy !== 0) {
                         e.roamDir = { dx: tdx, dy: tdy };
                     }
-                    // Apply slow if active
+                    // Apply slow if active (BATTER)
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
-                    const step = speedRoam * dt * localThaw;
+                    const step = speedRoam * dt * localThaw * bazookaSpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         if (e.roamStepsLeft > 0) e.roamStepsLeft--;
@@ -2607,7 +2727,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRage = e.speedRage;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
-                    const step = speedRage * dt * localThaw;
+                    const step = speedRage * dt * localThaw * bazookaSpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     } else {
@@ -2729,13 +2849,13 @@ export function updateEnemies(currentTime) {
             const dx = tx - e.fx;
             const dy = ty - e.fy;
             const dist = Math.hypot(dx, dy);
-            const speed = (e.speedBase + e.speedPerGen * completed); // tiles/sec
+            const speed = (e.speedBase + e.speedPerGen * completed); // tiles/sec (CHASER)
             const last = e.lastUpdateAt || currentTime;
             const dt = Math.max(0, (currentTime - last) / 1000);
             // Apply slow if active
             let sMul = 1;
             if (e._zapSlowUntil && currentTime < e._zapSlowUntil) sMul = 0.5;
-            const step = speed * dt * thawMult * sMul;
+            const step = speed * dt * thawMult * sMul * bazookaSpeedMult;
             if (dist <= step || dist < 0.0001) {
                 e.fx = tx; e.fy = ty;
                 e.x = e.target.x; e.y = e.target.y;

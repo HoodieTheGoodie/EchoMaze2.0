@@ -3,7 +3,7 @@
 import { gameState, SKILL_CHECK_ROTATION_TIME, MAZE_WIDTH, MAZE_HEIGHT, TELEPORT_CHARGE_TIME, COLLISION_SHIELD_RECHARGE_TIME, COLLISION_SHIELD_BREAK_FLASH, getRunClock } from './state.js';
 import { CELL } from './maze.js';
 import { particles } from './particles.js';
-import { getLevelColor } from './config.js';
+import { getLevelColor, isBazookaMode } from './config.js';
 
 // Export CELL_SIZE so other modules can convert tile to pixel coordinates
 export let CELL_SIZE = 20; // Changed to let for responsive scaling
@@ -192,9 +192,13 @@ export function render(currentTime) {
         if (ui.overlay) ui.overlay.style.display = 'none';
     }
     
+    // Render status message if present
     if (gameState.statusMessage) {
         drawStatusMessage();
     } else {
+        // Hide status message box when cleared
+        const messageBox = document.getElementById('statusMessageBox');
+        if (messageBox) messageBox.style.display = 'none';
         if (ui.status) ui.status.style.display = 'none';
     }
     
@@ -668,11 +672,29 @@ function drawEnemies(currentTime) {
             }
             // Frozen overlay
             if (e._frozenUntil && currentTime < e._frozenUntil) {
-                ctx.save();
-                ctx.globalAlpha = 0.35;
-                ctx.fillStyle = '#9be7ff';
-                ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.fill();
-                ctx.restore();
+                // BAZOOKA MODE: Gray out with color fade-in effect
+                if (isBazookaMode() && e._stunStartTime) {
+                    const totalDuration = (e._frozenUntil - e._stunStartTime);
+                    const remaining = (e._frozenUntil - currentTime);
+                    const progress = 1 - (remaining / totalDuration); // 0 = just stunned, 1 = stun ending
+                    
+                    ctx.save();
+                    // Desaturate and darken the enemy
+                    const grayAmount = 1 - progress; // 1 = fully gray, 0 = full color
+                    ctx.globalAlpha = 0.3 + (grayAmount * 0.5); // More opaque when grayed
+                    ctx.fillStyle = `rgba(128, 128, 128, ${grayAmount})`;
+                    ctx.beginPath(); 
+                    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2); 
+                    ctx.fill();
+                    ctx.restore();
+                } else {
+                    // Default frozen effect (non-bazooka mode)
+                    ctx.save();
+                    ctx.globalAlpha = 0.35;
+                    ctx.fillStyle = '#9be7ff';
+                    ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                }
             }
         } else {
             const isTelegraph = e.telegraphUntil && currentTime < e.telegraphUntil;
@@ -998,6 +1020,50 @@ function drawDynamicMazeOverlays() {
                 const incomplete = gameState.generators.some(g => !g.completed);
                 ctx.fillStyle = incomplete ? '#8B0000' : '#00ff00';
                 ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+            
+            // ONLY show damaged/destroyed walls when bazooka mode is active
+            if (isBazookaMode()) {
+                // Show damaged walls (walls that have taken 1 hit)
+                if (cellType === CELL.WALL && gameState.wallHealth) {
+                    const wallKey = `${x},${y}`;
+                    const health = gameState.wallHealth[wallKey];
+                    if (health === 1) {
+                        // Wall has 1 hit - show cracked/damaged appearance
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(255, 100, 0, 0.3)'; // Orange tint
+                        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                        // Draw cracks
+                        ctx.strokeStyle = 'rgba(255, 150, 0, 0.8)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(x * CELL_SIZE + 5, y * CELL_SIZE + 2);
+                        ctx.lineTo(x * CELL_SIZE + 15, y * CELL_SIZE + 18);
+                        ctx.moveTo(x * CELL_SIZE + 10, y * CELL_SIZE);
+                        ctx.lineTo(x * CELL_SIZE + 8, y * CELL_SIZE + CELL_SIZE);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+                
+                // Show destroyed wall tiles (now empty but tracked with health=0)
+                if (cellType === CELL.EMPTY && gameState.wallHealth) {
+                    const wallKey = `${x},${y}`;
+                    const health = gameState.wallHealth[wallKey];
+                    // Check if this empty cell was a destroyed wall (health === 0)
+                    if (health === 0) {
+                        // Draw destroyed wall appearance
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(100, 100, 100, 0.4)'; // Dark gray rubble
+                        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                        // Draw debris/rubble pattern
+                        ctx.fillStyle = 'rgba(80, 80, 80, 0.6)';
+                        ctx.fillRect(x * CELL_SIZE + 2, y * CELL_SIZE + 3, 6, 6);
+                        ctx.fillRect(x * CELL_SIZE + 12, y * CELL_SIZE + 8, 5, 5);
+                        ctx.fillRect(x * CELL_SIZE + 5, y * CELL_SIZE + 14, 7, 4);
+                        ctx.restore();
+                    }
+                }
             }
         }
     }
@@ -1525,36 +1591,64 @@ function drawUI() {
     const streakEl = ui.streak;
     const streakSection = ui.streakSection;
     
-    if (gameState.fakeZeroHp) {
-        healthEl.textContent = '0';
-    } else {
-        healthEl.textContent = '❤️'.repeat(gameState.lives);
-    }
+    // Update main health display
+    const healthText = gameState.fakeZeroHp ? '0' : '❤️'.repeat(gameState.lives);
+    if (healthEl) healthEl.textContent = healthText;
+    
+    // Also update simplified UI health if it exists
+    const healthSimple = document.getElementById('health-simple');
+    if (healthSimple) healthSimple.textContent = healthText;
     
     const staminaPct = Math.floor(gameState.stamina);
-    staminaEl.textContent = `${staminaPct}%`;
-    staminaEl.style.color = gameState.stamina < 100 ? '#888' : '#0ff';
+    const staminaText = `${staminaPct}%`;
+    const staminaColor = gameState.stamina < 100 ? '#888' : '#0ff';
+    
+    // Update main stamina display
+    if (staminaEl) {
+        staminaEl.textContent = staminaText;
+        staminaEl.style.color = staminaColor;
+    }
+    
+    // Update simplified UI stamina if it exists
+    const staminaSimple = document.getElementById('stamina-simple');
+    if (staminaSimple) {
+        staminaSimple.textContent = staminaText;
+        staminaSimple.style.color = staminaColor;
+    }
+    
+    // Update stamina bar
     if (staminaFill) {
         staminaFill.style.width = `${staminaPct}%`;
         staminaFill.style.background = gameState.stamina < 100
             ? 'linear-gradient(90deg, #3aa3a3, #4dbbd6)'
             : 'linear-gradient(90deg, #0ff, #61dafb)';
     }
+    
     // Shield HUD
+    const now = performance.now();
+    let shieldText = '🛡️';
+    let shieldColor = '#888';
+    if (gameState.collisionShieldState === 'active') {
+        shieldText = '🛡️ Ready';
+        shieldColor = '#ff77aa';
+    } else if (gameState.collisionShieldState === 'recharging' && gameState.collisionShieldRechargeEnd) {
+        const remain = Math.max(0, gameState.collisionShieldRechargeEnd - now);
+        const secs = (remain / 1000).toFixed(1);
+        shieldText = `🛡️ ${secs}s`;
+        shieldColor = '#888';
+    }
+    
+    // Update main shield display
     if (shieldEl) {
-        const now = performance.now();
-        if (gameState.collisionShieldState === 'active') {
-            shieldEl.textContent = '🛡️ Ready';
-            shieldEl.style.color = '#ff77aa';
-        } else if (gameState.collisionShieldState === 'recharging' && gameState.collisionShieldRechargeEnd) {
-            const remain = Math.max(0, gameState.collisionShieldRechargeEnd - now);
-            const secs = (remain / 1000).toFixed(1);
-            shieldEl.textContent = `🛡️ ${secs}s`;
-            shieldEl.style.color = '#888';
-        } else {
-            shieldEl.textContent = '🛡️';
-            shieldEl.style.color = '#888';
-        }
+        shieldEl.textContent = shieldText;
+        shieldEl.style.color = shieldColor;
+    }
+    
+    // Update simplified UI shield if it exists
+    const shieldSimple = document.getElementById('shield-simple');
+    if (shieldSimple) {
+        shieldSimple.textContent = shieldText;
+        shieldSimple.style.color = shieldColor;
     }
     
     const completed = gameState.generators.filter(g => g.completed).length;
@@ -1580,6 +1674,21 @@ function drawUI() {
             if (streakEl) streakEl.textContent = String((gameState.endlessConfig && gameState.endlessConfig.streak) || 0);
         } else {
             streakSection.style.display = 'none';
+        }
+    }
+    
+    // Bazooka ammo display (only show when bazooka is active)
+    const bazookaSection = document.getElementById('bazookaAmmoSection');
+    const bazookaAmmoEl = document.getElementById('bazookaAmmo');
+    if (bazookaSection && bazookaAmmoEl) {
+        const hasBazooka = gameState.bazooka && gameState.bazooka.has;
+        if (hasBazooka) {
+            const ammo = gameState.bazooka.ammo || 0;
+            const maxAmmo = gameState.bazooka.maxAmmo || 10;
+            bazookaAmmoEl.textContent = `${ammo}/${maxAmmo}`;
+            bazookaSection.style.display = 'flex';
+        } else {
+            bazookaSection.style.display = 'none';
         }
     }
 }
@@ -1651,9 +1760,38 @@ function drawGeneratorOverlay(currentTime) {
 }
 
 function drawStatusMessage() {
-    const statusEl = ui.status;
-    statusEl.textContent = gameState.statusMessage;
-    statusEl.style.display = 'block';
+    // Draw status message centered below the canvas instead of using DOM element that shifts layout
+    if (!gameState.statusMessage) return;
+    
+    // Create a fixed position overlay below canvas
+    const messageBox = document.getElementById('statusMessageBox') || createStatusMessageBox();
+    messageBox.textContent = gameState.statusMessage;
+    messageBox.style.display = 'block';
+}
+
+function createStatusMessageBox() {
+    const box = document.createElement('div');
+    box.id = 'statusMessageBox';
+    box.style.cssText = `
+        position: fixed;
+        left: 50%;
+        top: calc(50% + 320px);
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        color: #ffd166;
+        padding: 12px 24px;
+        border-radius: 8px;
+        border: 2px solid #00f6ff;
+        font-size: 16px;
+        font-weight: bold;
+        text-align: center;
+        z-index: 500;
+        box-shadow: 0 0 20px rgba(0, 246, 255, 0.4);
+        max-width: 80%;
+        pointer-events: none;
+    `;
+    document.body.appendChild(box);
+    return box;
 }
 
 function drawGameOver() {

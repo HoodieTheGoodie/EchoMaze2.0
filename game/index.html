@@ -69,6 +69,43 @@
             gap: 30px;
             align-items: center;
             font-size: 1.1rem;
+            /* ENHANCED: Fancy cyberpunk container styling */
+            padding: 20px 28px;
+            background: linear-gradient(135deg, rgba(5, 7, 13, 0.95), rgba(15, 10, 25, 0.92));
+            backdrop-filter: blur(8px);
+            border: 2px solid #00f6ff;
+            border-radius: 15px;
+            box-shadow: 
+                0 0 30px rgba(0, 246, 255, 0.5),
+                0 0 60px rgba(0, 246, 255, 0.25),
+                inset 0 0 30px rgba(0, 246, 255, 0.08);
+            position: relative;
+            overflow: visible;
+        }
+        
+        /* Corner accent decorations */
+        #ui-panel::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 20px;
+            height: 20px;
+            border-top: 3px solid #ff4400;
+            border-left: 3px solid #ff4400;
+            border-radius: 15px 0 0 0;
+        }
+        
+        #ui-panel::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 20px;
+            height: 20px;
+            border-bottom: 3px solid #ff4400;
+            border-right: 3px solid #ff4400;
+            border-radius: 0 0 15px 0;
         }
         
         .ui-section {
@@ -234,7 +271,6 @@
 </head>
 <body>
     <div id="game-container" style="display:none;">
-    <h1>ECHO MAZE</h1>
         
         <div id="ui-panel">
             <div class="ui-section">
@@ -266,6 +302,10 @@
                 <span class="ui-label">Streak:</span>
                 <span id="streak">0</span>
             </div>
+            <div class="ui-section" id="bazookaAmmoSection" style="display:none;">
+                <span class="ui-label">🚀 Ammo:</span>
+                <span id="bazookaAmmo" style="font-weight:bold; color:#ff4400; text-shadow: 0 0 8px rgba(255,68,0,0.6);">10/10</span>
+            </div>
             <div class="ui-section">
                 <button id="pauseBtn" type="button" style="background-color:#00f6ff; color:#0d0a0f; border:none; padding:8px 14px; border-radius:8px; font-weight:bold; cursor:pointer;">Pause</button>
             </div>
@@ -273,15 +313,6 @@
         </div>
         
         <canvas id="canvas" width="600" height="600"></canvas>
-        
-        <div id="instructions">
-            <p>Use arrow keys to move</p>
-            <p>Hold <strong>Shift</strong> to sprint through walls (drains stamina, 10s recharge)</p>
-            <p>Hold <strong>Space</strong> to raise a directional shield and aim with arrows/WASD; reflect pink arcs to stagger enemies (costs 10 stamina)</p>
-            <p>Press <strong>E</strong> next to a yellow generator to repair it (3 total)</p>
-            <p>Complete all generators to unlock the exit</p>
-            <p id="status" class="status"></p>
-        </div>
     </div>
     
     <div id="overlay">
@@ -490,6 +521,35 @@
                     <span id="autoMovementLabel">Auto-Movement</span>
                 </label>
                 <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
+                <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+                    <input id="simplifiedUIChk" type="checkbox" />
+                    <span>Simplified UI</span>
+                </label>
+                <div style="color:#888; font-size:0.9rem; margin-left:30px;">Toggle between traditional top UI and minimalist side panels.</div>
+                
+                <!-- Secret Bazooka Mode Section with Cool Styling -->
+                <div id="bazookaModeSection" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,68,0,0.15), rgba(255,140,0,0.1)); border: 2px solid rgba(255,68,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,68,0,0.3), 0 0 40px rgba(255,68,0,0.1) inset;">
+                    <div style="text-align:center; margin-bottom:12px;">
+                        <span style="font-size:1.8rem; text-shadow: 0 0 10px rgba(255,68,0,0.8);">🚀</span>
+                        <div style="color:#ff4400; font-weight:bold; font-size:1.1rem; text-shadow: 0 0 8px rgba(255,68,0,0.6); margin-top:4px;">BAZOOKA MODE</div>
+                        <div style="color:#ff8800; font-size:0.85rem; margin-top:4px;">SECRET UNLOCKED</div>
+                    </div>
+                    <label style="display:flex; align-items:center; justify-content:center; gap:10px; margin:12px 0;">
+                        <input id="bazookaModeChk" type="checkbox" />
+                        <span style="color:#fff; font-weight:bold;">Enable Bazooka Mode</span>
+                    </label>
+                    <div style="color:#ffa500; font-size:0.9rem; text-align:center; line-height:1.4; margin-top:8px;">
+                        Start every level with a regenerating bazooka.<br>Destroy inner walls and unleash chaos!
+                    </div>
+                </div>
+                
+                <!-- Secret Button (3 attempts) -->
+                <div style="display:flex; justify-content:center; margin-top:20px;" id="secretButtonContainer">
+                    <button id="secretBtn" type="button" style="background: linear-gradient(90deg, #6a0dad, #9d4edd); color:#fff; border:2px solid #9d4edd; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 0 15px rgba(157,78,221,0.4); transition: all 0.3s;">
+                        🔒 SECRET
+                    </button>
+                </div>
+                
                 <div style="display:flex; justify-content:center; margin-top:16px;">
                     <button id="viewCreditsBtn" type="button" style="display:none; border-color:#00f6ff;">View Credits</button>
                 </div>

@@ -144,6 +144,14 @@ export function playZapExpire() {
   playTone({ freq: 480, duration: 0.06, type: 'sine', gain: 0.04 });
 }
 
+// --- Wall Jump cue ---
+export function playWallJump() {
+  // Electric zap sound for wall jumping
+  playTone({ freq: 1800, duration: 0.06, type: 'sawtooth', gain: 0.08, attack: 0.001, release: 0.05 });
+  setTimeout(() => playTone({ freq: 1400, duration: 0.04, type: 'triangle', gain: 0.06 }), 30);
+  setTimeout(() => playTone({ freq: 1000, duration: 0.03, type: 'sine', gain: 0.04 }), 55);
+}
+
 // --- Lose cue ---
 export function playLose() {
   // Small descending chime to indicate defeat

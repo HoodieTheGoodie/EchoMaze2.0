@@ -11,7 +11,8 @@ import {
   BAZOOKA_DIRECT_DMG, BAZOOKA_SPLASH_DMG,
   MORTAR_WARNING_SEC, MORTAR_EXPLOSION_SIZE,
   MAX_ACTIVE_PIGS, MAX_ACTIVE_SEEKERS,
-  BOSS_AMMO_STATION_COOLDOWN
+  BOSS_AMMO_STATION_COOLDOWN,
+  isBazookaMode
 } from './config.js';
 import { spawnFlyingPig, spawnSeeker } from './state.js';
 
@@ -585,7 +586,33 @@ export function updateBoss(currentTime) {
       spawnBossPigAt(left.x, left.y);
       spawnBossPigAt(right.x, right.y);
       b._pinkSpawned = true;
+      // Start tutorial on first pig wave only
+      if (b.pigWave === 0) {
+        b.tutorialActive = true;
+        b.tutorialStage = 'wait_for_kill'; // wait for pigs to be killed
+      }
+      b.pigWave++;
     }
+    
+    // Tutorial progression
+    if (b.tutorialActive) {
+      // Check for knocked out pigs
+      const knockedOutPigs = (gameState.enemies || []).filter(e => 
+        e.type === 'flying_pig' && e.state === 'knocked_out' && e._bossSummoned
+      );
+      
+      if (b.tutorialStage === 'wait_for_kill' && knockedOutPigs.length > 0) {
+        b.tutorialStage = 'show_mount_prompt';
+        b.tutorialPigTarget = knockedOutPigs[0]; // Track which pig to point to
+      }
+      
+      // Check if player mounted
+      const mounted = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
+      if (b.tutorialStage === 'show_mount_prompt' && mounted) {
+        b.tutorialStage = 'show_shoot_boss';
+      }
+    }
+    
     // Track if mount active
     b.currentMountActive = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
     // Count remaining boss pigs (alive or knocked out but present)
@@ -594,6 +621,12 @@ export function updateBoss(currentTime) {
     // Do not end phase until BOTH pigs defeated (despawned) AND player is dismounted
     if (b.pigsRemaining === 0 && !b.currentMountActive) {
       b.phase = 'idle'; b.nextPhaseAt = currentTime + 2000;
+      // End tutorial when phase ends
+      if (b.tutorialActive) {
+        b.tutorialActive = false;
+        b.tutorialStage = null;
+        b.tutorialPigTarget = null;
+      }
     }
   }
 
@@ -741,6 +774,15 @@ export function bossExplosion(cx, cy, radius, currentTime) {
       const boss = gameState.boss;
       const combo = boss && boss.phase === 'combo' ? (boss.combo && boss.combo.attacks) : null;
       const comboHas = (name)=> Array.isArray(combo) && combo.includes(name);
+      // SECRET: Bazooka Mode - stun enemies instead of killing them (5 seconds with grayscale effect)
+      if (src === 'rocket' && isBazookaMode()) {
+        const stunDuration = 5000; // 5 seconds
+        o._frozenUntil = currentTime + stunDuration;
+        o._stunStartTime = currentTime; // Track when stun started for fade-in effect
+        console.log('[bazooka mode] stunned', o.type, 'for 5 seconds');
+        keep.push(o);
+        continue;
+      }
       // Purple chasers: only rockets destroy them when purple is present
       if (o.type === 'chaser' && o._bossSummoned && src === 'rocket' && boss && (boss.phase === 'purple' || (boss.phase === 'combo' && comboHas('purple')))) {
         // remove (skip pushing)
@@ -754,6 +796,16 @@ export function bossExplosion(cx, cy, radius, currentTime) {
         o._rideableUntil = o.stateUntil;
         keep.push(o);
         continue;
+      }
+      // If pig dies (not knocked out), trigger hint
+      if (o.type === 'flying_pig' && o._bossSummoned && src === 'rocket' && boss && boss.pigWave > 0 && !boss.hintGiven) {
+        boss.hintGiven = true;
+        gameState.statusMessage = "Hey, it doesn't seem like you're doing any damage to the Core...";
+        setTimeout(() => {
+          if (gameState.boss) {
+            gameState.statusMessage = "Try killing a pig, then press E next to it, then shoot the boss!";
+          }
+        }, 3500);
       }
       // Default: freeze
       o._frozenUntil = currentTime + 10000;
@@ -794,7 +846,9 @@ export function pickBazooka(currentTime) {
 }
 
 export function fireRocketAt(targetX, targetY, currentTime) {
-  if (!gameState.boss || !gameState.boss.active) return false;
+  // Allow firing in bazooka mode on any level, or during boss fight
+  const canFire = (isBazookaMode() && gameState.bazooka && gameState.bazooka.has) || (gameState.boss && gameState.boss.active);
+  if (!canFire) return false;
   if (!gameState.bazooka || !gameState.bazooka.has || gameState.bazooka.ammo <= 0) return false;
   const sx = gameState.player.x + 0.5;
   const sy = gameState.player.y + 0.5;
@@ -815,6 +869,7 @@ export function fireRocketAt(targetX, targetY, currentTime) {
     smoke: []
   };
   gameState.projectiles.push(p);
+  // Always decrement ammo (will regenerate in bazooka mode)
   gameState.bazooka.ammo -= 1;
   try { import('./audio.js').then(a=>a.playRocketFire && a.playRocketFire()); } catch {}
   console.log('[bazooka] fired at', targetX, targetY, 'ammo=', gameState.bazooka.ammo);
