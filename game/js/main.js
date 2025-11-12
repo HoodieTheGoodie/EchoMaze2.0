@@ -1,13 +1,152 @@
 // main.js - Game loop and initialization
 
-import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
+import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
 import { playLose } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 
 // Expose gameState to window for background renderer
 window.gameState = gameState;
+
+// Apply UI styling based on simplified UI setting
+function applyUIStyle() {
+    const settings = getSettings();
+    const uiPanel = document.getElementById('ui-panel');
+    const titleEl = document.getElementById('echo-maze-title');
+    const gameContainer = document.getElementById('game-container');
+    
+    if (!uiPanel || !gameContainer) return;
+    
+    if (settings.simplifiedUI) {
+        // Simplified UI: Split into left and right side panels beside the canvas
+        gameContainer.style.display = 'flex';
+        gameContainer.style.flexDirection = 'row';
+        gameContainer.style.alignItems = 'center';
+        gameContainer.style.justifyContent = 'center';
+        gameContainer.style.gap = '20px';
+        
+        // Style right panel (main ui-panel)
+        uiPanel.style.display = 'flex';
+        uiPanel.style.flexDirection = 'column';
+        uiPanel.style.order = '2';
+        uiPanel.style.width = '150px';
+        uiPanel.style.padding = '12px';
+        uiPanel.style.gap = '12px';
+        uiPanel.style.fontSize = '0.9rem';
+        
+        // Create left side panel if it doesn't exist
+        let leftPanel = document.getElementById('ui-left-panel');
+        if (!leftPanel) {
+            leftPanel = document.createElement('div');
+            leftPanel.id = 'ui-left-panel';
+            leftPanel.style.cssText = `
+                order: 0;
+                width: 150px;
+                padding: 12px;
+                background: rgba(5, 7, 13, 0.85);
+                backdrop-filter: blur(4px);
+                border: 2px solid #00f6ff;
+                border-radius: 8px;
+                box-shadow: 0 0 20px rgba(0, 246, 255, 0.4), 0 0 40px rgba(0, 246, 255, 0.15) inset;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                font-size: 0.9rem;
+            `;
+            
+            // Create health display in left panel
+            const healthDiv = document.createElement('div');
+            healthDiv.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
+                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Health:</span>
+                    <span id="health-simple" style="font-size:1.3em; filter: drop-shadow(0 0 6px rgba(255,100,150,0.8));">❤️❤️❤️</span>
+                </div>
+            `;
+            leftPanel.appendChild(healthDiv);
+            
+            // Create stamina display in left panel (percentage only)
+            const staminaDiv = document.createElement('div');
+            staminaDiv.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
+                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Stamina:</span>
+                    <span id="stamina-simple" style="font-weight:bold; text-shadow: 0 0 8px currentColor;">100%</span>
+                </div>
+            `;
+            leftPanel.appendChild(staminaDiv);
+            
+            // Create shield display in left panel
+            const shieldDiv = document.createElement('div');
+            shieldDiv.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
+                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Shield:</span>
+                    <span id="shield-simple" style="font-weight:bold; color:#ff77aa; text-shadow: 0 0 8px currentColor;">🛡️ Ready</span>
+                </div>
+            `;
+            leftPanel.appendChild(shieldDiv);
+            
+            gameContainer.insertBefore(leftPanel, gameContainer.firstChild);
+        }
+        
+        // Make canvas order 1 (middle)
+        const canvas = document.getElementById('canvas');
+        if (canvas) {
+            canvas.style.order = '1';
+        }
+        
+        // Hide health and stamina from right panel in simplified mode
+        const sections = uiPanel.querySelectorAll('.ui-section');
+        sections.forEach((section, index) => {
+            if (index === 0 || index === 1) { // Health and Stamina sections
+                section.style.display = 'none';
+            }
+        });
+        
+        // Hide title always in simplified mode
+        if (titleEl) {
+            titleEl.style.display = 'none';
+        }
+    } else {
+        // Default UI: restore original styling completely
+        gameContainer.style.display = 'flex';
+        gameContainer.style.flexDirection = 'column';
+        gameContainer.style.alignItems = 'center';
+        gameContainer.style.justifyContent = '';
+        gameContainer.style.gap = '20px';
+        
+        // Reset ui-panel to original CSS styling (remove inline styles)
+        uiPanel.style.display = '';
+        uiPanel.style.flexDirection = '';
+        uiPanel.style.order = '';
+        uiPanel.style.width = '';
+        uiPanel.style.padding = '';
+        uiPanel.style.gap = '';
+        uiPanel.style.fontSize = '';
+        
+        // Remove left panel if it exists
+        const leftPanel = document.getElementById('ui-left-panel');
+        if (leftPanel) {
+            leftPanel.remove();
+        }
+        
+        // Show all sections in main panel
+        const sections = uiPanel.querySelectorAll('.ui-section');
+        sections.forEach(section => {
+            section.style.display = '';
+        });
+        
+        const canvas = document.getElementById('canvas');
+        if (canvas) {
+            canvas.style.order = '';
+        }
+        
+        // Hide title always during gameplay (both UI modes)
+        if (titleEl) {
+            titleEl.style.display = 'none';
+        }
+    }
+}
+
 
 // Mobile: Lazy load mobile controls (only load if needed)
 let mobileControlsModule = null;
@@ -38,6 +177,9 @@ export function initGame() {
     // Ensure runtime settings are applied to gameState immediately
     try { gameState.settings = { ...getSettings() }; } catch {}
     
+    // Apply UI style based on settings
+    applyUIStyle();
+    
     // Hide overlay on restart
     const overlayEl = document.getElementById('overlay');
     if (overlayEl) overlayEl.style.display = 'none';
@@ -46,6 +188,10 @@ export function initGame() {
     const pauseOverlay = document.getElementById('pauseOverlay');
     if (pauseOverlay) pauseOverlay.style.display = 'none';
     gameState.isPaused = false;
+    
+    // Clean up boss health bar if it exists
+    const bossHpBar = document.getElementById('bossHealthBar');
+    if (bossHpBar) bossHpBar.remove();
     
     // Setup input handlers (only once)
     if (!animationFrameId) {
@@ -168,6 +314,7 @@ function gameLoop(currentTime) {
         updateCollisionShield(currentTime);
         if (!gameState.isPaused) {
             updateStaminaCooldown(currentTime);
+            updateBazookaAmmo(currentTime); // Regenerate bazooka ammo in bazooka mode
             updateBlock(currentTime);
             updateSkillCheck(currentTime);
             // Enemies (paused if generator UI open by state logic)
@@ -269,6 +416,10 @@ function startLevel(level) {
     loadMobileControls().then(m => m.showMobileControls());
 
     initGame();
+    
+    // Apply UI style based on settings
+    applyUIStyle();
+    
     // Dev convenience: if Level 10 and skip toggle is ON, jump straight to pre-boss transition
     if (level === 10 && isSkipPreBossEnabled()) {
         try { startBossTransition(performance.now()); } catch {}
@@ -299,6 +450,10 @@ function wireMenuUi() {
                     if (devPanel) devPanel.style.display = 'block';
                     const godChk = document.getElementById('godModeChk');
                     if (godChk) godChk.checked = isGodMode();
+                } else if (pwd === '8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M') {
+                    // Secret bazooka mode unlocked
+                    setSecretUnlocked(true);
+                    alert('🚀 Secret Unlocked: Bazooka Mode available in Settings!');
                 }
             }
         });
@@ -388,6 +543,10 @@ function wireMenuUi() {
     const movementAudioChk = document.getElementById('movementAudioChk');
     const autoMovementChk = document.getElementById('autoMovementChk');
     const autoMovementLabel = document.getElementById('autoMovementLabel');
+    const simplifiedUIChk = document.getElementById('simplifiedUIChk');
+    const bazookaModeChk = document.getElementById('bazookaModeChk');
+    const bazookaModeSection = document.getElementById('bazookaModeSection');
+    const bazookaModeDesc = document.getElementById('bazookaModeDesc');
     const settingsBackBtn = document.getElementById('settingsBackBtn');
     if (settingsBtn && !settingsBtn._wired) {
         settingsBtn.addEventListener('click', () => {
@@ -395,9 +554,16 @@ function wireMenuUi() {
             if (movementAudioChk) movementAudioChk.checked = !!s.movementAudio;
             if (autoMovementChk) autoMovementChk.checked = !!s.autoMovement;
             if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${s.autoMovement ? 'ON' : 'OFF'}`;
+            if (simplifiedUIChk) simplifiedUIChk.checked = !!s.simplifiedUI;
             // Reveal credits button if unlocked (after beating the game)
             const creditsBtn = document.getElementById('viewCreditsBtn');
             if (creditsBtn) creditsBtn.style.display = isSecretUnlocked() ? 'inline-block' : 'none';
+            // Reveal bazooka mode if secret unlocked
+            if (isSecretUnlocked()) {
+                if (bazookaModeSection) bazookaModeSection.style.display = 'flex';
+                if (bazookaModeDesc) bazookaModeDesc.style.display = 'block';
+                if (bazookaModeChk) bazookaModeChk.checked = isBazookaMode();
+            }
             if (settingsOverlay) settingsOverlay.style.display = 'flex';
         });
         settingsBtn._wired = true;
@@ -426,6 +592,28 @@ function wireMenuUi() {
             if (autoMovementLabel) autoMovementLabel.textContent = `Auto-Movement: ${next.autoMovement ? 'ON' : 'OFF'}`;
         });
         autoMovementChk._wired = true;
+    }
+    // Wire simplified UI checkbox
+    if (simplifiedUIChk && !simplifiedUIChk._wired) {
+        simplifiedUIChk.addEventListener('change', () => {
+            const cur = getSettings();
+            const next = { ...cur, simplifiedUI: !!simplifiedUIChk.checked };
+            setSettings(next);
+            gameState.settings = { ...next };
+            // Apply UI style immediately only if game is running
+            const gameContainer = document.getElementById('game-container');
+            if (gameContainer && gameContainer.style.display !== 'none') {
+                applyUIStyle();
+            }
+        });
+        simplifiedUIChk._wired = true;
+    }
+    // Wire bazooka mode checkbox
+    if (bazookaModeChk && !bazookaModeChk._wired) {
+        bazookaModeChk.addEventListener('change', () => {
+            setBazookaMode(!!bazookaModeChk.checked);
+        });
+        bazookaModeChk._wired = true;
     }
     // Settings: View Credits button opens the Credits overlay
     const viewCreditsBtn = document.getElementById('viewCreditsBtn');

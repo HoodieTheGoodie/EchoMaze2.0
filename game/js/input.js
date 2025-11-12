@@ -2,6 +2,7 @@
 
 import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap } from './state.js';
 import { initGame } from './main.js';
+import { isBazookaMode } from './config.js';
 
 // Key state: store lowercased keys for consistency (e.g., 'a', 'arrowleft')
 const keys = {};
@@ -204,7 +205,9 @@ function handleKeyDown(e) {
 function handleMouseDown(e) {
     if (e.button !== 0) return; // left click only
     if (gameState.gameStatus !== 'playing' || gameState.isPaused) return;
-    if (!(gameState.boss && gameState.boss.active)) return;
+    // Allow bazooka firing in bazooka mode on any level, or during boss fight
+    const canFireBazooka = (isBazookaMode() && gameState.bazooka && gameState.bazooka.has) || (gameState.boss && gameState.boss.active);
+    if (!canFireBazooka) return;
     if (!(gameState.bazooka && gameState.bazooka.has && gameState.bazooka.ammo > 0)) return;
     // Map click to grid tile
     const canvas = document.getElementById('canvas');
