@@ -532,7 +532,7 @@ export function movePlayer(dx, dy, currentTime) {
                 if (gameState.boss && gameState.boss.defeated) {
                     fadeToBlack(1.0);
                     setTimeout(() => {
-                        try { finishRun(Date.now()); } catch {}
+                        try { finishRun(performance.now()); } catch {}
                         gameState.gameStatus = 'won';
                     }, 1000);
                     return true;

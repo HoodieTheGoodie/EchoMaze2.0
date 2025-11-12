@@ -202,6 +202,51 @@ export function render(currentTime) {
         if (ui.status) ui.status.style.display = 'none';
     }
     
+    // Draw boss tutorial prompts (arrow and "Press E")
+    if (gameState.boss && gameState.boss.tutorialActive) {
+        const stage = gameState.boss.tutorialStage;
+        
+        if (stage === 'show_mount_prompt' && gameState.boss.tutorialPigTarget) {
+            const pig = gameState.boss.tutorialPigTarget;
+            const pigX = (pig.fx) * CELL_SIZE;
+            const pigY = (pig.fy) * CELL_SIZE;
+            
+            // Draw bouncing arrow above the knocked out pig
+            const bounce = Math.sin(currentTime / 200) * 8;
+            ctx.save();
+            ctx.fillStyle = '#FFD700';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeText('↓', pigX, pigY - 40 - bounce);
+            ctx.fillText('↓', pigX, pigY - 40 - bounce);
+            ctx.restore();
+            
+            // Check if player is near the pig
+            const px = gameState.player.x;
+            const py = gameState.player.y;
+            const dist = Math.hypot(pig.x - px, pig.y - py);
+            
+            if (dist <= 1.5) {
+                // Show "Press E" prompt
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(pigX - 60, pigY + 30, 120, 40);
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pigX - 60, pigY + 30, 120, 40);
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('Press E', pigX, pigY + 50);
+                ctx.restore();
+            }
+        }
+    }
+    
     if (gameState.gameStatus === 'lost') {
         drawGameOver();
     }
@@ -955,18 +1000,49 @@ function drawBossArena(currentTime) {
         }
     }
 
-    // Boss HP bar (hide after defeat)
+    // Boss HP bar (updated externally outside canvas for fancy styling)
     if (b.core && !b.defeated) {
-        const barW = canvas.width * 0.5; const barH = 14; const bx = (canvas.width - barW)/2; const by = 18;
-        const pct = Math.max(0, Math.min(1, (b.core.hp || 0) / (b.core.maxHp || 1)));
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx - 2, by - 2, barW + 4, barH + 4);
-        ctx.fillStyle = '#222'; ctx.fillRect(bx, by, barW, barH);
-        ctx.fillStyle = '#ff3355'; ctx.fillRect(bx, by, barW * pct, barH);
-        ctx.strokeStyle = '#fff'; ctx.strokeRect(bx, by, barW, barH);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.fillText('THE CORE', bx + barW/2, by - 2);
-        ctx.restore();
+        const container = document.getElementById('bossHealthBarContainer');
+        const fill = document.getElementById('bossHealthBarFill');
+        const text = document.getElementById('bossHealthBarText');
+        
+        if (container && fill && text) {
+            container.style.display = 'block';
+            const pct = Math.max(0, Math.min(1, (b.core.hp || 0) / (b.core.maxHp || 1)));
+            fill.style.width = (pct * 100) + '%';
+            text.textContent = `${Math.ceil(b.core.hp || 0)} / ${b.core.maxHp || 0}`;
+        }
+    } else {
+        // Hide boss health bar when defeated or not active
+        const container = document.getElementById('bossHealthBarContainer');
+        if (container) container.style.display = 'none';
+    }
+    
+    // Draw IMMUNE effects when shooting core without being mounted
+    if (gameState.immuneEffects && gameState.immuneEffects.length > 0) {
+        const keep = [];
+        for (const effect of gameState.immuneEffects) {
+            const age = currentTime - effect.startTime;
+            if (age < effect.duration) {
+                const alpha = Math.max(0, 1 - (age / effect.duration));
+                const rise = age * 0.03; // Rise up slowly
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#ff3355';
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.font = 'bold 28px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const px = (effect.x + 0.5) * CELL_SIZE;
+                const py = (effect.y + 0.5) * CELL_SIZE - rise;
+                ctx.strokeText('IMMUNE', px, py);
+                ctx.fillText('IMMUNE', px, py);
+                ctx.restore();
+                keep.push(effect);
+            }
+        }
+        gameState.immuneEffects = keep;
     }
 
     // Virus monologue overlay bar (appears after door fade; replaces boss HP region)

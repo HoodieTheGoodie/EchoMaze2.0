@@ -442,6 +442,20 @@ function showMenu() {
     gameState.playerStunned = false;
     gameState.playerStunUntil = 0;
     
+    // Hide all overlays (win, lose, credits, etc.)
+    const winOverlay = document.getElementById('winOverlay');
+    const loseOverlay = document.getElementById('loseOverlay');
+    const creditsOverlay = document.getElementById('creditsOverlay');
+    const bossHealthBar = document.getElementById('bossHealthBarContainer');
+    if (winOverlay) winOverlay.style.display = 'none';
+    if (loseOverlay) loseOverlay.style.display = 'none';
+    if (creditsOverlay) creditsOverlay.style.display = 'none';
+    if (bossHealthBar) bossHealthBar.style.display = 'none';
+    
+    // Reset win message to default
+    const winMsg = document.getElementById('winMsg');
+    if (winMsg) winMsg.textContent = 'Nice work—generators repaired and exit reached.';
+    
     if (menu) menu.style.display = 'flex';
     if (gameContainer) gameContainer.style.display = 'none';
     buildMenu();
@@ -478,6 +492,14 @@ function startLevel(level) {
     const gameContainer = document.getElementById('game-container');
     if (menu) menu.style.display = 'none';
     if (gameContainer) gameContainer.style.display = 'flex';
+    
+    // Hide all overlays when starting a new level
+    const winOverlay = document.getElementById('winOverlay');
+    const loseOverlay = document.getElementById('loseOverlay');
+    const creditsOverlay = document.getElementById('creditsOverlay');
+    if (winOverlay) winOverlay.style.display = 'none';
+    if (loseOverlay) loseOverlay.style.display = 'none';
+    if (creditsOverlay) creditsOverlay.style.display = 'none';
 
     // Mobile: Show controls when game starts
     loadMobileControls().then(m => m.showMobileControls());
@@ -520,7 +542,25 @@ function wireMenuUi() {
                 } else if (pwd === '8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M') {
                     // Secret bazooka mode unlocked
                     setSecretUnlocked(true);
-                    showBottomAlert('🚀 Secret Unlocked: Bazooka Mode available in Settings!', 4000);
+                    
+                    // Update UI to show bazooka mode section immediately
+                    const bazookaModeSection = document.getElementById('bazookaModeSection');
+                    const bazookaModeChk = document.getElementById('bazookaModeChk');
+                    const secretButtonContainer = document.getElementById('secretButtonContainer');
+                    
+                    if (bazookaModeSection) bazookaModeSection.style.display = 'flex';
+                    if (bazookaModeChk) bazookaModeChk.checked = isBazookaMode();
+                    if (secretButtonContainer) secretButtonContainer.style.display = 'none';
+                    
+                    showBottomAlert('🚀 SECRET UNLOCKED: Bazooka Mode is now available in Settings!', 5000);
+                    
+                    // Also open settings to show the newly unlocked feature
+                    const settingsOverlay = document.getElementById('settingsOverlay');
+                    if (settingsOverlay) {
+                        setTimeout(() => {
+                            settingsOverlay.style.display = 'flex';
+                        }, 1000);
+                    }
                 }
             }
         });
@@ -957,14 +997,21 @@ function postFrameChecks(currentTime) {
         const lo = document.getElementById('loseOverlay');
         const tip = document.getElementById('loseTip');
         if (tip) {
-            const cause = gameState.deathCause || 'enemy';
-            let msg = 'Tip: Stay aware of enemy behaviors and use your tools.';
-            if (cause === 'wall') msg = 'Tip: Don\'t run into walls unless sprinting through with full stamina!';
-            else if (cause === 'chaser') msg = 'Tip: Watch for chaser telegraphs, and sidestep or block its jumps.';
-            else if (cause === 'seeker') msg = 'Tip: Stay out of the Seeker\'s vision cone—break line of sight behind walls.';
-            else if (cause === 'pig_projectile') msg = 'Tip: Reflect pink arcs with your shield—aim the shield toward the incoming arc!';
-            else if (cause === 'generator_fail') msg = 'Tip: Nail those skill checks—missing twice blocks the generator and costs a life.';
-            tip.textContent = msg;
+            // 5% chance to show secret hint
+            const showSecretHint = Math.random() < 0.05;
+            
+            if (showSecretHint) {
+                tip.textContent = 'That code in the credits is pretty weird... maybe try putting it into the secret code area in the settings..?';
+            } else {
+                const cause = gameState.deathCause || 'enemy';
+                let msg = 'Tip: Stay aware of enemy behaviors and use your tools.';
+                if (cause === 'wall') msg = 'Tip: Don\'t run into walls unless sprinting through with full stamina!';
+                else if (cause === 'chaser') msg = 'Tip: Watch for chaser telegraphs, and sidestep or block its jumps.';
+                else if (cause === 'seeker') msg = 'Tip: Stay out of the Seeker\'s vision cone—break line of sight behind walls.';
+                else if (cause === 'pig_projectile') msg = 'Tip: Reflect pink arcs with your shield—aim the shield toward the incoming arc!';
+                else if (cause === 'generator_fail') msg = 'Tip: Nail those skill checks—missing twice blocks the generator and costs a life.';
+                tip.textContent = msg;
+            }
         }
         if (lo) lo.style.display = 'flex';
         try { playLose(); } catch {}

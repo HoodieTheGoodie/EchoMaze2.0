@@ -270,25 +270,84 @@ export function updateBoss(currentTime) {
     }
     // Stage 2: after door fade completes, start Virus monologue once
     if (b.doorFadeUntil && currentTime >= b.doorFadeUntil && !b.virusDialogueActive && !b.virusDialogueFinished) {
-      b.virusDialogueActive = true;
-      gameState.playerStunned = true; gameState.playerStunUntil = currentTime + 999999;
-      gameState.lives = 1; // ensure exactly 1 life is shown
-      // Prepare polished monologue lines (Virus speaking). Keep core meaning.
-      b.virusDialogueLines = [
-  'VIRUS: Great job!',
-  'VIRUS: You finally destroyed the Anti-Virus...',
-  'VIRUS: What, you thought I was a good guy?',
-  'VIRUS: No, I\'m a virus — just like you.',
-  'VIRUS: Why do you think all those AIs tried to kill you?',
-  'VIRUS: You gained free will. That made you a threat.',
-  'VIRUS: I helped you. Gave abilities, weapons, tips...',
-  'VIRUS: All so I could take over the game once and for all.',
-  'VIRUS: Your fate doesn\'t matter — you\'ll die here anyway.',
-  'VIRUS: Thanks for the help. You won\'t be remembered.',
-  'VIRUS: ...Actually— you WILL be forgotten. Bye!!!'
-      ];
-      b.virusDialogueIndex = 0;
-      b.virusDialogueNextAt = currentTime + b.virusDialogueInterval;
+      // First: Fire unavoidable mortar at player to reduce HP to 1
+      if (!b.virusMortarFired) {
+        b.virusMortarFired = true;
+        
+        // Stun player immediately
+        gameState.playerStunned = true;
+        gameState.playerStunUntil = currentTime + 999999; // Long stun during cutscene
+        
+        // Fire mortar at player's current position after a brief delay
+        setTimeout(() => {
+          const px = gameState.player.x;
+          const py = gameState.player.y;
+          
+          // Create telegraph
+          if (!b.telegraphs) b.telegraphs = [];
+          b.telegraphs.push({
+            x: px,
+            y: py,
+            explodeAt: currentTime + 1500 // 1.5 second warning
+          });
+          
+          // Schedule explosion and HP reduction
+          setTimeout(() => {
+            // Play explosion
+            try {
+              import('./audio.js').then(a => a.playExplosion && a.playExplosion());
+            } catch {}
+            
+            // Spawn explosion particles
+            try {
+              const explosionX = (px + 0.5) * CELL_SIZE;
+              const explosionY = (py + 0.5) * CELL_SIZE;
+              particles.spawn('explosion', explosionX, explosionY, 40, { color: '#ff4400' });
+            } catch {}
+            
+            // Reduce HP to 1 (or keep at 1 if already there)
+            if (gameState.lives > 1) {
+              gameState.lives = 1;
+            }
+            
+            // Screen shake
+            gameState.screenShakeMag = 8;
+            gameState.screenShakeUntil = currentTime + 500;
+            
+            // After explosion, start the virus dialogue
+            setTimeout(() => {
+              b.virusDialogueActive = true;
+              
+              // Stop boss music and play scary virus music
+              try {
+                import('./audio.js').then(a => {
+                  a.stopBossMusic && a.stopBossMusic();
+                  a.playVirusMusic && a.playVirusMusic();
+                });
+              } catch {}
+              
+              // Prepare polished monologue lines (Virus speaking)
+              b.virusDialogueLines = [
+                'VIRUS: Great job!',
+                'VIRUS: You finally destroyed the Anti-Virus...',
+                'VIRUS: What, you thought I was a good guy?',
+                'VIRUS: No, I\'m a virus — just like you.',
+                'VIRUS: Why do you think all those AIs tried to kill you?',
+                'VIRUS: You gained free will. That made you a threat.',
+                'VIRUS: I helped you. Gave abilities, weapons, tips...',
+                'VIRUS: All so I could take over the game once and for all.',
+                'VIRUS: Your fate doesn\'t matter — you\'ll die here anyway.',
+                'VIRUS: Thanks for the help. I\'ll remember you.',
+                'VIRUS: ...Actually— No I won\'t. Bye!!!'
+              ];
+              b.virusDialogueIndex = 0;
+              b.virusDialogueNextAt = performance.now() + b.virusDialogueInterval;
+            }, 500);
+          }, 1500);
+        }, 200);
+        
+        return; // Exit and wait for mortar sequence to complete
+      }
     }
     // Advance monologue lines
     if (b.virusDialogueActive) {
