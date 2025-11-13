@@ -898,6 +898,12 @@ export function pickBazooka(currentTime) {
     const startAmmo = (gameState.boss && gameState.boss.prepRoom) ? 0 : BAZOOKA_START_AMMO;
     gameState.bazooka = { has: true, ammo: startAmmo, maxAmmo: BAZOOKA_MAX_AMMO };
     gameState.bazookaPickup = null;
+
+    // Show mobile reload button when bazooka is picked up
+    import('./mobile-controls.js').then(mod => {
+      if (mod.setReloadButtonVisible) mod.setReloadButtonVisible(true);
+    }).catch(() => {});
+
     // Door will open only after reloading at the ammo box (handled in state update)
     return true;
   }

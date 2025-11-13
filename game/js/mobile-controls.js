@@ -49,6 +49,10 @@ export function initMobileControls() {
                     <span>⚠️</span>
                     <span class="action-btn-label">TRAP</span>
                 </div>
+                <div class="action-btn action-reload" data-key="r">
+                    <span>🔄</span>
+                    <span class="action-btn-label">RELOAD</span>
+                </div>
             </div>
         </div>
 
@@ -87,7 +91,8 @@ export function initMobileControls() {
             shield: document.querySelector('.action-shield'),
             sprint: document.querySelector('.action-sprint'),
             interact: document.querySelector('.action-interact'),
-            trap: document.querySelector('.action-trap')
+            trap: document.querySelector('.action-trap'),
+            reload: document.querySelector('.action-reload')
         },
         container: document.getElementById('mobile-controls')
     };
@@ -158,5 +163,15 @@ export function showMobileSkillCheckButton(show) {
     const btn = document.getElementById('mobileSkillCheckBtn');
     if (btn) {
         btn.style.display = show ? 'block' : 'none';
+    }
+}
+
+/**
+ * Show/hide reload button based on bazooka availability
+ */
+export function setReloadButtonVisible(visible) {
+    const btn = document.querySelector('.action-reload');
+    if (btn) {
+        btn.style.display = visible ? 'flex' : 'none';
     }
 }

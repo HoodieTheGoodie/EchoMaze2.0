@@ -15,22 +15,32 @@ let lastMoveAt = 0;
 
 // Mobile: touch input integration (initialized from main.js)
 let touchInputInitialized = false;
+let isMobileDevice = false;
 
 export function setupInputHandlers() {
     document.addEventListener('keydown', handleKeyDown, { passive: false });
     document.addEventListener('keyup', handleKeyUp, { passive: false });
     document.addEventListener('mousedown', handleMouseDown, { passive: false });
+
+    // Add touch support for canvas (bazooka firing on mobile)
+    const canvas = document.getElementById('canvas');
+    if (canvas) {
+        canvas.addEventListener('pointerdown', handleCanvasPointer, { passive: false });
+    }
 }
 
 // Mobile: Initialize touch handlers (called from main.js)
 export function setupMobileInput(controls) {
     if (touchInputInitialized || !controls) return;
 
+    // Mark as mobile device to disable keyboard input
+    isMobileDevice = true;
+
     // Dynamically import touch-input module
     import('./touch-input.js').then(module => {
         module.initTouchInput(controls, handleKeyDown, handleKeyUp);
         touchInputInitialized = true;
-        console.log('Mobile touch input initialized');
+        console.log('Mobile touch input initialized - keyboard input disabled');
     }).catch(err => {
         console.warn('Touch input not available:', err);
     });
@@ -40,8 +50,14 @@ export function setupMobileInput(controls) {
 export { handleKeyDown, handleKeyUp };
 
 function handleKeyDown(e) {
+    // Ignore keyboard input on mobile devices (touch controls only)
+    // Exception: allow touch-generated events (marked with isTouchEvent property)
+    if (isMobileDevice && !e.isTouchEvent) {
+        return;
+    }
+
     const key = (e.key || '').toLowerCase();
-    
+
     // Allow H key to skip dialog even when input is locked (prep room)
     if ((e.code === 'KeyH' || key === 'h') && gameState.boss && gameState.boss.prepRoom && gameState.inputLocked) {
         import('./state.js').then(m => {
@@ -221,7 +237,40 @@ function handleMouseDown(e) {
     });
 }
 
+function handleCanvasPointer(e) {
+    // Only handle touch/pen events, not mouse (mousedown handles that)
+    if (e.pointerType === 'mouse') return;
+
+    if (gameState.gameStatus !== 'playing' || gameState.isPaused) return;
+
+    // Allow bazooka firing in bazooka mode on any level, or during boss fight
+    const canFireBazooka = (isBazookaMode() && gameState.bazooka && gameState.bazooka.has) || (gameState.boss && gameState.boss.active);
+    if (!canFireBazooka) return;
+    if (!(gameState.bazooka && gameState.bazooka.has && gameState.bazooka.ammo > 0)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Map touch/pointer to grid tile
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / 20); // CELL_SIZE=20
+    const y = Math.floor((e.clientY - rect.top) / 20);
+
+    // Fire rocket toward tapped tile
+    import('./boss.js').then(mod => {
+        mod.fireRocketAt(x, y, performance.now());
+    });
+}
+
 function handleKeyUp(e) {
+    // Ignore keyboard input on mobile devices (touch controls only)
+    // Exception: allow touch-generated events (marked with isTouchEvent property)
+    if (isMobileDevice && !e.isTouchEvent) {
+        return;
+    }
+
     const key = (e.key || '').toLowerCase();
     keys[key] = false;
     keysPressed[key] = false;

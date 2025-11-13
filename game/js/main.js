@@ -263,6 +263,24 @@ export function initGame() {
         // Wire mobile skill check button
         const mobileSkillBtn = document.getElementById('mobileSkillCheckBtn');
         if (mobileSkillBtn && !mobileSkillBtn._wired) {
+            // Track when generator UI opens to prevent immediate skill check
+            let wasOpen = false;
+            setInterval(() => {
+                const isOpen = gameState.isGeneratorUIOpen;
+                if (isOpen && !wasOpen) {
+                    // UI just opened - disable button completely
+                    mobileSkillBtn.style.pointerEvents = 'none';
+                    mobileSkillBtn.style.opacity = '0.5';
+
+                    // Re-enable after 150ms
+                    setTimeout(() => {
+                        mobileSkillBtn.style.pointerEvents = 'auto';
+                        mobileSkillBtn.style.opacity = '1';
+                    }, 150);
+                }
+                wasOpen = isOpen;
+            }, 16);
+
             mobileSkillBtn.addEventListener('click', async () => {
                 if (gameState.isGeneratorUIOpen && gameState.skillCheckState) {
                     const { attemptSkillCheck } = await import('./state.js');
@@ -359,7 +377,7 @@ export function initGame() {
 function gameLoop(currentTime) {
     const deltaTime = currentTime - lastFrameTime;
         gameRunning = true;
-    
+
     // Update game state (throttle movement to ~60fps)
     if (deltaTime >= 16) {
         // Collision shield should update regardless of pause state (it self-pauses internally)
@@ -371,7 +389,7 @@ function gameLoop(currentTime) {
             updateSkillCheck(currentTime);
             // Enemies (paused if generator UI open by state logic)
             updateEnemies(currentTime);
-            
+
             if (gameState.isGeneratorUIOpen) {
                 updateGeneratorProgress(currentTime);
             } else {
@@ -380,14 +398,18 @@ function gameLoop(currentTime) {
             // Teleport pads charge/teleport logic
             updateTeleportPads(currentTime);
         }
+
+        // Update mobile reload button visibility (only check every frame when state changes)
+        updateMobileReloadButton();
+
         lastFrameTime = currentTime;
     }
-    
+
     // Render
     render(currentTime);
     // Post-frame checks (win handling)
     postFrameChecks(currentTime);
-    
+
     // Continue loop
     animationFrameId = requestAnimationFrame(gameLoop);
 }
@@ -398,6 +420,24 @@ function stopGameLoop() {
         animationFrameId = null;
     }
     gameRunning = false;
+}
+
+// Track previous state to avoid unnecessary updates
+let lastReloadButtonState = false;
+
+function updateMobileReloadButton() {
+    // Check if bazooka is available (either in bazooka mode or during boss fight)
+    const hasBazooka = (isBazookaMode() && gameState.bazooka?.has) || (gameState.boss?.active || gameState.boss?.prepRoom);
+
+    // Only update if state changed
+    if (hasBazooka !== lastReloadButtonState) {
+        lastReloadButtonState = hasBazooka;
+        import('./mobile-controls.js').then(mod => {
+            if (mod.setReloadButtonVisible) {
+                mod.setReloadButtonVisible(hasBazooka);
+            }
+        }).catch(() => {});
+    }
 }
 
 // --- Main Menu & Levels ---

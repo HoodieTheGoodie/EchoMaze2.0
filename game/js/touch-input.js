@@ -21,17 +21,18 @@ const lastEventTime = new Map();
 export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
     if (!controls) return;
 
-    // Setup D-Pad buttons
-    setupTouchButton(controls.dpad.up, 'ArrowUp', keyDownHandler, keyUpHandler);
-    setupTouchButton(controls.dpad.down, 'ArrowDown', keyDownHandler, keyUpHandler);
-    setupTouchButton(controls.dpad.left, 'ArrowLeft', keyDownHandler, keyUpHandler);
-    setupTouchButton(controls.dpad.right, 'ArrowRight', keyDownHandler, keyUpHandler);
+    // Setup D-Pad buttons (use tap mode for single-step movement)
+    setupTouchButton(controls.dpad.up, 'ArrowUp', keyDownHandler, keyUpHandler, true);
+    setupTouchButton(controls.dpad.down, 'ArrowDown', keyDownHandler, keyUpHandler, true);
+    setupTouchButton(controls.dpad.left, 'ArrowLeft', keyDownHandler, keyUpHandler, true);
+    setupTouchButton(controls.dpad.right, 'ArrowRight', keyDownHandler, keyUpHandler, true);
 
     // Setup Action buttons
     setupTouchButton(controls.actions.shield, ' ', keyDownHandler, keyUpHandler); // Space
     setupTouchButton(controls.actions.sprint, 'Shift', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.interact, 'e', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.trap, 'f', keyDownHandler, keyUpHandler);
+    setupTouchButton(controls.actions.reload, 'r', keyDownHandler, keyUpHandler);
 
     // Special handling for sprint button visual feedback (using pointer events)
     controls.actions.sprint.addEventListener('pointerdown', () => setSprintActive(true), { passive: false });
@@ -46,8 +47,9 @@ export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
  * @param {string} key - The keyboard key to simulate
  * @param {Function} keyDownHandler - Handler for key down
  * @param {Function} keyUpHandler - Handler for key up
+ * @param {boolean} tapMode - If true, sends keyup immediately after keydown (for single-tap actions like movement)
  */
-function setupTouchButton(button, key, keyDownHandler, keyUpHandler) {
+function setupTouchButton(button, key, keyDownHandler, keyUpHandler, tapMode = false) {
     if (!button) return;
 
     // Ensure button can receive pointer events
@@ -74,6 +76,14 @@ function setupTouchButton(button, key, keyDownHandler, keyUpHandler) {
         // Simulate keyboard event
         const fakeEvent = createKeyboardEvent('keydown', key);
         keyDownHandler(fakeEvent);
+
+        // For tap mode (movement keys), immediately send keyup to prevent continuous movement
+        if (tapMode) {
+            setTimeout(() => {
+                const fakeUpEvent = createKeyboardEvent('keyup', key);
+                keyUpHandler(fakeUpEvent);
+            }, 10); // Small delay to ensure keydown is processed first
+        }
 
         // Visual feedback
         button.style.opacity = '1';

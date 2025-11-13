@@ -131,6 +131,13 @@
     }
 }
 
+/* Hide desktop-only elements on mobile */
+@media (max-width: 768px) {
+    [data-desktop-only] {
+        display: none !important;
+    }
+}
+
 /* ========================================
    MOBILE CONTROLS - Virtual D-Pad & Buttons
    ======================================== */
@@ -248,8 +255,8 @@
     position: absolute;
     top: 0;
     right: 20px;
-    width: 150px;
-    height: 150px;
+    width: 170px;
+    height: 170px;
     pointer-events: auto;
 }
 
@@ -286,9 +293,9 @@
     opacity: 0.9;
 }
 
-/* Action Button Positions (Diamond layout) */
+/* Action Button Positions (4-button diamond + 1 conditional) */
 .action-shield {
-    top: 0;
+    top: 5px;
     right: 50%;
     transform: translateX(50%);
     background: linear-gradient(135deg, rgba(255, 119, 170, 0.8), rgba(255, 119, 170, 0.6));
@@ -301,7 +308,7 @@
 }
 
 .action-sprint {
-    bottom: 0;
+    bottom: 5px;
     right: 50%;
     transform: translateX(50%);
     background: linear-gradient(135deg, rgba(255, 209, 102, 0.8), rgba(255, 209, 102, 0.6));
@@ -314,15 +321,32 @@
 }
 
 .action-interact {
-    left: 0;
+    left: 5px;
     top: 50%;
     transform: translateY(-50%);
 }
 
 .action-trap {
-    right: 0;
+    right: 5px;
     top: 50%;
     transform: translateY(-50%);
+}
+
+.action-reload {
+    display: none; /* Hidden by default, shown via JS when bazooka is available */
+    top: 50%;
+    right: 50%;
+    transform: translate(50%, -50%);
+    background: linear-gradient(135deg, rgba(130, 200, 255, 0.8), rgba(100, 170, 255, 0.6));
+    border-color: rgba(130, 200, 255, 0.9);
+    font-size: 0.9rem;
+    width: 50px;
+    height: 50px;
+}
+
+.action-reload:active {
+    background: linear-gradient(135deg, rgba(130, 200, 255, 1), rgba(100, 170, 255, 0.8));
+    box-shadow: 0 0 20px rgba(130, 200, 255, 0.7);
 }
 
 /* Sprint button - "hold" indicator when active */
