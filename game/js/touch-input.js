@@ -9,6 +9,9 @@ import { setSprintActive } from './mobile-controls.js';
 // Track active touches for each button
 const activeTouches = new Map();
 
+// Debounce map to prevent duplicate rapid events on same button
+const lastEventTime = new Map();
+
 /**
  * Initialize touch event handlers for mobile controls
  * @param {Object} controls - Control elements from mobile-controls.js
@@ -30,10 +33,11 @@ export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
     setupTouchButton(controls.actions.interact, 'e', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.trap, 'f', keyDownHandler, keyUpHandler);
 
-    // Special handling for sprint button visual feedback
-    controls.actions.sprint.addEventListener('touchstart', () => setSprintActive(true), { passive: false });
-    controls.actions.sprint.addEventListener('touchend', () => setSprintActive(false), { passive: false });
-    controls.actions.sprint.addEventListener('touchcancel', () => setSprintActive(false), { passive: false });
+    // Special handling for sprint button visual feedback (using pointer events)
+    controls.actions.sprint.addEventListener('pointerdown', () => setSprintActive(true), { passive: false });
+    controls.actions.sprint.addEventListener('pointerup', () => setSprintActive(false), { passive: false });
+    controls.actions.sprint.addEventListener('pointercancel', () => setSprintActive(false), { passive: false });
+    controls.actions.sprint.addEventListener('pointerleave', () => setSprintActive(false), { passive: false });
 }
 
 /**
@@ -46,14 +50,26 @@ export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
 function setupTouchButton(button, key, keyDownHandler, keyUpHandler) {
     if (!button) return;
 
-    // Touch start - simulate key down
-    button.addEventListener('touchstart', (e) => {
+    // Ensure button can receive pointer events
+    button.style.pointerEvents = 'auto';
+    button.style.cursor = 'pointer';
+    button.style.touchAction = 'none'; // Prevent default touch behaviors
+
+    // Use pointer events which work for both mouse and touch
+    button.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Track this touch
-        const touch = e.changedTouches[0];
-        activeTouches.set(touch.identifier, { button, key });
+        // Debounce: prevent duplicate events within 100ms
+        const now = performance.now();
+        const lastTime = lastEventTime.get(button) || 0;
+        if (now - lastTime < 100) {
+            return;
+        }
+        lastEventTime.set(button, now);
+
+        // Track this pointer
+        activeTouches.set(e.pointerId, { button, key });
 
         // Simulate keyboard event
         const fakeEvent = createKeyboardEvent('keydown', key);
@@ -61,81 +77,52 @@ function setupTouchButton(button, key, keyDownHandler, keyUpHandler) {
 
         // Visual feedback
         button.style.opacity = '1';
-    }, { passive: false });
+        button.dataset.pointerActive = 'true';
+    });
 
-    // Touch end - simulate key up
-    button.addEventListener('touchend', (e) => {
+    button.addEventListener('pointerup', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
-        const touch = e.changedTouches[0];
-        const touchData = activeTouches.get(touch.identifier);
-
-        if (touchData && touchData.button === button) {
+        if (button.dataset.pointerActive === 'true') {
             // Simulate keyboard event
             const fakeEvent = createKeyboardEvent('keyup', key);
             keyUpHandler(fakeEvent);
 
-            // Remove from active touches
-            activeTouches.delete(touch.identifier);
+            button.style.opacity = '';
+            button.dataset.pointerActive = 'false';
+            activeTouches.delete(e.pointerId);
         }
+    });
 
-        // Visual feedback
-        button.style.opacity = '';
-    }, { passive: false });
-
-    // Touch cancel - treat like touch end
-    button.addEventListener('touchcancel', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const touch = e.changedTouches[0];
-        const touchData = activeTouches.get(touch.identifier);
-
-        if (touchData && touchData.button === button) {
+    button.addEventListener('pointerleave', (e) => {
+        if (button.dataset.pointerActive === 'true') {
             // Simulate keyboard event
             const fakeEvent = createKeyboardEvent('keyup', key);
             keyUpHandler(fakeEvent);
 
-            // Remove from active touches
-            activeTouches.delete(touch.identifier);
+            button.style.opacity = '';
+            button.dataset.pointerActive = 'false';
+            activeTouches.delete(e.pointerId);
         }
+    });
 
-        // Visual feedback
-        button.style.opacity = '';
-    }, { passive: false });
+    button.addEventListener('pointercancel', (e) => {
+        if (button.dataset.pointerActive === 'true') {
+            // Simulate keyboard event
+            const fakeEvent = createKeyboardEvent('keyup', key);
+            keyUpHandler(fakeEvent);
+
+            button.style.opacity = '';
+            button.dataset.pointerActive = 'false';
+            activeTouches.delete(e.pointerId);
+        }
+    });
 
     // Prevent context menu on long press
     button.addEventListener('contextmenu', (e) => {
         e.preventDefault();
     });
-
-    // Touch move - detect if finger moved off button
-    button.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-
-        const touch = e.changedTouches[0];
-        const touchData = activeTouches.get(touch.identifier);
-
-        if (!touchData || touchData.button !== button) return;
-
-        // Check if touch is still over the button
-        const rect = button.getBoundingClientRect();
-        const isOver = (
-            touch.clientX >= rect.left &&
-            touch.clientX <= rect.right &&
-            touch.clientY >= rect.top &&
-            touch.clientY <= rect.bottom
-        );
-
-        // If finger moved off button, release the key
-        if (!isOver) {
-            const fakeEvent = createKeyboardEvent('keyup', key);
-            keyUpHandler(fakeEvent);
-            activeTouches.delete(touch.identifier);
-            button.style.opacity = '';
-        }
-    }, { passive: false });
 }
 
 /**
