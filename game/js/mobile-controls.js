@@ -94,14 +94,27 @@ export function initMobileControls() {
 }
 
 /**
- * Detect if device supports touch
+ * Detect if device supports touch AND is actually a mobile device
+ * This prevents desktop browsers with touch support (like Edge on Windows)
+ * from showing mobile controls
  */
 export function isTouchDevice() {
-    return (
+    // Check if device has touch capability
+    const hasTouch = (
         'ontouchstart' in window ||
         navigator.maxTouchPoints > 0 ||
         navigator.msMaxTouchPoints > 0
     );
+
+    // Only show mobile controls if touch is supported AND screen is small
+    // 768px matches the breakpoint used in mobile-ui.css and renderer.js
+    const isMobileScreen = window.innerWidth <= 768;
+
+    // Also check user agent for mobile devices (fallback check)
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    // Return true only if it has touch AND (small screen OR mobile user agent)
+    return hasTouch && (isMobileScreen || isMobileUA);
 }
 
 /**
