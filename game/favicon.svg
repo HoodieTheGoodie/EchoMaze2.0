@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Dark background circle for contrast -->
+  <circle cx="32" cy="32" r="31" fill="#0d0a0f" stroke="#00f6ff" stroke-width="2"/>
+
+  <!-- Shield glow effect (outer) -->
+  <circle cx="32" cy="32" r="22" fill="none" stroke="rgba(255, 119, 170, 0.3)" stroke-width="4"/>
+
+  <!-- Shield ring (main pink shield) -->
+  <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255, 119, 170, 0.8)" stroke-width="3"/>
+
+  <!-- Player character (royal blue circle) -->
+  <circle cx="32" cy="32" r="14" fill="rgb(65, 105, 225)"/>
+
+  <!-- Subtle highlight on player for depth -->
+  <circle cx="28" cy="28" r="4" fill="rgba(135, 165, 255, 0.6)"/>
+</svg>
