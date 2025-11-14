@@ -2,15 +2,22 @@
   <!-- Dark background circle for contrast -->
   <circle cx="32" cy="32" r="31" fill="#0d0a0f" stroke="#00f6ff" stroke-width="2"/>
 
-  <!-- Shield glow effect (outer) -->
-  <circle cx="32" cy="32" r="22" fill="none" stroke="rgba(255, 119, 170, 0.3)" stroke-width="4"/>
+  <!-- Outer cyan glow -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(0, 246, 255, 0.3)" stroke-width="3"/>
+
+  <!-- Shield glow effect (outer pink) -->
+  <circle cx="32" cy="32" r="23" fill="none" stroke="rgba(255, 119, 170, 0.4)" stroke-width="3"/>
 
   <!-- Shield ring (main pink shield) -->
-  <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255, 119, 170, 0.8)" stroke-width="3"/>
+  <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255, 119, 170, 0.9)" stroke-width="3"/>
+
+  <!-- Inner cyan energy ring -->
+  <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(0, 246, 255, 0.5)" stroke-width="1.5"/>
 
   <!-- Player character (royal blue circle) -->
   <circle cx="32" cy="32" r="14" fill="rgb(65, 105, 225)"/>
 
-  <!-- Subtle highlight on player for depth -->
-  <circle cx="28" cy="28" r="4" fill="rgba(135, 165, 255, 0.6)"/>
+  <!-- Cyan highlight on player for electric effect -->
+  <circle cx="28" cy="28" r="5" fill="rgba(0, 246, 255, 0.7)"/>
+  <circle cx="28" cy="28" r="3" fill="rgba(135, 165, 255, 0.9)"/>
 </svg>
