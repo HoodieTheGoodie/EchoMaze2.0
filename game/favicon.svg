@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Dark background circle for contrast -->
-  <circle cx="32" cy="32" r="31" fill="#0d0a0f" stroke="#00f6ff" stroke-width="2"/>
+  <!-- Brighter background circle -->
+  <circle cx="32" cy="32" r="31" fill="#1a1425" stroke="#00f6ff" stroke-width="2.5"/>
 
-  <!-- Outer cyan glow -->
-  <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(0, 246, 255, 0.3)" stroke-width="3"/>
+  <!-- Bright outer cyan glow -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(0, 246, 255, 0.6)" stroke-width="3"/>
 
-  <!-- Shield glow effect (outer pink) -->
-  <circle cx="32" cy="32" r="23" fill="none" stroke="rgba(255, 119, 170, 0.4)" stroke-width="3"/>
+  <!-- Golden/yellow shield glow (outer) -->
+  <circle cx="32" cy="32" r="23" fill="none" stroke="rgba(255, 215, 0, 0.5)" stroke-width="3"/>
 
-  <!-- Shield ring (main pink shield) -->
-  <circle cx="32" cy="32" r="20" fill="none" stroke="rgba(255, 119, 170, 0.9)" stroke-width="3"/>
+  <!-- Golden shield ring (main) -->
+  <circle cx="32" cy="32" r="20" fill="none" stroke="rgb(255, 215, 0)" stroke-width="3"/>
 
-  <!-- Inner cyan energy ring -->
-  <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(0, 246, 255, 0.5)" stroke-width="1.5"/>
+  <!-- Inner bright cyan energy ring -->
+  <circle cx="32" cy="32" r="17" fill="none" stroke="rgb(0, 246, 255)" stroke-width="2"/>
 
-  <!-- Player character (royal blue circle) -->
-  <circle cx="32" cy="32" r="14" fill="rgb(65, 105, 225)"/>
+  <!-- Player character (brighter royal blue circle) -->
+  <circle cx="32" cy="32" r="14" fill="rgb(100, 140, 255)"/>
 
-  <!-- Cyan highlight on player for electric effect -->
-  <circle cx="28" cy="28" r="5" fill="rgba(0, 246, 255, 0.7)"/>
-  <circle cx="28" cy="28" r="3" fill="rgba(135, 165, 255, 0.9)"/>
+  <!-- Bright cyan highlight on player -->
+  <circle cx="28" cy="28" r="5" fill="rgba(0, 246, 255, 0.9)"/>
+  <circle cx="28" cy="28" r="3" fill="rgb(200, 220, 255)"/>
 </svg>
