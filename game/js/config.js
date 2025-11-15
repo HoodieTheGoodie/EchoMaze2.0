@@ -133,6 +133,12 @@ export function setUnlockedLevel(level) {
 
 export function resetProgress() {
     localStorage.setItem(KEY_UNLOCKED, '1');
+    // Clear all best times (1-10)
+    for (let i = 1; i <= 10; i++) {
+        try {
+            localStorage.removeItem(`smg_bestTime_L${i}`);
+        } catch {}
+    }
 }
 
 export function isGodMode() {
@@ -157,6 +163,15 @@ export function isSkipPreBossEnabled() {
 }
 export function setSkipPreBossEnabled(enabled) {
     localStorage.setItem(KEY_SKIP_PREBOSS, enabled ? '1' : '0');
+}
+
+// Dev convenience: 10x boss damage
+const KEY_BOSS_DMG_10X = 'smg_boss_dmg_10x';
+export function isBossDamage10x() {
+    return localStorage.getItem(KEY_BOSS_DMG_10X) === '1';
+}
+export function setBossDamage10x(enabled) {
+    localStorage.setItem(KEY_BOSS_DMG_10X, enabled ? '1' : '0');
 }
 
 // --- Endless defaults persistence ---

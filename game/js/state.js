@@ -160,6 +160,14 @@ export function initGame() {
     gameState.interactPressedAt = 0;
     gameState.mountedPigUntil = 0;
     gameState.mountedPigId = null;
+    
+    // Clear any active dialog sequences (fixes prep room dialog carryover bug)
+    if (gameState.textSequenceIntervalId) {
+        clearInterval(gameState.textSequenceIntervalId);
+        gameState.textSequenceIntervalId = null;
+        gameState.textSequenceCallback = null;
+    }
+    gameState.prepPickupLocked = false;
     let seed = 1;
     let genCount = 3;
     if (gameState.mode === 'endless') {
@@ -221,6 +229,7 @@ export function initGame() {
     gameState.enemies = [];
     gameState.enemiesFrozenUntil = 0;
     gameState.playerInvincibleUntil = 0;
+    
     if (gameState.levelConfig.enemyEnabled) {
         spawnInitialEnemy();
     }
@@ -517,6 +526,12 @@ export function movePlayer(dx, dy, currentTime) {
                 exitBlocked = true;
                 break;
             }
+            
+            // Freeze all enemies when touching exit (but not during boss fight)
+            if (gameState.currentLevel !== 10) {
+                gameState.enemiesFrozenUntil = Infinity;
+            }
+            
             // Level 10 boss override
             if (gameState.currentLevel === 10) {
                 // If in prep room and stepping through door -> fade out then spawn arena
@@ -528,13 +543,23 @@ export function movePlayer(dx, dy, currentTime) {
                     }, 1000);
                     return true;
                 }
-                // If boss has been defeated, this is the victory exit
+                // If boss has been defeated, this is the victory exit - special boss victory sequence
                 if (gameState.boss && gameState.boss.defeated) {
-                    fadeToBlack(1.0);
+                    // Freeze everything
+                    gameState.enemiesFrozenUntil = Infinity;
+                    gameState.runActive = false; // Stop timer
+                    
+                    // Mark as boss victory for special handling
+                    gameState.bossVictory = true;
+                    
+                    // Fade to black over 2 seconds
+                    fadeToBlack(2.0);
+                    
+                    // After fade completes, trigger boss victory overlay
                     setTimeout(() => {
                         try { finishRun(performance.now()); } catch {}
                         gameState.gameStatus = 'won';
-                    }, 1000);
+                    }, 2000);
                     return true;
                 }
                 // Otherwise, reaching exit in L10 starts the pre-boss flow
@@ -543,8 +568,13 @@ export function movePlayer(dx, dy, currentTime) {
                     return true;
                 }
             }
+            
+            // Add fade to black transition before win screen
             finishRun(currentTime);
-            gameState.gameStatus = 'won';
+            fadeToBlack(1.0);
+            setTimeout(() => {
+                gameState.gameStatus = 'won';
+            }, 1000);
             return true;
         }
     }
@@ -569,10 +599,23 @@ export function movePlayer(dx, dy, currentTime) {
                 if (currentTime - (gameState.lastCollisionTime || 0) > 500) {
                     gameState.lastCollisionTime = currentTime;
                     if (!gameState.godMode) {
-                        gameState.lives--;
-                        if (gameState.lives <= 0) {
-                            gameState.deathCause = 'wall';
-                            gameState.gameStatus = 'lost';
+                        if (gameState.lives > 1) {
+                            // More than 1 life: normal wall collision damage
+                            gameState.lives--;
+                        } else if (gameState.lives === 1) {
+                            // At 1 life: First wall hit stuns for 3s (insurance)
+                            if (!gameState.wallStunInsuranceUsed) {
+                                gameState.playerStunned = true;
+                                gameState.playerStunUntil = currentTime + 3000;
+                                gameState.playerStunStart = currentTime;
+                                gameState.wallStunInsuranceUsed = true;
+                                setStatusMessage('STUNNED for 3s! Last chance!', 3000);
+                            } else {
+                                // Insurance already used: die on next wall hit
+                                gameState.lives = 0;
+                                gameState.deathCause = 'wall';
+                                gameState.gameStatus = 'lost';
+                            }
                         }
                     }
                     // Play wall hit sound and spawn dust particles
@@ -647,6 +690,12 @@ export async function performJump(dx, dy, currentTime) {
             cancelJumpCharge();
             return false;
         }
+        
+        // Freeze all enemies when touching exit (but not during boss fight)
+        if (gameState.currentLevel !== 10) {
+            gameState.enemiesFrozenUntil = Infinity;
+        }
+        
         if (gameState.currentLevel === 10) {
             cancelJumpCharge();
             if (gameState.boss && gameState.boss.prepRoom) {
@@ -659,8 +708,15 @@ export async function performJump(dx, dy, currentTime) {
                 return true;
             }
         }
+        
+        // Add fade to black transition before win screen
         finishRun(currentTime);
-        gameState.gameStatus = 'won';
+        fadeToBlack(1.0);
+        setTimeout(() => {
+            gameState.gameStatus = 'won';
+        }, 1000);
+        cancelJumpCharge();
+        return true;
     }
     
     // Store jump animation data BEFORE changing position
@@ -905,8 +961,19 @@ function onShieldBreak(currentTime) {
 
 export function updateStaminaCooldown(currentTime) {
     if (gameState.isStaminaCoolingDown) {
-        // Show progressive regen over the 15s cooldown
-        const total = STAMINA_COOLDOWN_TIME;
+        // Calculate regen speed multiplier for endless mode
+        let regenMultiplier = 1.0;
+        if (gameState.mode === 'endless' && gameState.endlessConfig) {
+            const streak = gameState.endlessConfig.streak || 0;
+            // Faster stamina regen at higher streaks (up to 2x speed at 20+ streak)
+            if (streak >= 20) regenMultiplier = 2.0;
+            else if (streak >= 15) regenMultiplier = 1.75;
+            else if (streak >= 10) regenMultiplier = 1.5;
+            else if (streak >= 5) regenMultiplier = 1.25;
+        }
+        
+        // Show progressive regen over the 15s cooldown (adjusted by multiplier)
+        const total = STAMINA_COOLDOWN_TIME / regenMultiplier;
         const remaining = Math.max(0, gameState.staminaCooldownEnd - currentTime);
         const elapsed = Math.max(0, Math.min(total, total - remaining));
         const ratio = total > 0 ? (elapsed / total) : 1;
@@ -1480,22 +1547,18 @@ export function updateEnemies(currentTime) {
         // If mount just ended and player is over an unpassable tile, relocate to nearest passable
         const cx = Math.max(0, Math.min(MAZE_WIDTH - 1, gameState.player.x));
         const cy = Math.max(0, Math.min(MAZE_HEIGHT - 1, gameState.player.y));
-        const cell = gameState.maze[cy][cx];
+        const cell = gameState.maze[cy]?.[cx];
         const isBlocked = (cell === CELL.WALL || cell === CELL.GENERATOR);
         if (isBlocked) {
             // radial search for nearest EMPTY/EXIT tile
             let dest = null;
-            for (let r = 1; r <= Math.max(MAZE_WIDTH, MAZE_HEIGHT); r++) {
-                for (let y = cy - r; y <= cy + r; y++) {
-                    if (y <= 0 || y >= MAZE_HEIGHT - 1) continue;
-                    for (let x = cx - r; x <= cx + r; x++) {
-                        if (x <= 0 || x >= MAZE_WIDTH - 1) continue;
-                        const c = gameState.maze[y][x];
+            for (let r = 1; r <= Math.max(MAZE_WIDTH, MAZE_HEIGHT) && !dest; r++) {
+                for (let y = Math.max(1, cy - r); y <= Math.min(MAZE_HEIGHT - 2, cy + r) && !dest; y++) {
+                    for (let x = Math.max(1, cx - r); x <= Math.min(MAZE_WIDTH - 2, cx + r); x++) {
+                        const c = gameState.maze[y]?.[x];
                         if (c === CELL.EMPTY || c === CELL.EXIT) { dest = { x, y }; break; }
                     }
-                    if (dest) break;
                 }
-                if (dest) break;
             }
             if (dest) {
                 gameState.player.x = dest.x;
@@ -1786,8 +1849,15 @@ export function updateEnemies(currentTime) {
 
     // During generator UI: ONLY Mortar and Batter remain active. Others freeze completely.
 
-    // Freeze effect: pause enemies
-    if (currentTime < gameState.enemiesFrozenUntil) return;
+    // Freeze effect: pause enemies and clear targets to prevent weird behavior
+    if (currentTime < gameState.enemiesFrozenUntil) {
+        // Clear movement data while frozen
+        for (const e of gameState.enemies) {
+            if (e.target) e.target = null;
+            if (e.path) e.path = [];
+        }
+        return;
+    }
 
     // Compute thaw multiplier (0..1) for gradual unfreeze after pause/generator
     let thawMult = 1;
@@ -1913,6 +1983,9 @@ export function updateEnemies(currentTime) {
                 const remain = Math.max(0, gameState.enemiesThawUntil - currentTime);
                 localThaw = 1 - Math.min(1, remain / ENEMY_THAW_TIME);
             }
+            
+            // Generator slow multiplier (Batter moves at 50% speed while player is in generator)
+            const genSlowMult = gameState.isGeneratorUIOpen ? 0.5 : 1.0;
 
             // Check if player is within 3x3 radius (3 tiles in each direction = 7x7 grid)
             const distX = Math.abs(cx - px);
@@ -1955,7 +2028,7 @@ export function updateEnemies(currentTime) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
                     const dist = Math.hypot(dx, dy);
-                    const step = e.speedRage * dt * localThaw * bazookaSpeedMult; // flee as fast as possible
+                    const step = e.speedRage * dt * localThaw * bazookaSpeedMult * genSlowMult; // flee as fast as possible
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -2089,7 +2162,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
-                    const step = speedRoam * dt * localThaw * bazookaSpeedMult;
+                    const step = speedRoam * dt * localThaw * bazookaSpeedMult * genSlowMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -2175,12 +2248,17 @@ export function updateEnemies(currentTime) {
             // Zap trap trigger (exactly like chaser)
             triggerZapIfOnTile(e);
 
-            // Collision check - stun player instead of damage (skip while generator UI is open)
+            // Collision check - stun player immediately (even in generator UI)
             const pdx = (gameState.player.x + 0.5) - e.fx;
             const pdy = (gameState.player.y + 0.5) - e.fy;
             const pDist = Math.hypot(pdx, pdy);
-            if (pDist < 0.5 && !gameState.isGeneratorUIOpen) {
+            if (pDist < 0.5) {
                 handleBatterHit(currentTime);
+                // Transition to flee state immediately after hit
+                e.state = 'flee';
+                e.proximityStartTime = 0;
+                e.target = null;
+                e.roamGoal = null;
             }
             continue;
         }
@@ -2190,6 +2268,26 @@ export function updateEnemies(currentTime) {
             const cy = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
             const last = e.lastUpdateAt || currentTime;
             const dt = Math.max(0, (currentTime - last) / 1000);
+
+            // Tackle: Check collision FIRST, before any state logic (unless already disabled)
+            const pdx = (px + 0.5) - e.fx;
+            const pdy = (py + 0.5) - e.fy;
+            if (Math.hypot(pdx, pdy) < 0.5 && e.state !== 'disabled') {
+                // Apply stun immediately regardless of current state
+                e.state = 'disabled';
+                e._disabledOverlay = false;
+                e._disabledStartAt = currentTime;
+                e.disabledUntil = currentTime + 30000;
+                // Clear any active aim state
+                e.aimTarget = null;
+                e.aimUntil = 0;
+                e._didFirstExplosion = false;
+                e._secondAt = 0;
+                e._secondTarget = null;
+                setStatusMessage('Mortar disabled for 30s!');
+                e.lastUpdateAt = currentTime;
+                continue; // Skip rest of mortar logic this frame
+            }
 
             // Sensing uses path distance (cannot sense through walls)
             const distToPlayer = distField[cy][cx];
@@ -2494,27 +2592,6 @@ export function updateEnemies(currentTime) {
                 e.aimBursts = (completed >= 2) ? 2 : 1;
                 try { playMortarWarning(); } catch {}
                 try { playMortarFire(); } catch {}
-            }
-
-            // Tackle: if player collides with Mortar, disable for 30s; if aiming, queue the disable but let action finish
-            const pdx = (px + 0.5) - e.fx;
-            const pdy = (py + 0.5) - e.fy;
-            if (Math.hypot(pdx, pdy) < 0.5) {
-                if (e.state === 'aim') {
-                    // Queue disable overlay and timer, but keep aim flow running
-                    if (!e._disabledOverlay) {
-                        e._disabledOverlay = true;
-                        e._disabledStartAt = currentTime;
-                        e.disabledUntil = currentTime + 30000;
-                        setStatusMessage('Mortar disabled for 30s!');
-                    }
-                } else {
-                    e.state = 'disabled';
-                    e._disabledOverlay = false;
-                    e._disabledStartAt = currentTime;
-                    e.disabledUntil = currentTime + 30000;
-                    setStatusMessage('Mortar disabled for 30s!');
-                }
             }
 
             e.lastUpdateAt = currentTime;
@@ -3133,8 +3210,15 @@ export function completeGenerator() {
 
     // Reward: grant one Zap Trap from Level 2 onward (and in Endless)
     if (gameState.mode === 'endless' || (gameState.currentLevel && gameState.currentLevel >= 2)) {
-        gameState.zapTraps = (gameState.zapTraps || 0) + 1;
-        setStatusMessage('Zap Trap +1');
+        let zapReward = 1;
+        // Bonus zap traps in endless mode at higher streaks
+        if (gameState.mode === 'endless' && gameState.endlessConfig) {
+            const streak = gameState.endlessConfig.streak || 0;
+            if (streak >= 20) zapReward = 3; // 3 traps at 20+ streak
+            else if (streak >= 10) zapReward = 2; // 2 traps at 10+ streak
+        }
+        gameState.zapTraps = (gameState.zapTraps || 0) + zapReward;
+        setStatusMessage(`Zap Trap +${zapReward}`);
     }
     
     closeGeneratorInterface();
@@ -3192,6 +3276,13 @@ export function closeGeneratorInterface() {
         clearTimeout(gameState.skillCheckTimeout);
         gameState.skillCheckTimeout = null;
     }
+    
+    // Hide threat indicators
+    const mortarIndicator = document.getElementById('mortarThreatIndicator');
+    const batterIndicator = document.getElementById('batterThreatIndicator');
+    if (mortarIndicator) mortarIndicator.style.display = 'none';
+    if (batterIndicator) batterIndicator.style.display = 'none';
+    
     // On closing the generator UI, ease enemies back in over 2s
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
 }
