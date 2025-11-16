@@ -2,7 +2,7 @@
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
 import { playLose } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 
@@ -11,29 +11,16 @@ window.gameState = gameState;
 
 // Custom bottom alert function
 function showBottomAlert(message, duration = 3000) {
+    // Get current level color for dynamic theming
+    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    const borderColor = levelColor.css;
+    const glowColor = levelColor.rgba(0.6);
+    const glowColor2 = levelColor.rgba(0.3);
+    
     let alertBox = document.getElementById('bottomAlertBox');
     if (!alertBox) {
         alertBox = document.createElement('div');
         alertBox.id = 'bottomAlertBox';
-        alertBox.style.cssText = `
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.95);
-            color: #00f6ff;
-            padding: 16px 32px;
-            border-radius: 12px;
-            border: 2px solid #00f6ff;
-            font-size: 16px;
-            font-weight: bold;
-            text-align: center;
-            z-index: 9999;
-            box-shadow: 0 0 30px rgba(0, 246, 255, 0.6), 0 0 60px rgba(0, 246, 255, 0.3);
-            max-width: 80%;
-            pointer-events: auto;
-            animation: slideUp 0.3s ease-out;
-        `;
         document.body.appendChild(alertBox);
         
         // Add animation
@@ -46,6 +33,27 @@ function showBottomAlert(message, duration = 3000) {
         `;
         document.head.appendChild(style);
     }
+    
+    // Update colors dynamically
+    alertBox.style.cssText = `
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.95);
+        color: ${borderColor};
+        padding: 16px 32px;
+        border-radius: 12px;
+        border: 2px solid ${borderColor};
+        font-size: 16px;
+        font-weight: bold;
+        text-align: center;
+        z-index: 9999;
+        box-shadow: 0 0 30px ${glowColor}, 0 0 60px ${glowColor2};
+        max-width: 80%;
+        pointer-events: auto;
+        animation: slideUp 0.3s ease-out;
+    `;
     
     alertBox.textContent = message;
     alertBox.style.display = 'block';
@@ -70,6 +78,14 @@ function applyUIStyle() {
     if (titleEl) titleEl.style.display = 'none';
     if (instructionsEl) instructionsEl.style.display = 'none';
     
+    // Get current level color for dynamic UI theming
+    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    const borderColor = levelColor.css;
+    const glowColor = levelColor.rgba(0.45);
+    const insetGlow = levelColor.rgba(0.2);
+    const accentColor = levelColor.rgba(0.05);
+    const textGlow = levelColor.rgba(0.6);
+    
     if (settings.simplifiedUI) {
         // Simplified UI: Center canvas with panels on left and right
         gameContainer.style.display = 'flex';
@@ -78,7 +94,7 @@ function applyUIStyle() {
         gameContainer.style.justifyContent = 'center';
         gameContainer.style.gap = '30px';
         
-        // Style right panel (main ui-panel)
+        // Style right panel (main ui-panel) with level-based colors
         uiPanel.style.display = 'flex';
         uiPanel.style.flexDirection = 'column';
         uiPanel.style.order = '2';
@@ -88,9 +104,9 @@ function applyUIStyle() {
         uiPanel.style.fontSize = '0.95rem';
         uiPanel.style.background = 'rgba(5, 7, 13, 0.9)';
         uiPanel.style.backdropFilter = 'blur(6px)';
-        uiPanel.style.border = '2px solid #00f6ff';
+        uiPanel.style.border = `2px solid ${borderColor}`;
         uiPanel.style.borderRadius = '10px';
-        uiPanel.style.boxShadow = '0 0 25px rgba(0, 246, 255, 0.45), 0 0 50px rgba(0, 246, 255, 0.2) inset';
+        uiPanel.style.boxShadow = `0 0 25px ${glowColor}, 0 0 50px ${insetGlow} inset`;
         
         // Create left side panel if it doesn't exist
         let leftPanel = document.getElementById('ui-left-panel');
@@ -103,9 +119,9 @@ function applyUIStyle() {
                 padding: 16px;
                 background: rgba(5, 7, 13, 0.9);
                 backdrop-filter: blur(6px);
-                border: 2px solid #00f6ff;
+                border: 2px solid ${borderColor};
                 border-radius: 10px;
-                box-shadow: 0 0 25px rgba(0, 246, 255, 0.45), 0 0 50px rgba(0, 246, 255, 0.2) inset;
+                box-shadow: 0 0 25px ${glowColor}, 0 0 50px ${insetGlow} inset;
                 display: flex;
                 flex-direction: column;
                 gap: 14px;
@@ -115,8 +131,8 @@ function applyUIStyle() {
             // Create health display in left panel
             const healthDiv = document.createElement('div');
             healthDiv.innerHTML = `
-                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
-                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Health:</span>
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: ${accentColor}; border-radius: 4px;">
+                    <span style="font-weight: bold; color: ${borderColor}; text-shadow: 0 0 8px ${textGlow};">Health:</span>
                     <span id="health-simple" style="font-size:1.3em; filter: drop-shadow(0 0 6px rgba(255,100,150,0.8));">❤️❤️❤️</span>
                 </div>
             `;
@@ -125,8 +141,8 @@ function applyUIStyle() {
             // Create stamina display in left panel (percentage only)
             const staminaDiv = document.createElement('div');
             staminaDiv.innerHTML = `
-                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
-                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Stamina:</span>
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: ${accentColor}; border-radius: 4px;">
+                    <span style="font-weight: bold; color: ${borderColor}; text-shadow: 0 0 8px ${textGlow};">Stamina:</span>
                     <span id="stamina-simple" style="font-weight:bold; text-shadow: 0 0 8px currentColor;">100%</span>
                 </div>
             `;
@@ -135,14 +151,29 @@ function applyUIStyle() {
             // Create shield display in left panel
             const shieldDiv = document.createElement('div');
             shieldDiv.innerHTML = `
-                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: rgba(0, 246, 255, 0.05); border-radius: 4px;">
-                    <span style="font-weight: bold; color: #00f6ff; text-shadow: 0 0 8px rgba(0, 246, 255, 0.6);">Shield:</span>
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: ${accentColor}; border-radius: 4px;">
+                    <span style="font-weight: bold; color: ${borderColor}; text-shadow: 0 0 8px ${textGlow};">Shield:</span>
                     <span id="shield-simple" style="font-weight:bold; color:#ff77aa; text-shadow: 0 0 8px currentColor;">🛡️ Ready</span>
                 </div>
             `;
             leftPanel.appendChild(shieldDiv);
             
             gameContainer.insertBefore(leftPanel, gameContainer.firstChild);
+        } else {
+            // Update existing left panel colors
+            leftPanel.style.border = `2px solid ${borderColor}`;
+            leftPanel.style.boxShadow = `0 0 25px ${glowColor}, 0 0 50px ${insetGlow} inset`;
+            
+            // Update section backgrounds and text colors
+            const sections = leftPanel.querySelectorAll('div > div');
+            sections.forEach(section => {
+                section.style.background = accentColor;
+                const label = section.querySelector('span:first-child');
+                if (label) {
+                    label.style.color = borderColor;
+                    label.style.textShadow = `0 0 8px ${textGlow}`;
+                }
+            });
         }
         
         // Make canvas order 1 (middle)
@@ -197,6 +228,35 @@ function applyUIStyle() {
             canvas.style.order = '';
         }
     }
+}
+
+// Update canvas border color to match level theme
+function updateCanvasBorderColor() {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    
+    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    const borderColor = levelColor.css;
+    const glowColor = levelColor.rgba(0.4);
+    const glowColor2 = levelColor.rgba(0.2);
+    const glowColor3 = levelColor.rgba(0.6);
+    const glowColor4 = levelColor.rgba(0.3);
+    
+    canvas.style.borderColor = borderColor;
+    canvas.style.boxShadow = `0 0 20px ${glowColor}, 0 0 40px ${glowColor2}, inset 0 0 20px rgba(0, 0, 0, 0.5)`;
+    
+    // Update hover effect by adding a style element
+    let styleEl = document.getElementById('canvas-hover-style');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'canvas-hover-style';
+        document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = `
+        #canvas:hover {
+            box-shadow: 0 0 30px ${glowColor3}, 0 0 50px ${glowColor4}, inset 0 0 20px rgba(0, 0, 0, 0.5) !important;
+        }
+    `;
 }
 
 
@@ -463,6 +523,54 @@ function buildMenu() {
         btn.addEventListener('click', () => startLevel(i));
         grid.appendChild(btn);
     }
+    
+    // Update endless mode button visibility and text
+    const endlessBtn = document.querySelector("button[data-level='endless']");
+    if (endlessBtn) {
+        if (unlocked >= 2) {
+            // Unlocked at level 2 - show endless mode
+            endlessBtn.style.display = 'block';
+            endlessBtn.disabled = false;
+            endlessBtn.style.opacity = '1';
+            endlessBtn.innerHTML = '∞ Endless Mode';
+            // Center it by adding grid-column span
+            endlessBtn.style.gridColumn = 'span 2';
+            endlessBtn.style.justifySelf = 'center';
+        } else {
+            // Not unlocked yet
+            endlessBtn.style.display = 'block';
+            endlessBtn.disabled = true;
+            endlessBtn.style.opacity = '0.5';
+            endlessBtn.style.cursor = 'not-allowed';
+            endlessBtn.innerHTML = '∞ Endless Mode<br><span style="font-size:0.7em;color:#ff6666;">Reach Level 2 to unlock</span>';
+            endlessBtn.style.gridColumn = 'span 2';
+            endlessBtn.style.justifySelf = 'center';
+        }
+    }
+    
+    // Update challenge mode button visibility
+    const challengeBtn = document.querySelector("button[data-level='challenge']");
+    if (challengeBtn) {
+        if (unlocked >= LEVEL_COUNT) {
+            // Game completed - unlock challenge mode
+            challengeBtn.style.display = 'block';
+            challengeBtn.disabled = false;
+            challengeBtn.style.opacity = '1';
+            challengeBtn.style.cursor = 'pointer';
+            challengeBtn.innerHTML = '⚔️ Challenge Mode';
+            challengeBtn.style.gridColumn = 'span 2';
+            challengeBtn.style.justifySelf = 'center';
+        } else {
+            // Not unlocked yet
+            challengeBtn.style.display = 'block';
+            challengeBtn.disabled = true;
+            challengeBtn.style.opacity = '0.5';
+            challengeBtn.style.cursor = 'not-allowed';
+            challengeBtn.innerHTML = '⚔️ Challenge Mode<br><span style="font-size:0.7em;color:#ff9966;">Defeat the Final Boss to unlock</span>';
+            challengeBtn.style.gridColumn = 'span 2';
+            challengeBtn.style.justifySelf = 'center';
+        }
+    }
 }
 
 function showMenu() {
@@ -482,6 +590,22 @@ function showMenu() {
     gameState.playerStunned = false;
     gameState.playerStunUntil = 0;
     
+    // Clear any active dialog sequences (fixes prep room dialog carryover bug)
+    if (gameState.textSequenceIntervalId) {
+        clearInterval(gameState.textSequenceIntervalId);
+        gameState.textSequenceIntervalId = null;
+        gameState.textSequenceCallback = null;
+    }
+    gameState.prepPickupLocked = false;
+    
+    // CRITICAL: Unlock player input when returning to menu
+    gameState.inputLocked = false;
+    
+    // Hide status message box if visible
+    const statusBox = document.getElementById('statusMessageBox');
+    if (statusBox) statusBox.style.display = 'none';
+    gameState.statusMessage = '';
+    
     // Hide all overlays (win, lose, credits, etc.)
     const winOverlay = document.getElementById('winOverlay');
     const loseOverlay = document.getElementById('loseOverlay');
@@ -500,6 +624,9 @@ function showMenu() {
     if (gameContainer) gameContainer.style.display = 'none';
     buildMenu();
     
+    // Clear boss victory flag
+    if (gameState) gameState.bossVictory = false;
+    
     // Sync dev panel state
     const devPanel = document.getElementById('devPanel');
     // Stop any running level/game loop to avoid background updates and sounds
@@ -507,10 +634,12 @@ function showMenu() {
     
     const godChk = document.getElementById('godModeChk');
     const skipPreBossChk = document.getElementById('skipPreBossChk');
+    const bossDmg10xChk = document.getElementById('bossDmg10xChk');
     if (isDevUnlocked()) {
         if (devPanel) devPanel.style.display = 'block';
         if (godChk) godChk.checked = isGodMode();
         if (skipPreBossChk) skipPreBossChk.checked = isSkipPreBossEnabled();
+        if (bossDmg10xChk) bossDmg10xChk.checked = isBossDamage10x();
     } else if (devPanel) {
         devPanel.style.display = 'none';
     }
@@ -549,6 +678,9 @@ function startLevel(level) {
     // Apply UI style based on settings
     applyUIStyle();
     
+    // Update canvas border color to match level
+    updateCanvasBorderColor();
+    
     // Dev convenience: if Level 10 and skip toggle is ON, jump straight to pre-boss transition
     if (level === 10 && isSkipPreBossEnabled()) {
         try { startBossTransition(performance.now()); } catch {}
@@ -559,8 +691,13 @@ function wireMenuUi() {
     const resetBtn = document.getElementById('resetProgressBtn');
     if (resetBtn && !resetBtn._wired) {
         resetBtn.addEventListener('click', () => {
-            resetProgress();
-            showMenu();
+            // Show confirmation dialog
+            const confirmed = confirm('⚠️ WARNING: This will reset ALL progress and erase ALL best times. Are you sure?');
+            if (confirmed) {
+                resetProgress();
+                showMenu();
+                alert('✅ Progress and times have been reset!');
+            }
         });
         resetBtn._wired = true;
     }
@@ -617,6 +754,7 @@ function wireMenuUi() {
 
     const godChk = document.getElementById('godModeChk');
     const skipPreBossChk = document.getElementById('skipPreBossChk');
+    const bossDmg10xChk = document.getElementById('bossDmg10xChk');
     if (godChk && !godChk._wired) {
         godChk.addEventListener('change', () => {
             setGodMode(godChk.checked);
@@ -628,6 +766,12 @@ function wireMenuUi() {
             setSkipPreBossEnabled(!!skipPreBossChk.checked);
         });
         skipPreBossChk._wired = true;
+    }
+    if (bossDmg10xChk && !bossDmg10xChk._wired) {
+        bossDmg10xChk.addEventListener('change', () => {
+            setBossDamage10x(!!bossDmg10xChk.checked);
+        });
+        bossDmg10xChk._wired = true;
     }
 
     const unlockAllBtn = document.getElementById('unlockAllBtn');
@@ -642,7 +786,12 @@ function wireMenuUi() {
     const endlessBtn = document.querySelector("button[data-level='endless']");
     if (endlessBtn && !endlessBtn._wired) {
         endlessBtn.addEventListener('click', () => {
-            showEndlessOverlay();
+            const unlocked = getUnlockedLevel();
+            if (unlocked >= 2) {
+                showEndlessOverlay();
+            } else {
+                showBottomAlert('🔒 Reach Level 2 to unlock Endless Mode!', 3000);
+            }
         });
         endlessBtn._wired = true;
     }
@@ -762,7 +911,24 @@ function wireMenuUi() {
     // Wire bazooka mode checkbox
     if (bazookaModeChk && !bazookaModeChk._wired) {
         bazookaModeChk.addEventListener('change', () => {
-            setBazookaMode(!!bazookaModeChk.checked);
+            const newState = !!bazookaModeChk.checked;
+            const currentState = isBazookaMode();
+            
+            if (newState !== currentState) {
+                // Warn that progress reset is required
+                const action = newState ? 'enable' : 'disable';
+                const confirmed = confirm(`⚠️ To ${action} Bazooka Mode, you must reset your progress. Continue?`);
+                
+                if (confirmed) {
+                    setBazookaMode(newState);
+                    resetProgress();
+                    alert(`🚀 Bazooka Mode ${newState ? 'enabled' : 'disabled'}! Progress has been reset.`);
+                    showMenu(); // Refresh menu
+                } else {
+                    // Revert checkbox to previous state
+                    bazookaModeChk.checked = currentState;
+                }
+            }
         });
         bazookaModeChk._wired = true;
     }
@@ -836,11 +1002,60 @@ function showEndlessOverlay() {
     // Prefill from stored defaults
     const def = getEndlessDefaults();
     const $ = (id) => document.getElementById(id);
-    if ($('endlessChaser')) $('endlessChaser').checked = !!def.chaser;
-    if ($('endlessPig')) $('endlessPig').checked = !!def.pig;
-    if ($('endlessSeeker')) $('endlessSeeker').checked = !!def.seeker;
-    if ($('endlessBatter')) $('endlessBatter').checked = !!def.batter;
-    if ($('endlessMortar')) $('endlessMortar').checked = !!def.mortar;
+    const unlocked = getUnlockedLevel();
+    
+    // Enemy unlock progression: chaser(2), pig(3), seeker(5), batter(7), mortar(9)
+    const chaserUnlocked = unlocked >= 2;
+    const pigUnlocked = unlocked >= 3;
+    const seekerUnlocked = unlocked >= 5;
+    const batterUnlocked = unlocked >= 7;
+    const mortarUnlocked = unlocked >= 9;
+    
+    // Chaser (unlocked at level 2)
+    if ($('endlessChaser')) {
+        $('endlessChaser').checked = chaserUnlocked && !!def.chaser;
+        $('endlessChaser').disabled = !chaserUnlocked;
+        const chaserLabel = $('endlessChaser').parentElement;
+        if (chaserLabel) chaserLabel.style.opacity = chaserUnlocked ? '1' : '0.5';
+        if (!chaserUnlocked && chaserLabel) chaserLabel.title = 'Unlock at Level 2';
+    }
+    
+    // Pig (unlocked at level 3)
+    if ($('endlessPig')) {
+        $('endlessPig').checked = pigUnlocked && !!def.pig;
+        $('endlessPig').disabled = !pigUnlocked;
+        const pigLabel = $('endlessPig').parentElement;
+        if (pigLabel) pigLabel.style.opacity = pigUnlocked ? '1' : '0.5';
+        if (!pigUnlocked && pigLabel) pigLabel.title = 'Unlock at Level 3';
+    }
+    
+    // Seeker (unlocked at level 5)
+    if ($('endlessSeeker')) {
+        $('endlessSeeker').checked = seekerUnlocked && !!def.seeker;
+        $('endlessSeeker').disabled = !seekerUnlocked;
+        const seekerLabel = $('endlessSeeker').parentElement;
+        if (seekerLabel) seekerLabel.style.opacity = seekerUnlocked ? '1' : '0.5';
+        if (!seekerUnlocked && seekerLabel) seekerLabel.title = 'Unlock at Level 5';
+    }
+    
+    // Batter (unlocked at level 7)
+    if ($('endlessBatter')) {
+        $('endlessBatter').checked = batterUnlocked && !!def.batter;
+        $('endlessBatter').disabled = !batterUnlocked;
+        const batterLabel = $('endlessBatter').parentElement;
+        if (batterLabel) batterLabel.style.opacity = batterUnlocked ? '1' : '0.5';
+        if (!batterUnlocked && batterLabel) batterLabel.title = 'Unlock at Level 7';
+    }
+    
+    // Mortar (unlocked at level 9)
+    if ($('endlessMortar')) {
+        $('endlessMortar').checked = mortarUnlocked && !!def.mortar;
+        $('endlessMortar').disabled = !mortarUnlocked;
+        const mortarLabel = $('endlessMortar').parentElement;
+        if (mortarLabel) mortarLabel.style.opacity = mortarUnlocked ? '1' : '0.5';
+        if (!mortarUnlocked && mortarLabel) mortarLabel.title = 'Unlock at Level 9';
+    }
+    
     if ($('endlessDiffNormal')) $('endlessDiffNormal').checked = def.difficulty !== 'super';
     if ($('endlessDiffSuper')) $('endlessDiffSuper').checked = def.difficulty === 'super';
     if ($('endlessGen3')) $('endlessGen3').checked = def.generatorCount !== 5;
@@ -933,6 +1148,47 @@ function launchConfetti() {
 function stopConfetti() { cancelAnimationFrame(confettiAnimId); confettiAnimId = 0; }
 
 function showWinOverlay() {
+    // Special handling for boss victory - skip normal win screen, go straight to credits
+    if (gameState.currentLevel === 10 && gameState.bossVictory) {
+        // Play victory music/sound (add later if we have one)
+        // try { playVictoryMusic(); } catch {}
+        
+        // Launch confetti
+        launchConfetti();
+        
+        // Mark secret as unlocked
+        setSecretUnlocked(true);
+        
+        // Show credits overlay after a brief delay to let fade finish
+        setTimeout(() => {
+            const creditsOverlay = document.getElementById('creditsOverlay');
+            if (creditsOverlay) {
+                creditsOverlay.style.display = 'block';
+                // Fade in credits from black
+                creditsOverlay.style.opacity = '0';
+                setTimeout(() => {
+                    creditsOverlay.style.transition = 'opacity 2s ease';
+                    creditsOverlay.style.opacity = '1';
+                }, 50);
+            }
+        }, 500);
+        
+        // Wire up credits menu button if not already wired
+        const creditsMenuBtn = document.getElementById('creditsMenuBtn');
+        if (creditsMenuBtn && !creditsMenuBtn._wired) {
+            creditsMenuBtn.addEventListener('click', () => {
+                const c = document.getElementById('creditsOverlay');
+                if (c) c.style.display = 'none';
+                stopConfetti();
+                showMenu();
+            });
+            creditsMenuBtn._wired = true;
+        }
+        
+        return;
+    }
+    
+    // Normal win screen for regular levels
     const curUnlocked = getUnlockedLevel();
     if (gameState.currentLevel >= curUnlocked) {
         setUnlockedLevel(Math.min(LEVEL_COUNT, gameState.currentLevel + 1));
@@ -1010,11 +1266,22 @@ function postFrameChecks(currentTime) {
             // Increment streak and immediately start a fresh run with new seed
             gameState.endlessConfig = gameState.endlessConfig || { streak: 0 };
             gameState.endlessConfig.streak = (gameState.endlessConfig.streak || 0) + 1;
+            const streak = gameState.endlessConfig.streak;
+            
+            // Bonus rewards at milestone streaks
+            let bonusMsg = '';
+            if (streak % 10 === 0) {
+                bonusMsg = ' 🔥 MILESTONE! +1 Extra Life!';
+                gameState.lives = Math.min(gameState.lives + 1, 5); // Cap at 5 lives
+            } else if (streak % 5 === 0) {
+                bonusMsg = ' ⚡ Difficulty increased!';
+            }
+            
             // Brief message then restart
-            gameState.statusMessage = `Escaped! Streak: ${gameState.endlessConfig.streak}`;
+            gameState.statusMessage = `Escaped! Streak: ${streak}${bonusMsg}`;
             setTimeout(() => {
                 if (gameState.mode === 'endless') initGame();
-            }, 600);
+            }, bonusMsg ? 1500 : 600);
         } else if (gameState.gameStatus === 'lost') {
             // Reset streak and return to menu after a short delay
             const last = (gameState.endlessConfig && gameState.endlessConfig.streak) || 0;

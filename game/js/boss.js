@@ -12,7 +12,7 @@ import {
   MORTAR_WARNING_SEC, MORTAR_EXPLOSION_SIZE,
   MAX_ACTIVE_PIGS, MAX_ACTIVE_SEEKERS,
   BOSS_AMMO_STATION_COOLDOWN,
-  isBazookaMode
+  isBazookaMode, isBossDamage10x
 } from './config.js';
 import { spawnFlyingPig, spawnSeeker } from './state.js';
 
@@ -261,6 +261,7 @@ export function spawnBossArena(currentTime) {
 export function updateBoss(currentTime) {
   const b = gameState.boss;
   if (!b) return;
+  
   // Allow defeat timeline even after active=false; and prevent any further spawns while defeated
   if (b.defeated) {
     // Stage 1: ensure door fade happens after core fade
@@ -375,6 +376,30 @@ export function updateBoss(currentTime) {
     return;
   }
 
+  // Boss defeat check - run this BEFORE any attack logic
+  if (b.core.hp <= 0 && !b.defeated) {
+    console.log('[boss] DEFEATED! HP reached zero, starting defeat sequence');
+    // Immediate attack termination
+    b.combo = null; b.telegraphs = []; b.roundInfo = null;
+    b.lavaActiveUntil = 0; b.lavaWarnStartAt = 0; b.lavaWarnUntil = 0;
+    // Clear boss-summoned enemies & projectiles
+    if (Array.isArray(gameState.enemies)) {
+      console.log('[boss] clearing', gameState.enemies.filter(e => e._bossSummoned).length, 'boss-summoned enemies');
+      gameState.enemies = gameState.enemies.filter(e => !e._bossSummoned);
+    }
+    gameState.projectiles = [];
+    // Remove bazooka upon defeat
+    if (gameState.bazooka) { gameState.bazooka.has = false; gameState.bazooka.ammo = 0; }
+    b.defeated = true;
+    b.defeatStartedAt = currentTime;
+    b.defeatShakeUntil = currentTime + 3000;
+    b.coreFadeUntil = currentTime + 3000;
+    // Screen shake
+    try { import('./state.js').then(m=> m.triggerScreenShake && m.triggerScreenShake(9, 3000, currentTime)); } catch {}
+    console.log('[boss] defeat flags set, coreFadeUntil:', b.coreFadeUntil);
+    return; // Exit immediately after setting defeat state
+  }
+
   // Hold all boss logic during intro cutscene
   if (b.introCutsceneUntil && currentTime < b.introCutsceneUntil) {
     return;
@@ -476,6 +501,11 @@ export function updateBoss(currentTime) {
   if (!b.enraged && hpPct <= 0.25) {
     b.enraged = true; // increases mortar density and biases targeting
     try { import('./state.js').then(m=>{ m.setStatusMessage && m.setStatusMessage('The CORE is enraged!', 1800); }); } catch {}
+  }
+
+  // STOP ALL ATTACKS WHEN HP REACHES ZERO
+  if (b.core.hp <= 0) {
+    return; // Defeat logic handled below; prevent further attack spawns
   }
 
   // Red phase: 3 mortar rounds
@@ -691,30 +721,6 @@ export function updateBoss(currentTime) {
 
   // Fixed ammo stations are handled by state update (interaction + cooldown); no random spawns in arena
 
-  // Boss defeat check
-  if (b.core.hp <= 0) {
-    if (!b.defeated) {
-      // Immediate attack termination
-      b.combo = null; b.telegraphs = []; b.roundInfo = null;
-      b.lavaActiveUntil = 0; b.lavaWarnStartAt = 0; b.lavaWarnUntil = 0;
-      // Clear boss-summoned enemies & projectiles
-      if (Array.isArray(gameState.enemies)) {
-        gameState.enemies = gameState.enemies.filter(e => !e._bossSummoned);
-      }
-      gameState.projectiles = [];
-      // Remove bazooka upon defeat
-      if (gameState.bazooka) { gameState.bazooka.has = false; gameState.bazooka.ammo = 0; }
-      b.defeated = true;
-      b.defeatStartedAt = currentTime;
-      b.defeatShakeUntil = currentTime + 3000; // slower, more time to savor
-      b.coreFadeUntil = currentTime + 3000;   // slower core fade
-      // Screen shake
-      try { import('./state.js').then(m=> m.triggerScreenShake && m.triggerScreenShake(9, 3000, currentTime)); } catch {}
-    } else {
-      // defeated timeline handled at top of function
-    }
-  }
-
   // Post-defeat flow: keep running even if boss inactive
   if (gameState.boss && gameState.boss.defeated) return; // defeat timeline handled inline above
 
@@ -812,7 +818,9 @@ export function bossExplosion(cx, cy, radius, currentTime) {
     if (!gameState.godMode) {
       gameState.lives = Math.max(0, (gameState.lives || 0) - 1);
       gameState.playerStunned = true;
-      gameState.playerStunUntil = currentTime + 4000;
+      // Bazooka mode: shorter self-damage stun (2s), normal mode: 4s
+      const stunDuration = (src === 'rocket' && isBazookaMode()) ? 2000 : 4000;
+      gameState.playerStunUntil = currentTime + stunDuration;
       gameState.playerStunStart = currentTime;
       // Check for death
       if (gameState.lives <= 0) {
@@ -833,12 +841,12 @@ export function bossExplosion(cx, cy, radius, currentTime) {
       const boss = gameState.boss;
       const combo = boss && boss.phase === 'combo' ? (boss.combo && boss.combo.attacks) : null;
       const comboHas = (name)=> Array.isArray(combo) && combo.includes(name);
-      // SECRET: Bazooka Mode - stun enemies instead of killing them (5 seconds with grayscale effect)
+      // SECRET: Bazooka Mode - stun enemies instead of killing them (3 seconds with grayscale effect)
       if (src === 'rocket' && isBazookaMode()) {
-        const stunDuration = 5000; // 5 seconds
+        const stunDuration = 3000; // 3 seconds
         o._frozenUntil = currentTime + stunDuration;
         o._stunStartTime = currentTime; // Track when stun started for fade-in effect
-        console.log('[bazooka mode] stunned', o.type, 'for 5 seconds');
+        console.log('[bazooka mode] stunned', o.type, 'for 3 seconds');
         keep.push(o);
         continue;
       }
@@ -946,13 +954,19 @@ export function damageCoreAt(x, y, isDirect) {
   // Only allow damage while mounted on a pig
   const now = performance.now();
   const mounted = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
-  if (!mounted) return;
+  if (!mounted) {
+    console.log('[boss] damage blocked - not mounted');
+    return;
+  }
+  const oldHp = b.core.hp;
+  const multiplier = isBossDamage10x() ? 10 : 1;
   if (b.core.usesShotHp) {
-    b.core.hp = Math.max(0, (b.core.hp || 0) - 1); // exactly 25 shots total
+    b.core.hp = Math.max(0, (b.core.hp || 0) - (1 * multiplier)); // 1 or 10 damage per shot
   } else {
     const dmg = isDirect ? BAZOOKA_DIRECT_DMG : BAZOOKA_SPLASH_DMG;
-    b.core.hp = Math.max(0, b.core.hp - dmg);
+    b.core.hp = Math.max(0, b.core.hp - (dmg * multiplier));
   }
+  console.log('[boss] damage applied:', oldHp, '->', b.core.hp, isDirect ? '(direct)' : '(splash)', multiplier > 1 ? `(${multiplier}x)` : '');
 }
 
 // Spawn a buffed end-of-boss seeker directly at center door

@@ -1001,7 +1001,7 @@ function drawBossArena(currentTime) {
     }
 
     // Boss HP bar (updated externally outside canvas for fancy styling)
-    if (b.core && !b.defeated) {
+    if (b.core && !b.defeated && gameState.gameStatus === 'playing') {
         const container = document.getElementById('bossHealthBarContainer');
         const fill = document.getElementById('bossHealthBarFill');
         const text = document.getElementById('bossHealthBarText');
@@ -1013,7 +1013,7 @@ function drawBossArena(currentTime) {
             text.textContent = `${Math.ceil(b.core.hp || 0)} / ${b.core.maxHp || 0}`;
         }
     } else {
-        // Hide boss health bar when defeated or not active
+        // Hide boss health bar when defeated, not active, or game not playing
         const container = document.getElementById('bossHealthBarContainer');
         if (container) container.style.display = 'none';
     }
@@ -1062,16 +1062,7 @@ function drawBossArena(currentTime) {
     }
 
     // Ammo HUD (top-right) — only Level 10 and after bazooka is picked up
-    if ((gameState.currentLevel === 10) && gameState.bazooka && gameState.bazooka.has) {
-        const ammo = gameState.bazooka.ammo || 0;
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(canvas.width - 160, 8, 150, 28);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-        const mounting = (gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
-        const suffix = mounting ? ' (Mounted)' : '';
-        ctx.fillText(`Rockets: ${ammo}/${gameState.bazooka.maxAmmo || 0}${suffix}`, canvas.width - 12, 22);
-        ctx.restore();
-    }
+    // Ammo counter removed - now shown in main UI only
 
     // Top-bar lore/status (only in Level 10 prep room): draw over canvas top for visibility
     if ((gameState.currentLevel === 10) && gameState.boss && gameState.boss.prepRoom && gameState.statusMessage) {
@@ -1769,6 +1760,136 @@ function drawUI() {
     }
 }
 
+function drawGeneratorThreatIndicators(currentTime) {
+    if (!gameState.isGeneratorUIOpen) return;
+    
+    const px = gameState.player.x;
+    const py = gameState.player.y;
+    
+    // Find Mortar and Batter enemies
+    const mortar = gameState.enemies.find(e => e.type === 'mortar');
+    const batter = gameState.enemies.find(e => e.type === 'batter');
+    
+    // Get or create indicator elements
+    let mortarIndicator = document.getElementById('mortarThreatIndicator');
+    let batterIndicator = document.getElementById('batterThreatIndicator');
+    
+    if (!mortarIndicator) {
+        mortarIndicator = document.createElement('div');
+        mortarIndicator.id = 'mortarThreatIndicator';
+        mortarIndicator.style.cssText = `
+            position: fixed;
+            right: calc(50% - 350px);
+            top: 50%;
+            transform: translateY(-50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 4px solid;
+            display: none;
+            z-index: 1001;
+            pointer-events: none;
+            transition: opacity 0.15s;
+        `;
+        document.body.appendChild(mortarIndicator);
+    }
+    
+    if (!batterIndicator) {
+        batterIndicator = document.createElement('div');
+        batterIndicator.id = 'batterThreatIndicator';
+        batterIndicator.style.cssText = `
+            position: fixed;
+            left: calc(50% - 350px);
+            top: 50%;
+            transform: translateY(-50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 4px solid;
+            display: none;
+            z-index: 1001;
+            pointer-events: none;
+            transition: opacity 0.15s;
+        `;
+        document.body.appendChild(batterIndicator);
+    }
+    
+    // Update Mortar indicator
+    if (mortar) {
+        mortarIndicator.style.display = 'block';
+        
+        // Check if Mortar is aiming at player
+        if (mortar.state === 'aim' && mortar.aimTarget) {
+            const targetX = mortar.aimTarget.x;
+            const targetY = mortar.aimTarget.y;
+            const radius = 2; // Mortar explosion radius
+            
+            // Check if player is in the target area
+            const inDanger = Math.max(Math.abs(targetX - px), Math.abs(targetY - py)) <= radius;
+            
+            if (inDanger) {
+                // Flash RED when targeted
+                const flashSpeed = 200;
+                const flash = Math.sin(currentTime / flashSpeed) * 0.5 + 0.5;
+                mortarIndicator.style.borderColor = '#ff0000';
+                mortarIndicator.style.backgroundColor = `rgba(255, 0, 0, ${0.2 + flash * 0.3})`;
+                mortarIndicator.style.boxShadow = `0 0 ${20 + flash * 20}px rgba(255, 0, 0, 0.8)`;
+            } else {
+                // Blue when Mortar is active but not targeting player
+                mortarIndicator.style.borderColor = '#00aaff';
+                mortarIndicator.style.backgroundColor = 'rgba(0, 170, 255, 0.2)';
+                mortarIndicator.style.boxShadow = '0 0 20px rgba(0, 170, 255, 0.6)';
+            }
+        } else {
+            // Blue idle state
+            mortarIndicator.style.borderColor = '#00aaff';
+            mortarIndicator.style.backgroundColor = 'rgba(0, 170, 255, 0.2)';
+            mortarIndicator.style.boxShadow = '0 0 20px rgba(0, 170, 255, 0.6)';
+        }
+    } else {
+        mortarIndicator.style.display = 'none';
+    }
+    
+    // Update Batter indicator
+    if (batter) {
+        batterIndicator.style.display = 'block';
+        
+        const bx = Math.floor(batter.fx);
+        const by = Math.floor(batter.fy);
+        const distance = Math.hypot(bx - px, by - py);
+        
+        // Check if in rage mode
+        const inRage = batter.state === 'rage' || batter.state === 'chase';
+        
+        if (inRage) {
+            // Flash RED rapidly when in rage mode
+            const flashSpeed = 150;
+            const flash = Math.sin(currentTime / flashSpeed) * 0.5 + 0.5;
+            batterIndicator.style.borderColor = '#ff0000';
+            batterIndicator.style.backgroundColor = `rgba(255, 0, 0, ${0.2 + flash * 0.3})`;
+            batterIndicator.style.boxShadow = `0 0 ${20 + flash * 30}px rgba(255, 0, 0, 0.9)`;
+        } else if (distance <= 15) {
+            // Brown/orange pulsing - speed increases with proximity
+            const maxDistance = 15;
+            const proximityRatio = 1 - Math.min(1, distance / maxDistance);
+            
+            // Flash speed increases as Batter gets closer (300ms at far, 100ms at close)
+            const flashSpeed = 300 - (proximityRatio * 200);
+            const flash = Math.sin(currentTime / flashSpeed) * 0.5 + 0.5;
+            
+            const brownColor = '#8B4513'; // Brown
+            batterIndicator.style.borderColor = brownColor;
+            batterIndicator.style.backgroundColor = `rgba(139, 69, 19, ${0.1 + flash * (0.2 + proximityRatio * 0.3)})`;
+            batterIndicator.style.boxShadow = `0 0 ${10 + flash * (10 + proximityRatio * 20)}px rgba(139, 69, 19, ${0.5 + proximityRatio * 0.4})`;
+        } else {
+            // Too far - hide indicator
+            batterIndicator.style.display = 'none';
+        }
+    } else {
+        batterIndicator.style.display = 'none';
+    }
+}
+
 function drawGeneratorOverlay(currentTime) {
     const overlay = ui.overlay;
     overlay.style.display = 'flex';
@@ -1781,6 +1902,9 @@ function drawGeneratorOverlay(currentTime) {
     
     title.textContent = 'Repairing Generator';
     progressBar.style.width = `${gameState.generatorProgress}%`;
+    
+    // Draw threat indicators for Mortar and Batter
+    drawGeneratorThreatIndicators(currentTime);
     
     if (gameState.skillCheckState) {
         // Show mobile button on touch devices, otherwise show keyboard instruction
@@ -1839,30 +1963,57 @@ function drawStatusMessage() {
     // Draw status message centered below the canvas instead of using DOM element that shifts layout
     if (!gameState.statusMessage) return;
     
+    // Don't show status message if game container is hidden (main menu)
+    const gameContainer = document.getElementById('game-container');
+    if (!gameContainer || gameContainer.style.display === 'none') return;
+    
     // Create a fixed position overlay below canvas
     const messageBox = document.getElementById('statusMessageBox') || createStatusMessageBox();
     messageBox.textContent = gameState.statusMessage;
     messageBox.style.display = 'block';
+    
+    // Adjust position if boss bar is visible
+    const bossBar = document.getElementById('bossHealthBarContainer');
+    const bossBarVisible = bossBar && bossBar.style.display !== 'none';
+    messageBox.style.top = bossBarVisible ? 'calc(50% + 200px)' : 'calc(50% + 320px)';
+    
+    // Update colors dynamically based on current level
+    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    const borderColor = levelColor.css;
+    const glowColor = levelColor.rgba(0.4);
+    messageBox.style.borderColor = borderColor;
+    messageBox.style.boxShadow = `0 0 20px ${glowColor}`;
 }
 
 function createStatusMessageBox() {
     const box = document.createElement('div');
     box.id = 'statusMessageBox';
+    
+    // Check if boss health bar is visible to adjust position
+    const bossBar = document.getElementById('bossHealthBarContainer');
+    const bossBarVisible = bossBar && bossBar.style.display !== 'none';
+    const topPosition = bossBarVisible ? 'calc(50% + 200px)' : 'calc(50% + 320px)';
+    
+    // Get current level color for dynamic theming
+    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    const borderColor = levelColor.css;
+    const glowColor = levelColor.rgba(0.4);
+    
     box.style.cssText = `
         position: fixed;
         left: 50%;
-        top: calc(50% + 320px);
+        top: ${topPosition};
         transform: translateX(-50%);
         background: rgba(0, 0, 0, 0.85);
         color: #ffd166;
         padding: 12px 24px;
         border-radius: 8px;
-        border: 2px solid #00f6ff;
+        border: 2px solid ${borderColor};
         font-size: 16px;
         font-weight: bold;
         text-align: center;
         z-index: 500;
-        box-shadow: 0 0 20px rgba(0, 246, 255, 0.4);
+        box-shadow: 0 0 20px ${glowColor};
         max-width: 80%;
         pointer-events: none;
     `;
