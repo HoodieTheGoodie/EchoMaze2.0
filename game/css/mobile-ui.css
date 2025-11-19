@@ -74,6 +74,41 @@
         order: 1 !important;
     }
 
+    /* Boss Health Bar - Positioned right below canvas on mobile */
+    #bossHealthBarContainer {
+        position: fixed !important;
+        bottom: auto !important;
+        top: calc(100vw + 2px) !important; /* Canvas is 100vw square, position right below it */
+        left: 0 !important;
+        transform: none !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        margin: 0 !important;
+        padding: 4px 8px !important;
+        z-index: 100 !important;
+    }
+
+    #bossHealthBarContainer > div {
+        padding: 6px 10px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 4px !important;
+        box-shadow: 0 0 15px rgba(255,51,85,0.4), 0 0 30px rgba(255,51,85,0.15) inset !important;
+    }
+
+    #bossHealthBarContainer .boss-title {
+        font-size: 11px !important;
+        margin-bottom: 4px !important;
+    }
+
+    #bossHealthBarContainer .boss-bar {
+        height: 14px !important;
+    }
+
+    #bossHealthBarText {
+        font-size: 10px !important;
+    }
+
     /* Instructions - Hide on mobile to save space */
     #instructions {
         display: none !important;

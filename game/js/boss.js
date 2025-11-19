@@ -5,6 +5,7 @@ import { startPreBossMusic, stopPreBossMusic, playExplosion } from './audio.js';
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
 import { CELL, generateMaze } from './maze.js';
+import { isMobile } from './mobile-controls.js';
 import { 
   BOSS_CORE_HP, BOSS_PHASE_DUR,
   BAZOOKA_MAX_AMMO, BAZOOKA_START_AMMO,
@@ -105,16 +106,27 @@ export function loadPrepRoom(currentTime) {
   try { disablePlayerInput(); } catch {}
   fadeFromBlack(1.0);
   setTimeout(() => {
-    showTopLore([
+    // Detect mobile for appropriate instructions
+    const mobile = isMobile();
+
+    const instructions = mobile ? [
+      "You made it to the CORE...",
+      "Defeat the CORE to beat the game.",
+      "Walk over the bazooka to pick it up.",
+      "Then go to the ammo box and tap reload."
+    ] : [
       "You finally made it to the CORE...",
       "Defeat the CORE to beat the game.",
       "Pick up the bazooka (it's unloaded).",
-      "Then go to the ammo box and press R to reload.",
-      "(Press H to skip this dialog)"
-    ], () => {
+      "Then go to the ammo box and press R to reload."
+    ];
+
+    showTopLore(instructions, () => {
       try { enablePlayerInput(); } catch {};
       gameState.prepPickupLocked = false;
-      showPrompt('Press E near the bazooka to pick it up', 2500);
+      if (!mobile) {
+        showPrompt('Press E near the bazooka to pick it up', 2500);
+      }
     });
     // Music/beep disabled in prep room (we can add a real track later)
   }, 1200);

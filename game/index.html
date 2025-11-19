@@ -85,32 +85,6 @@
             position: relative;
             overflow: visible;
         }
-        
-        /* Corner accent decorations */
-        #ui-panel::before {
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            width: 20px;
-            height: 20px;
-            border-top: 3px solid #ff4400;
-            border-left: 3px solid #ff4400;
-            border-radius: 15px 0 0 0;
-        }
-        
-        #ui-panel::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 20px;
-            height: 20px;
-            border-bottom: 3px solid #ff4400;
-            border-right: 3px solid #ff4400;
-            border-radius: 0 0 15px 0;
-        }
-        
         .ui-section {
             display: flex;
             align-items: center;
@@ -276,8 +250,8 @@
     <!-- Boss Health Bar (Outside Canvas) -->
     <div id="bossHealthBarContainer" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:1000; width:300px;">
         <div style="background: linear-gradient(135deg, rgba(10,10,20,0.95), rgba(30,10,25,0.95)); padding:10px 16px; border:2px solid #ff3355; border-radius:8px; box-shadow: 0 0 20px rgba(255,51,85,0.5), 0 0 40px rgba(255,51,85,0.2) inset;">
-            <div style="text-align:center; color:#ff3355; font-weight:bold; font-size:14px; margin-bottom:6px; text-shadow: 0 0 8px rgba(255,51,85,0.8);">⚠️ THE CORE ⚠️</div>
-            <div style="position:relative; height:18px; background:#1a0a0f; border:2px solid #ff3355; border-radius:4px; overflow:hidden; box-shadow: 0 0 8px rgba(255,51,85,0.4) inset;">
+            <div class="boss-title" style="text-align:center; color:#ff3355; font-weight:bold; font-size:14px; margin-bottom:6px; text-shadow: 0 0 8px rgba(255,51,85,0.8);">⚠️ THE CORE ⚠️</div>
+            <div class="boss-bar" style="position:relative; height:18px; background:#1a0a0f; border:2px solid #ff3355; border-radius:4px; overflow:hidden; box-shadow: 0 0 8px rgba(255,51,85,0.4) inset;">
                 <div id="bossHealthBarFill" style="height:100%; width:100%; background: linear-gradient(90deg, #ff3355, #ff6688); transition: width 0.3s ease; box-shadow: 0 0 12px rgba(255,51,85,0.9);"></div>
                 <div id="bossHealthBarText" style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:12px; text-shadow: 0 0 6px #000, 0 0 3px #000;">40 / 40</div>
             </div>
