@@ -123,6 +123,15 @@ export function isTouchDevice() {
 }
 
 /**
+ * Simple mobile detection for UI text adjustments
+ * Uses screen width and user agent to determine if device is mobile
+ * @returns {boolean} true if mobile device or small screen
+ */
+export function isMobile() {
+    return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+/**
  * Hide mobile controls (when in menu, for example)
  */
 export function hideMobileControls() {

@@ -5,6 +5,7 @@ import { CELL } from './maze.js';
 import { particles } from './particles.js';
 import { getLevelColor, isBazookaMode } from './config.js';
 import { getSprite } from './sprites.js';
+import { isMobile } from './mobile-controls.js';
 
 // Export CELL_SIZE so other modules can convert tile to pixel coordinates
 export let CELL_SIZE = 20; // Changed to let for responsive scaling
@@ -1043,7 +1044,10 @@ function drawEnemies(currentTime) {
                 ctx.restore();
             }
             ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+            // Smaller black center on mobile for better purple visibility
+            const mobile = isMobile();
+            const centerRadius = mobile ? 1.5 : 3;
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy, centerRadius, 0, Math.PI * 2); ctx.fill();
         }
     }
 }
@@ -1398,25 +1402,7 @@ function drawBossArena(currentTime) {
         }
         ctx.restore();
 
-        // Show E-prompt if player is nearby during prep
-        if (gameState.boss && gameState.boss.prepRoom) {
-            const dx = Math.abs(gameState.player.x - gameState.bazookaPickup.x);
-            const dy = Math.abs(gameState.player.y - gameState.bazookaPickup.y);
-            if (Math.max(dx, dy) <= 1) {
-                const tx = (gameState.player.x + 0.5) * CELL_SIZE;
-                const ty = (gameState.player.y - 0.7) * CELL_SIZE;
-                ctx.save();
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                const text = 'Press E to pick up';
-                ctx.font = 'bold 12px Arial';
-                const tw = ctx.measureText(text).width + 10;
-                ctx.fillRect(tx - tw/2, ty - 14, tw, 18);
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(text, tx, ty - 4);
-                ctx.restore();
-            }
-        }
+        // Tooltip removed - instructions shown at top of screen instead
     }
 
     // Ammo pickups (Level 10 boss prep room only)
@@ -1487,28 +1473,8 @@ function drawBossArena(currentTime) {
             ctx.shadowColor = '#ffcc00';
             ctx.strokeRect(ax - 10, ay - 10, 20, 20);
             
+            // Tooltip removed - instructions shown at top of screen instead
             ctx.restore();
-            
-            // Reload prompt when near in prep room
-            if (gameState.boss && gameState.boss.prepRoom) {
-                const dx = Math.abs(gameState.player.x - a.x);
-                const dy = Math.abs(gameState.player.y - a.y);
-                if (Math.max(dx, dy) <= 1) {
-                    const text = 'Press R to reload';
-                    ctx.save();
-                    ctx.font = 'bold 12px Arial';
-                    const tw = ctx.measureText(text).width + 10;
-                    const tx = ax;
-                    const ty = ay - 18;
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(tx - tw / 2, ty - 12, tw, 16);
-                    ctx.fillStyle = '#fff';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(text, tx, ty - 4);
-                    ctx.restore();
-                }
-            }
         }
     }
 
@@ -1543,19 +1509,7 @@ function drawBossArena(currentTime) {
                 ctx.strokeStyle = `rgba(255,255,255,${pulse.toFixed(2)})`;
                 ctx.lineWidth = 3;
                 ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.stroke();
-                // Near prompt
-                const dx = Math.abs(gameState.player.x - s.x);
-                const dy = Math.abs(gameState.player.y - s.y);
-                if (Math.max(dx, dy) <= 1) {
-                    const text = 'Press R to reload';
-                    ctx.font = 'bold 12px Arial';
-                    const tw = ctx.measureText(text).width + 10;
-                    const tx = sx; const ty = sy - 20;
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(tx - tw/2, ty - 12, tw, 16);
-                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    ctx.fillText(text, tx, ty - 4);
-                }
+                // Tooltip removed - players know to walk over ammo stations
             }
             ctx.restore();
         }
@@ -1629,12 +1583,18 @@ function drawBossArena(currentTime) {
     if ((gameState.currentLevel === 10) && gameState.boss && gameState.boss.prepRoom && gameState.statusMessage) {
         const text = String(gameState.statusMessage);
         ctx.save();
+
+        // Adjust font size for mobile to prevent text overflow
+        const mobile = isMobile();
+        const fontSize = mobile ? 11 : 14;
+        const barHeight = mobile ? 24 : 28;
+
         ctx.fillStyle = 'rgba(0,0,0,0.75)';
-        ctx.fillRect(0, 0, canvas.width, 28);
+        ctx.fillRect(0, 0, canvas.width, barHeight);
         ctx.fillStyle = '#ffd166'; // high-contrast warm yellow
-        ctx.font = 'bold 14px Arial';
+        ctx.font = `bold ${fontSize}px Arial`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(text, canvas.width/2, 14);
+        ctx.fillText(text, canvas.width/2, barHeight/2);
         ctx.restore();
     }
 }
@@ -2840,11 +2800,18 @@ function drawGeneratorOverlay(currentTime) {
 function drawStatusMessage() {
     // Draw status message centered below the canvas instead of using DOM element that shifts layout
     if (!gameState.statusMessage) return;
-    
+
     // Don't show status message if game container is hidden (main menu)
     const gameContainer = document.getElementById('game-container');
     if (!gameContainer || gameContainer.style.display === 'none') return;
-    
+
+    // Don't show bottom message box in prep room - text is shown at top of canvas instead
+    if (gameState.currentLevel === 10 && gameState.boss && gameState.boss.prepRoom) {
+        const messageBox = document.getElementById('statusMessageBox');
+        if (messageBox) messageBox.style.display = 'none';
+        return;
+    }
+
     // Create a fixed position overlay below canvas
     const messageBox = document.getElementById('statusMessageBox') || createStatusMessageBox();
     messageBox.textContent = gameState.statusMessage;
