@@ -944,6 +944,8 @@ export function fireRocketAt(targetX, targetY, currentTime) {
   gameState.projectiles.push(p);
   // Always decrement ammo (will regenerate in bazooka mode)
   gameState.bazooka.ammo -= 1;
+  // Track fire time for animation
+  gameState.bazookaFireTime = currentTime;
   try { import('./audio.js').then(a=>a.playRocketFire && a.playRocketFire()); } catch {}
   console.log('[bazooka] fired at', targetX, targetY, 'ammo=', gameState.bazooka.ammo);
   return true;

@@ -858,6 +858,7 @@ export function startBlock(currentTime) {
     if (staminaPct <= 0) return;
     const dur = (staminaPct / 100) * BLOCK_MAX_DURATION_MS;
     gameState.blockActive = true;
+    gameState.blockStartTime = currentTime; // For pull-out animation
     gameState.blockUntil = currentTime + dur;
     // Movement lock is based on shield activity; no timer needed
     // consume all current stamina and trigger cooldown
@@ -1421,6 +1422,10 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
         // Telegraphing state: stand still, flash, and cue sound
         if (e.telegraphUntil && currentTime < e.telegraphUntil) {
             e._dashActive = false; // not used, but keep for visuals
+            // Track charging progress for visual effects (0 to 1)
+            const total = 1000; // telegraph duration
+            const elapsed = 1000 - (e.telegraphUntil - currentTime);
+            e._chargeProgress = Math.min(1, elapsed / total);
         } else if (e.telegraphUntil && currentTime >= e.telegraphUntil && e.dashInfo) {
             // Fire once from current position, then wait until projectile resolves
             const ang = Math.atan2((ty - e.fy), (tx - e.fx));
@@ -1430,6 +1435,11 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
             e.dashInfo.haltUntil = currentTime + 4000; // safety timeout
             e.dashInfo.fired = true;
             e.telegraphUntil = 0;
+            e._chargeProgress = 0;
+            // Spawn launch particles at pig position
+            const launchX = e.fx * CELL_SIZE;
+            const launchY = e.fy * CELL_SIZE;
+            particles.spawn('magic', launchX, launchY, 25, { color: '#ff69b4' });
         } else if (e.dashInfo && e.dashInfo.halted) {
             // Waiting until projectile resolves
             const projResolved = !e.dashInfo.projectile || e.dashInfo.projectile.resolved;
@@ -1470,6 +1480,39 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
         e.y = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(e.fy)));
         e.lastUpdateAt = currentTime;
         // No extra shots outside telegraphed sequence
+    } else if (e.state === 'crashing') {
+        // Crash animation: spin and fall toward crash target
+        const crashProgress = Math.min(1, (currentTime - e.crashStartTime) / e.crashDuration);
+        e.crashRotation = crashProgress * Math.PI * 4; // 2 full spins
+        
+        // Move toward crash target with arc motion
+        if (e.crashTargetX !== undefined && e.crashTargetY !== undefined) {
+            const targetFX = e.crashTargetX + 0.5;
+            const targetFY = e.crashTargetY + 0.5;
+            e.fx = e.crashStartX + (targetFX - e.crashStartX) * crashProgress;
+            e.fy = e.crashStartY + (targetFY - e.crashStartY) * crashProgress;
+            e.x = Math.floor(e.fx);
+            e.y = Math.floor(e.fy);
+        }
+        
+        // Spawn smoke trail during crash
+        if (Math.random() < 0.3) {
+            const crashX = e.fx * CELL_SIZE;
+            const crashY = e.fy * CELL_SIZE;
+            particles.spawn('smoke', crashX, crashY, 3, { color: '#888' });
+        }
+        
+        if (crashProgress >= 1) {
+            // Crash landing - create explosion
+            e.state = 'weakened';
+            const landX = e.fx * CELL_SIZE;
+            const landY = e.fy * CELL_SIZE;
+            particles.spawn('explosion', landX, landY, 25, { color: '#FFD700' });
+            particles.spawn('smoke', landX, landY, 15, { color: '#666' });
+            gameState.screenShakeMag = 5;
+            gameState.screenShakeUntil = currentTime + 200;
+            try { playExplosion(); } catch {}
+        }
     } else if (e.state === 'weakened') {
         // If player touches within 10s, knock out for 45s
         const pdx = (px + 0.5) - e.fx;
@@ -1497,7 +1540,9 @@ function fireHalfArcProjectile(source, angleRad, currentTime) {
         radius: 2.5, // tiles
         reflected: false,
         resolved: false,
-        lastUpdate: currentTime
+        lastUpdate: currentTime,
+        spawnTime: currentTime,
+        trail: [] // for particle trail
     };
     gameState.projectiles.push(p);
     return p;
@@ -1544,27 +1589,56 @@ export function updateEnemies(currentTime) {
     const wasMounted = !!(gameState._mountedWasActive);
     const isMounted = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
     if (wasMounted && !isMounted) {
-        // If mount just ended and player is over an unpassable tile, relocate to nearest passable
+        // Mount just ended - trigger uncontrolled crash animation to random nearby tile
         const cx = Math.max(0, Math.min(MAZE_WIDTH - 1, gameState.player.x));
         const cy = Math.max(0, Math.min(MAZE_HEIGHT - 1, gameState.player.y));
-        const cell = gameState.maze[cy]?.[cx];
-        const isBlocked = (cell === CELL.WALL || cell === CELL.GENERATOR);
-        if (isBlocked) {
-            // radial search for nearest EMPTY/EXIT tile
-            let dest = null;
-            for (let r = 1; r <= Math.max(MAZE_WIDTH, MAZE_HEIGHT) && !dest; r++) {
-                for (let y = Math.max(1, cy - r); y <= Math.min(MAZE_HEIGHT - 2, cy + r) && !dest; y++) {
-                    for (let x = Math.max(1, cx - r); x <= Math.min(MAZE_WIDTH - 2, cx + r); x++) {
-                        const c = gameState.maze[y]?.[x];
-                        if (c === CELL.EMPTY || c === CELL.EXIT) { dest = { x, y }; break; }
+        
+        // Find random nearby accessible tile (within 3-5 tiles)
+        const candidates = [];
+        for (let dy = -5; dy <= 5; dy++) {
+            for (let dx = -5; dx <= 5; dx++) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                const cell = gameState.maze[ny]?.[nx];
+                if (cell !== CELL.EMPTY && cell !== CELL.EXIT) continue;
+                const dist = Math.abs(dx) + Math.abs(dy);
+                if (dist >= 2 && dist <= 5) {
+                    candidates.push({ x: nx, y: ny });
+                }
+            }
+        }
+        // Fallback: any nearby empty tile
+        if (candidates.length === 0) {
+            for (let dy = -3; dy <= 3; dy++) {
+                for (let dx = -3; dx <= 3; dx++) {
+                    const nx = cx + dx;
+                    const ny = cy + dy;
+                    if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                    const cell = gameState.maze[ny]?.[nx];
+                    if (cell === CELL.EMPTY || cell === CELL.EXIT) {
+                        candidates.push({ x: nx, y: ny });
                     }
                 }
             }
-            if (dest) {
-                gameState.player.x = dest.x;
-                gameState.player.y = dest.y;
-            }
         }
+        
+        const crashTarget = candidates.length > 0 
+            ? candidates[Math.floor(Math.random() * candidates.length)]
+            : { x: cx, y: cy };
+        
+        gameState.pigCrashAnimation = {
+            active: true,
+            startTime: currentTime,
+            duration: 1200, // 1.2 seconds for dramatic crash
+            rotation: 0,
+            startX: gameState.player.x,
+            startY: gameState.player.y,
+            targetX: crashTarget.x,
+            targetY: crashTarget.y
+        };
+        
+        // Player will be moved to target during the crash animation
     }
     gameState._mountedWasActive = isMounted;
 
@@ -1583,6 +1657,12 @@ export function updateEnemies(currentTime) {
                 if (!Array.isArray(p.smoke)) p.smoke = [];
                 p.smoke.push({ x: p.x, y: p.y, at: now });
                 if (p.smoke.length > 18) p.smoke.shift();
+            }
+            // Energy trail for pig projectiles
+            if (p.type === 'half_arc') {
+                if (!Array.isArray(p.trail)) p.trail = [];
+                p.trail.push({ x: p.x, y: p.y, at: now });
+                if (p.trail.length > 12) p.trail.shift();
             }
             // Off-screen cleanup
             if (p.x < -1 || p.x > MAZE_WIDTH + 1 || p.y < -1 || p.y > MAZE_HEIGHT + 1) {
@@ -1704,7 +1784,16 @@ export function updateEnemies(currentTime) {
                                 p.reflected = true;
                                 p.sourceId = null;
                                 p.x += p.vx * 0.02; p.y += p.vy * 0.02;
+                                p.trail = []; // Clear trail on reflection
+                                p.spawnTime = now; // Reset for fresh glow
                                 try { playShieldReflect(); } catch {}
+                                // Spectacular reflection burst
+                                const reflectX = (gameState.player.x + 0.5) * CELL_SIZE;
+                                const reflectY = (gameState.player.y + 0.5) * CELL_SIZE;
+                                particles.spawn('explosion', reflectX, reflectY, 30, { color: '#FFD700' });
+                                particles.spawn('magic', reflectX, reflectY, 20, { color: '#ffffff' });
+                                gameState.screenShakeMag = 3;
+                                gameState.screenShakeUntil = now + 120;
                                 // Shield breaks after successfully reflecting (with particles and effects)
                                 onShieldBreak(now);
                             }
@@ -1737,37 +1826,124 @@ export function updateEnemies(currentTime) {
                         const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
                         const dot2 = (vx * fx + vy * fy) / (d || 1);
                         if (dot2 >= 0) {
-                            // During the boss fight, reflected pig projectiles should knock out boss pigs (rideable), not make them unmountable
+                            // During the boss fight, reflected pig projectiles should knock out boss pigs (rideable)
                             if (gameState.boss && gameState.boss.active && pig._bossSummoned) {
-                                pig.state = 'knocked_out';
-                                pig.stateUntil = now + 10000;
+                                // Start spinning crash animation for boss pig
+                                pig.state = 'crashing';
+                                pig.crashStartTime = now;
+                                pig.crashDuration = 1200;
+                                pig.stateUntil = now + pig.crashDuration + 10000; // Crash + knocked out time
                                 pig._stateStartAt = now;
+                                pig.crashRotation = 0;
+                                pig.crashStartX = pig.fx;
+                                pig.crashStartY = pig.fy;
                                 pig._rideableUntil = pig.stateUntil;
+                                
+                                // Find random nearby accessible tile
+                                const distField2 = bfsDistancesFrom(gameState.maze, Math.floor(pig.fx), Math.floor(pig.fy));
+                                const candidates = [];
+                                for (let dy = -5; dy <= 5; dy++) {
+                                    for (let dx = -5; dx <= 5; dx++) {
+                                        const nx = Math.floor(pig.fx) + dx;
+                                        const ny = Math.floor(pig.fy) + dy;
+                                        if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                                        const dist = Math.abs(dx) + Math.abs(dy);
+                                        if (dist >= 3 && dist <= 5 && Number.isFinite(distField2[ny][nx])) {
+                                            candidates.push({ x: nx, y: ny });
+                                        }
+                                    }
+                                }
+                                if (candidates.length === 0) {
+                                    for (let dy = -3; dy <= 3; dy++) {
+                                        for (let dx = -3; dx <= 3; dx++) {
+                                            const nx = Math.floor(pig.fx) + dx;
+                                            const ny = Math.floor(pig.fy) + dy;
+                                            if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                                            if (isPassableForEnemy(gameState.maze[ny][nx])) {
+                                                candidates.push({ x: nx, y: ny });
+                                            }
+                                        }
+                                    }
+                                }
+                                const crashTarget = candidates.length > 0 
+                                    ? candidates[Math.floor(Math.random() * candidates.length)]
+                                    : { x: Math.floor(pig.fx), y: Math.floor(pig.fy) };
+                                pig.crashTargetX = crashTarget.x;
+                                pig.crashTargetY = crashTarget.y;
+                                
                                 pig.telegraphUntil = 0;
                                 pig.dashInfo = null;
                                 pig._dashActive = false;
-                                const distField2 = bfsDistancesFrom(gameState.maze, gameState.player.x, gameState.player.y);
-                                const drop = findReachableDropTile(distField2, pig.fx, pig.fy);
-                                pig.x = drop.x; pig.y = drop.y;
-                                pig.fx = drop.x + 0.5; pig.fy = drop.y + 0.5;
                                 pig.lastUpdateAt = now;
                                 pig._hitFlashUntil = now + 180;
                                 try { playPigHit(); } catch {}
+                                // Knockout impact effects
+                                const hitX = pig.fx * CELL_SIZE;
+                                const hitY = pig.fy * CELL_SIZE;
+                                particles.spawn('explosion', hitX, hitY, 25, { color: '#FFD700' });
+                                particles.spawn('damage', hitX, hitY, 15);
+                                gameState.screenShakeMag = 4;
+                                gameState.screenShakeUntil = now + 150;
                                 p.resolved = true;
                             } else {
-                                pig.state = 'weakened';
-                                pig.stateUntil = now + 10000;
+                                // Hit by shield - start spinning crash animation
+                                pig.state = 'crashing';
+                                pig.crashStartTime = now;
+                                pig.crashDuration = 1200; // 1.2 seconds crash animation
+                                pig.stateUntil = now + pig.crashDuration + 10000; // Crash + weakened time
                                 pig._stateStartAt = now;
+                                pig.crashRotation = 0;
+                                pig.crashStartX = pig.fx;
+                                pig.crashStartY = pig.fy;
+                                
+                                // Find random nearby accessible tile (within 3-5 tiles)
+                                const distField2 = bfsDistancesFrom(gameState.maze, Math.floor(pig.fx), Math.floor(pig.fy));
+                                const candidates = [];
+                                for (let dy = -5; dy <= 5; dy++) {
+                                    for (let dx = -5; dx <= 5; dx++) {
+                                        const nx = Math.floor(pig.fx) + dx;
+                                        const ny = Math.floor(pig.fy) + dy;
+                                        if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                                        const dist = Math.abs(dx) + Math.abs(dy);
+                                        if (dist >= 3 && dist <= 5 && Number.isFinite(distField2[ny][nx])) {
+                                            candidates.push({ x: nx, y: ny });
+                                        }
+                                    }
+                                }
+                                if (candidates.length === 0) {
+                                    // Fallback: any nearby accessible tile
+                                    for (let dy = -3; dy <= 3; dy++) {
+                                        for (let dx = -3; dx <= 3; dx++) {
+                                            const nx = Math.floor(pig.fx) + dx;
+                                            const ny = Math.floor(pig.fy) + dy;
+                                            if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+                                            if (!isPassableForEnemy(gameState.maze[ny][nx])) {
+                                                candidates.push({ x: nx, y: ny });
+                                            }
+                                        }
+                                    }
+                                }
+                                const crashTarget = candidates.length > 0 
+                                    ? candidates[Math.floor(Math.random() * candidates.length)]
+                                    : { x: Math.floor(pig.fx), y: Math.floor(pig.fy) };
+                                pig.crashTargetX = crashTarget.x;
+                                pig.crashTargetY = crashTarget.y;
+                                
                                 pig.telegraphUntil = 0;
                                 pig.dashInfo = null;
                                 pig._dashActive = false;
-                                const distField2 = bfsDistancesFrom(gameState.maze, gameState.player.x, gameState.player.y);
-                                const drop = findReachableDropTile(distField2, pig.fx, pig.fy);
-                                pig.x = drop.x; pig.y = drop.y;
-                                pig.fx = drop.x + 0.5; pig.fy = drop.y + 0.5;
                                 pig.lastUpdateAt = now;
                                 pig._hitFlashUntil = now + 180;
                                 try { playPigHit(); } catch {}
+                                // Hit effects
+                                const hitX2 = pig.fx * CELL_SIZE;
+                                const hitY2 = pig.fy * CELL_SIZE;
+                                particles.spawn('explosion', hitX2, hitY2, 20, { color: '#ff69b4' });
+                                particles.spawn('damage', hitX2, hitY2, 12);
+                                gameState.screenShakeMag = 3;
+                                gameState.screenShakeUntil = now + 120;
                                 p.resolved = true;
                             }
                         }
@@ -2191,9 +2367,84 @@ export function updateEnemies(currentTime) {
                     }
                 }
             } else if (e.state === 'flee') {
-                // Player not stunned anymore; fall back to roam next tick
-                e.state = 'roam';
-                e.roamGoal = null; e.target = null; e.proximityStartTime = 0;
+                // Flee from stunned player - must stay outside 12x12 area (6 tiles from player)
+                const needNew = !e.roamGoal || (e.x === e.roamGoal.x && e.y === e.roamGoal.y) || (currentTime - (e._roamGoalSetAt || 0) > 6000);
+                const stuck = (currentTime - (e._lastMoveAt || 0) > 1600);
+                
+                if (needNew || stuck) {
+                    const cand = [];
+                    for (let i = 0; i < 80; i++) {
+                        const rx = 1 + Math.floor(Math.random() * (MAZE_WIDTH - 2));
+                        const ry = 1 + Math.floor(Math.random() * (MAZE_HEIGHT - 2));
+                        if (!isPassableForEnemy(gameState.maze[ry][rx])) continue;
+                        
+                        // Must be far from player (outside 12x12 = 6 tiles in each direction using Chebyshev distance)
+                        const distToPlayer = Math.max(Math.abs(rx - px), Math.abs(ry - py));
+                        if (distToPlayer < 6) continue; // Skip if within 12x12 area
+                        
+                        const md = Math.abs(rx - cx) + Math.abs(ry - cy);
+                        if (md < 5) continue;
+                        
+                        // Score: heavily favor distance from player
+                        let score = distToPlayer * 3 + md;
+                        cand.push({ x: rx, y: ry, score });
+                    }
+                    
+                    if (cand.length) {
+                        cand.sort((a, b) => b.score - a.score);
+                        const top = Math.max(1, Math.floor(cand.length * 0.3));
+                        const pick = cand[Math.floor(Math.random() * top)];
+                        e.roamGoal = { x: pick.x, y: pick.y };
+                        e._roamGoalSetAt = currentTime;
+                    }
+                    e.target = null;
+                }
+
+                // Navigate to flee goal
+                if (!e.target && e.roamGoal) {
+                    const steps = [
+                        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+                    ];
+                    let next = { x: cx, y: cy };
+                    let bestDist = Math.abs(cx - e.roamGoal.x) + Math.abs(cy - e.roamGoal.y);
+                    for (const s of steps) {
+                        const nx = cx + s.dx, ny = cy + s.dy;
+                        if (!isPassableForEnemy(gameState.maze[ny][nx])) continue;
+                        const candDist = Math.abs(nx - e.roamGoal.x) + Math.abs(ny - e.roamGoal.y);
+                        if (candDist < bestDist) {
+                            bestDist = candDist;
+                            next = { x: nx, y: ny };
+                        }
+                    }
+                    if (next.x !== cx || next.y !== cy) {
+                        e.target = next;
+                    }
+                }
+                
+                // Move toward target
+                if (e.target) {
+                    const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
+                    const dx = tx - e.fx, dy = ty - e.fy;
+                    const dist = Math.hypot(dx, dy);
+                    let speedFlee = e.speedRage; // Use rage speed for fleeing
+                    if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedFlee *= 0.5;
+                    const step = speedFlee * dt * localThaw * bazookaSpeedMult * genSlowMult;
+                    if (dist <= step || dist < 0.0001) {
+                        e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
+                        e._lastMoveAt = currentTime;
+                    } else {
+                        e.fx += (dx / dist) * step; e.fy += (dy / dist) * step;
+                        e._lastMoveAt = currentTime;
+                    }
+                }
+                
+                // Player not stunned anymore; fall back to roam
+                if (!gameState.playerStunned || currentTime >= gameState.playerStunUntil) {
+                    e.state = 'roam';
+                    e.roamGoal = null;
+                    e.target = null;
+                    e.proximityStartTime = 0;
+                }
             } else if (e.state === 'rage') {
                 // Exit rage immediately if under zap rage-lock
                 if (e._zapRageLockUntil && currentTime < e._zapRageLockUntil) {
@@ -2247,6 +2498,25 @@ export function updateEnemies(currentTime) {
 
             // Zap trap trigger (exactly like chaser)
             triggerZapIfOnTile(e);
+
+            // Bat swing animation trigger (at 1.2 tiles distance during rage)
+            if (e.state === 'rage') {
+                const pdx = (gameState.player.x + 0.5) - e.fx;
+                const pdy = (gameState.player.y + 0.5) - e.fy;
+                const pDist = Math.hypot(pdx, pdy);
+                
+                // Trigger swing at 1.2 tiles to make it visible
+                if (pDist < 1.2 && (!e.swingStartTime || currentTime - e.swingStartTime > 300)) {
+                    e.swingStartTime = currentTime;
+                    e.swingDirection = Math.atan2(pdy, pdx);
+                }
+                
+                // Clear swing animation after 300ms
+                if (e.swingStartTime && currentTime - e.swingStartTime > 300) {
+                    e.swingStartTime = null;
+                    e.swingDirection = null;
+                }
+            }
 
             // Collision check - stun player immediately (even in generator UI)
             const pdx = (gameState.player.x + 0.5) - e.fx;
@@ -2323,6 +2593,12 @@ export function updateEnemies(currentTime) {
             }
 
             if (e.state === 'aim') {
+                // Play fire sound if shell was fired (set by renderer)
+                if (e._playFireSound) {
+                    try { playMortarFire(); } catch {}
+                    e._playFireSound = false;
+                }
+                
                 // Two-phase aim/shot handling. First resolves at aimUntil; optional second resolves at _secondAt.
                 if (!e._didFirstExplosion && currentTime >= e.aimUntil) {
                     // First explosion at aimTarget
@@ -2587,11 +2863,13 @@ export function updateEnemies(currentTime) {
                 e.state = 'aim';
                 e.aimTarget = { x: px, y: py }; // lock onto current tile
                 e.aimUntil = currentTime + 2000; // aim+travel 2s total
+                e._aimStartTime = currentTime; // Track aim start for animation
                 e._didFirstExplosion = false;
                 e._secondAt = 0; e._secondTarget = null;
+                e._shellFired = false; // Reset shell animation
                 e.aimBursts = (completed >= 2) ? 2 : 1;
                 try { playMortarWarning(); } catch {}
-                try { playMortarFire(); } catch {}
+                // Don't play fire sound yet - wait until shell is actually fired
             }
 
             e.lastUpdateAt = currentTime;

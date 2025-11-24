@@ -4,6 +4,7 @@ import { gameState, SKILL_CHECK_ROTATION_TIME, MAZE_WIDTH, MAZE_HEIGHT, TELEPORT
 import { CELL } from './maze.js';
 import { particles } from './particles.js';
 import { getLevelColor, isBazookaMode } from './config.js';
+import { getSprite } from './sprites.js';
 
 // Export CELL_SIZE so other modules can convert tile to pixel coordinates
 export let CELL_SIZE = 20; // Changed to let for responsive scaling
@@ -336,10 +337,59 @@ function drawEnemies(currentTime) {
         if (e.type === 'flying_pig') {
             // Flying_Pig visuals
             let baseCol = '#ff69b4'; // default pink
-            // Telegraph flash (alternate yellow/pink)
+            // Telegraph flash (alternate yellow/pink) with charging effect
             if (e.telegraphUntil && currentTime < e.telegraphUntil) {
                 const blink = Math.floor(currentTime / 100) % 2 === 0;
                 baseCol = blink ? '#FFD700' : '#ff69b4';
+                
+                // Charging energy orb that grows from center
+                const chargeProgress = e._chargeProgress || 0;
+                const maxChargeRadius = r * 1.5;
+                const chargeRadius = maxChargeRadius * chargeProgress;
+                
+                // Pulsing aura around pig
+                ctx.save();
+                ctx.globalAlpha = 0.3 + 0.2 * Math.sin(currentTime / 80);
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(cx, cy, r + 8 + 4 * Math.sin(currentTime / 100), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Energy orb building up
+                if (chargeProgress > 0.1) {
+                    ctx.save();
+                    // Outer glow
+                    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, chargeRadius * 1.5);
+                    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.6)');
+                    gradient.addColorStop(0.5, 'rgba(255, 105, 180, 0.4)');
+                    gradient.addColorStop(1, 'rgba(255, 105, 180, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, chargeRadius * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Core energy ball
+                    ctx.globalAlpha = 0.7 + 0.3 * Math.sin(currentTime / 60);
+                    ctx.fillStyle = '#FFFFE0';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, chargeRadius * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Energy sparks
+                    const sparkCount = Math.floor(chargeProgress * 8);
+                    for (let i = 0; i < sparkCount; i++) {
+                        const angle = (i / sparkCount) * Math.PI * 2 + currentTime / 200;
+                        const sparkDist = r + 12 + 8 * chargeProgress;
+                        const sx = cx + Math.cos(angle) * sparkDist;
+                        const sy = cy + Math.sin(angle) * sparkDist;
+                        ctx.fillStyle = i % 2 === 0 ? '#FFD700' : '#FF69B4';
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, 2 + chargeProgress * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
             } else if (e.state === 'weakened' || e.state === 'knocked_out') {
                 // Fade from dark gray toward pink while recovering (both states)
                 const gray = { r: 68, g: 68, b: 68 };
@@ -357,10 +407,52 @@ function drawEnemies(currentTime) {
             // eyes
             ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx-3, cy-2, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(cx+3, cy-2, 2, 0, Math.PI*2); ctx.fill();
             if (e.state === 'flying') {
-                // Wings (triangles) left/right
+                // Magical aura when flying (subtle glow)
+                if (!e.telegraphUntil || currentTime >= e.telegraphUntil) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.15 + 0.1 * Math.sin(currentTime / 300);
+                    ctx.fillStyle = '#FFB6D9';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+                
+                // More natural wing flapping - smoother sine wave motion
+                const flapSpeed = currentTime / 150; // Slightly slower
+                const flapAngle = Math.sin(flapSpeed) * 0.4; // Angle in radians (+/- ~23 degrees)
+                const wingLength = 10;
+                const wingWidth = 8;
+                
                 ctx.fillStyle = '#ffd1ec';
-                ctx.beginPath(); ctx.moveTo(cx - r - 2, cy); ctx.lineTo(cx - r - 10, cy - 8); ctx.lineTo(cx - r - 10, cy + 8); ctx.closePath(); ctx.fill();
-                ctx.beginPath(); ctx.moveTo(cx + r + 2, cy); ctx.lineTo(cx + r + 10, cy - 8); ctx.lineTo(cx + r + 10, cy + 8); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = '#ffb3d9';
+                ctx.lineWidth = 1;
+                
+                // Left wing with natural flapping motion
+                ctx.save();
+                ctx.translate(cx - r - 2, cy);
+                ctx.rotate(flapAngle); // Rotate the wing
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-wingLength, -wingWidth / 2);
+                ctx.lineTo(-wingLength, wingWidth / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+                
+                // Right wing with natural flapping motion (opposite angle)
+                ctx.save();
+                ctx.translate(cx + r + 2, cy);
+                ctx.rotate(-flapAngle); // Opposite rotation
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(wingLength, -wingWidth / 2);
+                ctx.lineTo(wingLength, wingWidth / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
                 // Dash aura
                 if (e._dashActive) {
                     ctx.strokeStyle = 'rgba(255,255,255,0.75)';
@@ -375,6 +467,67 @@ function drawEnemies(currentTime) {
                     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
                     ctx.lineWidth = 3;
                     ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.stroke();
+                    ctx.restore();
+                }
+            } else if (e.state === 'crashing') {
+                // Crash animation: spinning and falling like a plane
+                const crashProgress = Math.min(1, (currentTime - e.crashStartTime) / e.crashDuration);
+                
+                // Rotation effect
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(e.crashRotation || 0);
+                
+                // Fade to gray as crashing
+                const grayAmount = crashProgress;
+                const r_val = Math.round(255 * (1 - grayAmount) + 100 * grayAmount);
+                const g_val = Math.round(105 * (1 - grayAmount) + 100 * grayAmount);
+                const b_val = Math.round(180 * (1 - grayAmount) + 100 * grayAmount);
+                ctx.fillStyle = `rgb(${r_val},${g_val},${b_val})`;
+                
+                // Draw spinning pig
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes (spinning with pig)
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.arc(-3, -2, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(3, -2, 2, 0, Math.PI*2); ctx.fill();
+                
+                // Dizzy wings (not flapping, just there)
+                ctx.fillStyle = '#ffd1ec';
+                ctx.strokeStyle = '#ffb3d9';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-r - 2, 0);
+                ctx.lineTo(-r - 10, -4);
+                ctx.lineTo(-r - 10, 4);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(r + 2, 0);
+                ctx.lineTo(r + 10, -4);
+                ctx.lineTo(r + 10, 4);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.restore();
+                
+                // Smoke trail during crash
+                if (crashProgress < 0.9) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.3 * (1 - crashProgress);
+                    ctx.fillStyle = '#666';
+                    for (let i = 0; i < 3; i++) {
+                        const trailY = cy - i * 8 - crashProgress * 10;
+                        const trailSize = 3 + i * 2;
+                        ctx.beginPath();
+                        ctx.arc(cx, trailY, trailSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                     ctx.restore();
                 }
             } else if (e.state === 'knocked_out') {
@@ -563,6 +716,57 @@ function drawEnemies(currentTime) {
             ctx.arc(cx + 3, cy - 2, 2, 0, Math.PI * 2);
             ctx.fill();
 
+            // Bat swing animation (300ms duration)
+            if (e.swingStartTime && currentTime - e.swingStartTime < 300) {
+                const swingProgress = (currentTime - e.swingStartTime) / 300;
+                const swingAngle = e.swingDirection || 0;
+                
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(swingAngle + swingProgress * Math.PI * 1.2);
+                
+                // Brown bat with gold glow trail
+                const batLength = 20;
+                const batWidth = 4;
+                
+                // Motion trail (gold)
+                for (let i = 0; i < 3; i++) {
+                    ctx.globalAlpha = 0.3 - i * 0.1;
+                    ctx.translate(-3, 0);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.fillRect(r + 2, -batWidth / 2, batLength, batWidth);
+                    ctx.translate(3, 0);
+                }
+                
+                // Main bat (brown)
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(r + 2, -batWidth / 2, batLength, batWidth);
+                
+                // Bat handle (darker brown)
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(r + 2, -2, 6, 4);
+                
+                ctx.restore();
+                
+                // Impact particles at end of swing
+                if (swingProgress > 0.8) {
+                    const impactX = cx + Math.cos(swingAngle + swingProgress * Math.PI * 1.2) * (r + 22);
+                    const impactY = cy + Math.sin(swingAngle + swingProgress * Math.PI * 1.2) * (r + 22);
+                    ctx.save();
+                    ctx.globalAlpha = (1 - swingProgress) * 2;
+                    ctx.fillStyle = '#FFD700';
+                    for (let i = 0; i < 4; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = 5 + Math.random() * 8;
+                        ctx.beginPath();
+                        ctx.arc(impactX + Math.cos(angle) * dist, impactY + Math.sin(angle) * dist, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+            }
+
             // Smooth facing and rage-only arrow + FOV cone
             const ang = updateFacing(e);
             if (enraged) {
@@ -615,6 +819,89 @@ function drawEnemies(currentTime) {
             // body
             ctx.fillStyle = baseCol;
             ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            
+            // Weapon tube animation
+            if (e.state === 'aim' && e.aimTarget) {
+                // Calculate angle toward target
+                const targetX = (e.aimTarget.x + 0.5) * CELL_SIZE;
+                const targetY = (e.aimTarget.y + 0.5) * CELL_SIZE;
+                const tubeAngle = Math.atan2(targetY - cy, targetX - cx);
+                
+                // Draw mortar tube
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(tubeAngle);
+                
+                // Tube body (dark gray)
+                ctx.fillStyle = '#444';
+                ctx.fillRect(0, -4, 18, 8);
+                
+                // Tube tip (lighter gray)
+                ctx.fillStyle = '#666';
+                ctx.fillRect(16, -3, 4, 6);
+                
+                ctx.restore();
+                
+                // Check if we're halfway into the aim phase to fire shell
+                const aimProgress = (currentTime - (e._aimStartTime || currentTime)) / (e.aimUntil - (e._aimStartTime || currentTime));
+                if (aimProgress >= 0.5 && !e._shellFired) {
+                    // Fire shell animation
+                    e._shellFired = true;
+                    e._shellStartTime = currentTime;
+                    e._shellStartX = e.fx;
+                    e._shellStartY = e.fy;
+                    e._playFireSound = true; // Signal to play fire sound
+                }
+                
+                // Draw flying shell with parabolic arc
+                if (e._shellFired && e._shellStartTime) {
+                    const shellDuration = 500; // 500ms flight time
+                    const shellProgress = Math.min(1, (currentTime - e._shellStartTime) / shellDuration);
+                    
+                    if (shellProgress < 1) {
+                        // Calculate shell position with arc
+                        const shellX = cx + (targetX - cx) * shellProgress;
+                        const shellY = cy + (targetY - cy) * shellProgress - Math.sin(shellProgress * Math.PI) * CELL_SIZE * 2;
+                        
+                        // Shell body
+                        ctx.save();
+                        ctx.fillStyle = '#333';
+                        ctx.beginPath();
+                        ctx.arc(shellX, shellY, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Shell glow
+                        ctx.globalAlpha = 0.4;
+                        ctx.fillStyle = '#ff6600';
+                        ctx.beginPath();
+                        ctx.arc(shellX, shellY, 6, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                        
+                        // Smoke trail
+                        for (let i = 0; i < 5; i++) {
+                            const trailProgress = shellProgress - (i * 0.08);
+                            if (trailProgress > 0 && trailProgress < 1) {
+                                const tx = cx + (targetX - cx) * trailProgress;
+                                const ty = cy + (targetY - cy) * trailProgress - Math.sin(trailProgress * Math.PI) * CELL_SIZE * 2;
+                                const alpha = 0.3 - (i * 0.05);
+                                ctx.save();
+                                ctx.globalAlpha = alpha;
+                                ctx.fillStyle = '#888';
+                                ctx.beginPath();
+                                ctx.arc(tx, ty, 3, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.restore();
+                            }
+                        }
+                    } else {
+                        // Clear shell animation after completion
+                        e._shellFired = false;
+                        e._shellStartTime = null;
+                    }
+                }
+            }
+            
             // Aim-phase telegraph: flash red/blue on body and draw growing area glow on target
             if (e.state === 'aim') {
                 // Flash body overlay
@@ -769,21 +1056,94 @@ function drawProjectiles(currentTime) {
             const cx = p.x * CELL_SIZE;
             const cy = p.y * CELL_SIZE;
             const a = p.angle; // radians
+            
+            // Draw energy trail with fade
+            if (Array.isArray(p.trail) && p.trail.length) {
+                ctx.save();
+                for (let i = 0; i < p.trail.length; i++) {
+                    const node = p.trail[i];
+                    const ageMs = Math.max(0, currentTime - (node.at || 0));
+                    const ageFade = Math.max(0, 1 - ageMs / 400);
+                    const idxFade = (i + 1) / p.trail.length;
+                    const alpha = Math.max(0, Math.min(0.6, 0.15 + 0.5 * ageFade * idxFade));
+                    if (alpha <= 0.01) continue;
+                    const sx = node.x * CELL_SIZE;
+                    const sy = node.y * CELL_SIZE;
+                    const trailRadius = radius * 0.6 * idxFade;
+                    
+                    // Glowing trail particles
+                    const trailColor = p.reflected ? '#FFD700' : '#FF69B4';
+                    const gradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, trailRadius);
+                    gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.8})`);
+                    gradient.addColorStop(0.5, p.reflected ? `rgba(255, 215, 0, ${alpha})` : `rgba(255, 105, 180, ${alpha})`);
+                    gradient.addColorStop(1, `rgba(255, 105, 180, 0)`);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, trailRadius * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+            
+            // Age-based pulsing glow
+            const age = currentTime - (p.spawnTime || currentTime);
+            const pulse = 0.8 + 0.2 * Math.sin(age / 50);
+            
+            // Outer glow aura
+            ctx.save();
+            const outerGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.8);
+            const glowColor = p.reflected ? 'rgba(255, 215, 0, 0.4)' : 'rgba(255, 105, 180, 0.35)';
+            outerGradient.addColorStop(0, p.reflected ? 'rgba(255, 255, 220, 0.6)' : 'rgba(255, 200, 220, 0.5)');
+            outerGradient.addColorStop(0.5, glowColor);
+            outerGradient.addColorStop(1, 'rgba(255, 105, 180, 0)');
+            ctx.fillStyle = outerGradient;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 1.8 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(a);
+            
             // Draw semicircle facing +X direction after rotation
-            const fill = p.reflected ? 'rgba(255, 220, 0, 0.25)' : 'rgba(255,105,180,0.25)';
-            const stroke = p.reflected ? 'rgba(255, 220, 0, 0.65)' : 'rgba(255,105,180,0.6)';
-            ctx.fillStyle = fill;
+            const fill = p.reflected ? 'rgba(255, 240, 100, 0.5)' : 'rgba(255, 140, 200, 0.45)';
+            const stroke = p.reflected ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 105, 180, 0.85)';
+            
+            // Inner bright core
+            const coreGradient = ctx.createRadialGradient(radius * 0.3, 0, 0, radius * 0.3, 0, radius * 0.8);
+            coreGradient.addColorStop(0, p.reflected ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 230, 240, 0.85)');
+            coreGradient.addColorStop(0.5, fill);
+            coreGradient.addColorStop(1, p.reflected ? 'rgba(255, 215, 0, 0.3)' : 'rgba(255, 105, 180, 0.25)');
+            ctx.fillStyle = coreGradient;
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.arc(0, 0, Math.max(6, radius), -Math.PI/2, Math.PI/2, false);
-            ctx.closePath(); ctx.fill();
+            ctx.closePath();
+            ctx.fill();
+            
+            // Outer edge with glow
             ctx.strokeStyle = stroke;
-            ctx.lineWidth = 2; ctx.beginPath();
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = p.reflected ? '#FFD700' : '#FF69B4';
+            ctx.beginPath();
             ctx.arc(0, 0, Math.max(6, radius), -Math.PI/2, Math.PI/2, false);
             ctx.stroke();
+            
+            // Energy sparks around the edge
+            ctx.shadowBlur = 0;
+            const sparkCount = p.reflected ? 6 : 4;
+            for (let i = 0; i < sparkCount; i++) {
+                const sparkAngle = -Math.PI/2 + (i / (sparkCount - 1)) * Math.PI;
+                const sparkX = Math.cos(sparkAngle) * radius;
+                const sparkY = Math.sin(sparkAngle) * radius;
+                ctx.fillStyle = p.reflected ? '#FFFFE0' : '#FFB6D9';
+                ctx.beginPath();
+                ctx.arc(sparkX, sparkY, 2 * pulse, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
             ctx.restore();
         } else if (p.type === 'rocket') {
             const cx = p.x * CELL_SIZE;
@@ -829,13 +1189,15 @@ function drawProjectiles(currentTime) {
 
 function drawBossArena(currentTime) {
     // Draw Core
-    const b = gameState.boss; if (!b) return;
+    const b = gameState.boss;
+    if (!b) return;
     if (b.core) {
         const cx = (b.core.x + 0.5) * CELL_SIZE;
         const cy = (b.core.y + 0.5) * CELL_SIZE;
         const r = CELL_SIZE * 0.9;
-        // Core body color by phase
+        
         ctx.save();
+        
         // Defeat fade-out
         if (b.defeated && b.coreFadeUntil) {
             const total = Math.max(1, (b.coreFadeUntil - (b.defeatStartedAt || (currentTime - 1))));
@@ -843,37 +1205,142 @@ function drawBossArena(currentTime) {
             const alpha = Math.max(0, Math.min(1, remain / total));
             ctx.globalAlpha = alpha;
         }
+        
         const colMap = { red: '#ff4444', purple: '#b455ff', pink: '#ff69b4' };
+        let coreColor = '#7fffd4';
+        
+        // Determine core color based on phase
         if (b.phase === 'phase2_cutscene') {
-            // Flashing red
             const pulse = (Math.sin(currentTime / 120) * 0.5 + 0.5);
-            ctx.fillStyle = `rgba(255,68,68,${0.6 + 0.4 * pulse})`;
-            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-        } else if (b.phase === 'combo' && b.combo) {
+            coreColor = `rgba(255,68,68,${0.6 + 0.4 * pulse})`;
+        } else if (b.phase === 'red') {
+            coreColor = colMap.red;
+        } else if (b.phase === 'purple') {
+            coreColor = colMap.purple;
+        } else if (b.phase === 'pink') {
+            coreColor = colMap.pink;
+        }
+        
+        // Outer energy shield/aura (pulsing)
+        const pulse = Math.sin(currentTime / 300) * 0.3 + 0.7;
+        const auradient = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.5);
+        auradient.addColorStop(0, 'rgba(0, 200, 255, 0.2)');
+        auradient.addColorStop(0.6, 'rgba(0, 170, 204, 0.15)');
+        auradient.addColorStop(1, 'rgba(0, 170, 204, 0)');
+        ctx.globalAlpha *= pulse;
+        ctx.fillStyle = auradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = b.defeated && b.coreFadeUntil ? Math.max(0, Math.min(1, (b.coreFadeUntil - currentTime) / Math.max(1, (b.coreFadeUntil - (b.defeatStartedAt || (currentTime - 1)))))) : 1;
+        
+        // Rotating energy rings around core
+        const ringCount = 3;
+        for (let i = 0; i < ringCount; i++) {
+            const ringRotation = (currentTime / 800) + (i * Math.PI * 2 / ringCount);
+            const ringRadius = r + 8 + i * 4;
+            const ringAlpha = 0.3 - i * 0.08;
+            
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(ringRotation);
+            ctx.strokeStyle = `rgba(0, 200, 255, ${ringAlpha * pulse})`;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+        
+        // Main core body - metallic sphere with segments
+        if (b.phase === 'combo' && b.combo) {
             const attacks = b.combo.attacks;
             if (attacks.length === 2) {
                 // Split core: left/right hemispheres with two colors
-                ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI/2, -Math.PI/2, true); ctx.closePath();
-                ctx.fillStyle = colMap[attacks[0]] || '#7fffd4'; ctx.fill();
-                ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI/2, Math.PI/2, true); ctx.closePath();
-                ctx.fillStyle = colMap[attacks[1]] || '#7fffd4'; ctx.fill();
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, Math.PI / 2, -Math.PI / 2, true);
+                ctx.closePath();
+                ctx.fillStyle = colMap[attacks[0]] || '#7fffd4';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);
+                ctx.closePath();
+                ctx.fillStyle = colMap[attacks[1]] || '#7fffd4';
+                ctx.fill();
             } else {
                 // Doubled single attack: full color
                 const c = colMap[attacks[0]] || '#7fffd4';
                 ctx.fillStyle = c;
-                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.fill();
             }
         } else {
-            let col = '#7fffd4';
-            if (b.phase === 'red') col = colMap.red;
-            else if (b.phase === 'purple') col = colMap.purple;
-            else if (b.phase === 'pink') col = colMap.pink;
-            ctx.fillStyle = col;
-            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+            // Single color core
+            ctx.fillStyle = coreColor;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
         }
+        
+        // Inner core glow
+        const innerGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.7);
+        innerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+        innerGlow.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+        innerGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = innerGlow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Mechanical segments/panels on core surface
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.lineWidth = 1.5;
+        const segmentCount = 8;
+        for (let i = 0; i < segmentCount; i++) {
+            const angle = (i / segmentCount) * Math.PI * 2;
+            const x1 = cx + Math.cos(angle) * (r * 0.3);
+            const y1 = cy + Math.sin(angle) * (r * 0.3);
+            const x2 = cx + Math.cos(angle) * r;
+            const y2 = cy + Math.sin(angle) * r;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+        
+        // Health indicator dots around perimeter
+        const maxHp = b.core.maxHp || 100;
+        const currentHp = b.core.hp || maxHp;
+        const hpRatio = currentHp / maxHp;
+        const dotCount = 12;
+        const activeDots = Math.ceil(hpRatio * dotCount);
+        
+        for (let i = 0; i < dotCount; i++) {
+            const dotAngle = (i / dotCount) * Math.PI * 2 - Math.PI / 2;
+            const dotRadius = r + 6;
+            const dx = cx + Math.cos(dotAngle) * dotRadius;
+            const dy = cy + Math.sin(dotAngle) * dotRadius;
+            
+            ctx.fillStyle = i < activeDots ? '#00ff00' : '#333';
+            ctx.beginPath();
+            ctx.arc(dx, dy, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Outer ring (shield boundary)
         if (!b.defeated || (b.defeated && currentTime < (b.coreFadeUntil || 0))) {
-            ctx.strokeStyle = '#0aa'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = '#0aa';
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#0aa';
+            ctx.beginPath();
+            ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+            ctx.stroke();
         }
+        
         ctx.restore();
     }
 
@@ -898,10 +1365,37 @@ function drawBossArena(currentTime) {
     if (gameState.bazookaPickup) {
         const px = (gameState.bazookaPickup.x + 0.5) * CELL_SIZE;
         const py = (gameState.bazookaPickup.y + 0.5) * CELL_SIZE;
+        const sprite = getSprite('bazooka');
+        
         ctx.save();
-        ctx.fillStyle = '#ffd700';
-        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.stroke();
+        // Draw bazooka sprite or fallback - MUCH LARGER
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            const size = CELL_SIZE * 2.5; // MUCH larger - 2.5x cell size
+            // Subtle float animation
+            const float = Math.sin(currentTime / 400) * 4;
+            ctx.drawImage(sprite, px - size / 2, py - size / 2 + float, size, size);
+            
+            // Bright glow effect to make it stand out
+            ctx.globalAlpha = 0.5 + 0.4 * Math.sin(currentTime / 300);
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = '#ff4400';
+            ctx.fillStyle = 'rgba(255, 68, 0, 0.3)';
+            ctx.beginPath();
+            ctx.arc(px, py + float, size * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Fallback to golden circle (sprite not loaded or failed)
+            if (!sprite) {
+                console.warn('Bazooka sprite not found!');
+            } else if (!sprite.complete) {
+                console.warn('Bazooka sprite not complete yet');
+            } else if (sprite.naturalWidth === 0) {
+                console.warn('Bazooka sprite failed to load - naturalWidth is 0');
+            }
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.stroke();
+        }
         ctx.restore();
 
         // Show E-prompt if player is nearby during prep
@@ -928,26 +1422,93 @@ function drawBossArena(currentTime) {
     // Ammo pickups (Level 10 boss prep room only)
     if ((gameState.currentLevel === 10) && b.ammoPickups && b.ammoPickups.length) {
         for (const a of b.ammoPickups) {
-            const ax = (a.x + 0.5) * CELL_SIZE; const ay = (a.y + 0.5) * CELL_SIZE;
+            const ax = (a.x + 0.5) * CELL_SIZE;
+            const ay = (a.y + 0.5) * CELL_SIZE;
+            
             ctx.save();
-            ctx.fillStyle = '#ffcc00'; ctx.fillRect(ax-6, ay-6, 12, 12);
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(ax-8, ay-8, 16, 16);
+            
+            // Ammo crate base (wooden/metallic box look)
+            // Main crate body - brown/tan color
+            ctx.fillStyle = '#8b6f47';
+            ctx.fillRect(ax - 8, ay - 8, 16, 16);
+            
+            // Top panel (lighter, like a lid)
+            ctx.fillStyle = '#a0875f';
+            ctx.fillRect(ax - 8, ay - 8, 16, 4);
+            
+            // Side panel highlighting
+            ctx.fillStyle = '#6b5436';
+            ctx.fillRect(ax - 8, ay - 4, 3, 12);
+            
+            // Metal straps/bands (industrial look)
+            ctx.strokeStyle = '#444';
+            ctx.lineWidth = 1.5;
+            // Horizontal straps
+            ctx.beginPath();
+            ctx.moveTo(ax - 8, ay - 3);
+            ctx.lineTo(ax + 8, ay - 3);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ax - 8, ay + 3);
+            ctx.lineTo(ax + 8, ay + 3);
+            ctx.stroke();
+            
+            // Vertical strap
+            ctx.beginPath();
+            ctx.moveTo(ax, ay - 8);
+            ctx.lineTo(ax, ay + 8);
+            ctx.stroke();
+            
+            // Ammo symbol - bullet/rocket icon in center
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            // Simple rocket/bullet shape
+            ctx.moveTo(ax - 2, ay + 2);
+            ctx.lineTo(ax - 2, ay - 4);
+            ctx.lineTo(ax, ay - 6);
+            ctx.lineTo(ax + 2, ay - 4);
+            ctx.lineTo(ax + 2, ay + 2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Add small "AMMO" text or bullets indicator
+            ctx.fillStyle = '#ffcc00';
+            ctx.font = 'bold 6px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('AMMO', ax, ay + 5);
+            
+            // Pulsing glow around crate
+            const pulse = Math.sin(currentTime / 400) * 0.3 + 0.7;
+            ctx.globalAlpha = pulse * 0.4;
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#ffcc00';
+            ctx.strokeRect(ax - 10, ay - 10, 20, 20);
+            
+            ctx.restore();
+            
             // Reload prompt when near in prep room
             if (gameState.boss && gameState.boss.prepRoom) {
                 const dx = Math.abs(gameState.player.x - a.x);
                 const dy = Math.abs(gameState.player.y - a.y);
                 if (Math.max(dx, dy) <= 1) {
                     const text = 'Press R to reload';
+                    ctx.save();
                     ctx.font = 'bold 12px Arial';
                     const tw = ctx.measureText(text).width + 10;
-                    const tx = ax; const ty = ay - 18;
+                    const tx = ax;
+                    const ty = ay - 18;
                     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.fillRect(tx - tw/2, ty - 12, tw, 16);
-                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillRect(tx - tw / 2, ty - 12, tw, 16);
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
                     ctx.fillText(text, tx, ty - 4);
+                    ctx.restore();
                 }
             }
-            ctx.restore();
         }
     }
 
@@ -1147,7 +1708,6 @@ function drawDynamicMazeOverlays() {
         let alpha = 1.0;
         if (!b.defeated) { showDoor = true; alpha = 1.0; }
         else if (b.defeated && b.doorFadeStartAt) {
-            const now = performance.now();
             if (now >= b.doorFadeStartAt) {
                 showDoor = true;
                 const total = Math.max(1, (b.doorFadeUntil || (b.doorFadeStartAt + 1)) - b.doorFadeStartAt);
@@ -1296,45 +1856,105 @@ function drawTraps(currentTime) {
 
 function drawGenerators(currentTime) {
     gameState.generators.forEach((gen) => {
+        const gx = gen.x * CELL_SIZE;
+        const gy = gen.y * CELL_SIZE;
+        
         if (gen.completed) {
-            // Draw dark green tile to indicate completed generator and a subtle checkmark
+            // Draw dark green tile to indicate completed generator
             ctx.fillStyle = '#0f4d1a';
-            ctx.fillRect(gen.x * CELL_SIZE, gen.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(gx, gy, CELL_SIZE, CELL_SIZE);
+            
+            // Powered-down generator look - darker metallic
+            ctx.fillStyle = '#1a4d2e';
+            ctx.fillRect(gx + 2, gy + 2, CELL_SIZE - 4, CELL_SIZE - 8);
+            
+            // Green checkmark with glow
+            ctx.save();
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#00ff66';
             ctx.fillStyle = '#00ff66';
             ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('✓', gen.x * CELL_SIZE + CELL_SIZE / 2, gen.y * CELL_SIZE + CELL_SIZE / 2);
+            ctx.fillText('✓', gx + CELL_SIZE / 2, gy + CELL_SIZE / 2);
+            ctx.restore();
         } else {
-            // Draw yellow wall
-            ctx.fillStyle = '#FFD700';
-            ctx.fillRect(gen.x * CELL_SIZE, gen.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            // Generator base - metallic gray with industrial look
+            ctx.fillStyle = '#555';
+            ctx.fillRect(gx, gy, CELL_SIZE, CELL_SIZE);
             
-            // Pulsing glow
-            const pulse = Math.sin(currentTime / 500) * 0.3 + 0.7;
-            ctx.globalAlpha = pulse * 0.4;
-            ctx.fillStyle = '#FFD700';
-            ctx.fillRect(gen.x * CELL_SIZE - 2, gen.y * CELL_SIZE - 2, CELL_SIZE + 4, CELL_SIZE + 4);
-            ctx.globalAlpha = 1.0;
+            // Generator body - darker center
+            ctx.fillStyle = '#3a3a3a';
+            ctx.fillRect(gx + 2, gy + 3, CELL_SIZE - 4, CELL_SIZE - 6);
+            
+            // Top and bottom panels (industrial ridges)
+            ctx.fillStyle = '#666';
+            ctx.fillRect(gx + 1, gy + 1, CELL_SIZE - 2, 3);
+            ctx.fillRect(gx + 1, gy + CELL_SIZE - 4, CELL_SIZE - 2, 3);
+            
+            // Side vents (vertical lines)
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                const vx = gx + 4 + i * 4;
+                ctx.beginPath();
+                ctx.moveTo(vx, gy + 5);
+                ctx.lineTo(vx, gy + CELL_SIZE - 5);
+                ctx.stroke();
+            }
+            
+            // Pulsing energy indicator lights (yellow/orange)
+            const pulse = Math.sin(currentTime / 500) * 0.5 + 0.5;
+            const lightY = gy + CELL_SIZE / 2;
+            const lightX = gx + CELL_SIZE - 5;
+            
+            // Warning lights glow
+            ctx.save();
+            ctx.shadowBlur = 8 * pulse;
+            ctx.shadowColor = '#FFD700';
+            ctx.fillStyle = `rgba(255, 215, 0, ${0.7 + 0.3 * pulse})`;
+            ctx.beginPath();
+            ctx.arc(lightX, lightY - 3, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = `rgba(255, 140, 0, ${0.7 + 0.3 * pulse})`;
+            ctx.beginPath();
+            ctx.arc(lightX, lightY + 3, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            
+            // Pulsing outer glow/aura for attention
+            ctx.save();
+            ctx.globalAlpha = pulse * 0.3;
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#FFD700';
+            ctx.strokeRect(gx - 1, gy - 1, CELL_SIZE + 2, CELL_SIZE + 2);
+            ctx.restore();
 
             // If blocked, overlay a red X
             if (gen.blockedUntil && currentTime < gen.blockedUntil) {
+                ctx.save();
                 ctx.strokeStyle = '#ff4444';
                 ctx.lineWidth = 3;
-                const x = gen.x * CELL_SIZE;
-                const y = gen.y * CELL_SIZE;
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = '#ff4444';
                 ctx.beginPath();
-                ctx.moveTo(x + 3, y + 3);
-                ctx.lineTo(x + CELL_SIZE - 3, y + CELL_SIZE - 3);
-                ctx.moveTo(x + CELL_SIZE - 3, y + 3);
-                ctx.lineTo(x + 3, y + CELL_SIZE - 3);
+                ctx.moveTo(gx + 3, gy + 3);
+                ctx.lineTo(gx + CELL_SIZE - 3, gy + CELL_SIZE - 3);
+                ctx.moveTo(gx + CELL_SIZE - 3, gy + 3);
+                ctx.lineTo(gx + 3, gy + CELL_SIZE - 3);
                 ctx.stroke();
+                ctx.restore();
             }
         }
     });
 }
 
 function drawPlayer() {
+    // Skip drawing player circle if bazooka is active - only show the weapon
+    const bazookaActive = isBazookaMode() && gameState.bazooka && gameState.bazooka.has;
+    
     // Calculate player position with jump animation
     let playerX = gameState.player.x;
     let playerY = gameState.player.y;
@@ -1429,11 +2049,84 @@ function drawPlayer() {
         b = Math.round(baseRGB.b * f);
     }
 
-    // Draw player with jump offset
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY + jumpOffset, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Draw player circle with jump offset
+    const now = performance.now();
+    
+    // Handle pig crash animation overlay with movement to target
+    let crashRotation = 0;
+    let crashAlpha = 1;
+    let crashOffsetX = 0;
+    let crashOffsetY = 0;
+    if (gameState.pigCrashAnimation && gameState.pigCrashAnimation.active) {
+        const crashProgress = Math.min(1, (now - gameState.pigCrashAnimation.startTime) / gameState.pigCrashAnimation.duration);
+        crashRotation = crashProgress * Math.PI * 4; // 2 full spins
+        crashAlpha = 1 - crashProgress * 0.3; // Fade slightly
+        
+        // Move from start position to target position
+        if (gameState.pigCrashAnimation.targetX !== undefined && gameState.pigCrashAnimation.targetY !== undefined) {
+            const startScreenX = (gameState.pigCrashAnimation.startX + 0.5) * CELL_SIZE;
+            const startScreenY = (gameState.pigCrashAnimation.startY + 0.5) * CELL_SIZE;
+            const targetScreenX = (gameState.pigCrashAnimation.targetX + 0.5) * CELL_SIZE;
+            const targetScreenY = (gameState.pigCrashAnimation.targetY + 0.5) * CELL_SIZE;
+            
+            const currentScreenX = startScreenX + (targetScreenX - startScreenX) * crashProgress;
+            const currentScreenY = startScreenY + (targetScreenY - startScreenY) * crashProgress;
+            
+            crashOffsetX = currentScreenX - centerX;
+            crashOffsetY = currentScreenY - (centerY + jumpOffset);
+            
+            // Update player grid position at end of crash
+            if (crashProgress >= 1) {
+                gameState.player.x = gameState.pigCrashAnimation.targetX;
+                gameState.player.y = gameState.pigCrashAnimation.targetY;
+                gameState.pigCrashAnimation.active = false;
+                gameState.pigCrashAnimation.playExplosion = true; // Signal to play explosion
+                
+                // Crash landing explosion
+                particles.spawn('explosion', targetScreenX, targetScreenY, 25, { color: '#FFD700' });
+                particles.spawn('smoke', targetScreenX, targetScreenY, 15, { color: '#666' });
+                gameState.screenShakeMag = 5;
+                gameState.screenShakeUntil = now + 200;
+            }
+        } else if (crashProgress >= 1) {
+            gameState.pigCrashAnimation.active = false;
+        }
+        
+        // Spawn smoke trail during crash
+        if (crashProgress < 1 && Math.random() < 0.3) {
+            particles.spawn('smoke', centerX + crashOffsetX, centerY + jumpOffset + crashOffsetY, 3, { color: '#888' });
+        }
+        
+        // Apply rotation and offset
+        ctx.save();
+        ctx.translate(centerX + crashOffsetX, centerY + jumpOffset + crashOffsetY);
+        ctx.rotate(crashRotation);
+        ctx.globalAlpha = crashAlpha;
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Add dizzy stars during crash
+        if (crashProgress < 0.9) {
+            for (let i = 0; i < 3; i++) {
+                const starAngle = (crashProgress * Math.PI * 2) + (i * Math.PI * 2 / 3);
+                const starDist = radius + 8 + Math.sin(crashProgress * Math.PI * 4) * 4;
+                const sx = centerX + crashOffsetX + Math.cos(starAngle) * starDist;
+                const sy = centerY + jumpOffset + crashOffsetY + Math.sin(starAngle) * starDist;
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillText('★', sx - 6, sy + 4);
+            }
+        }
+    } else {
+        // Normal player rendering
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY + jumpOffset, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
 
     // Wings + timer ring while mounted (flight mode)
     const nowT = performance.now();
@@ -1538,18 +2231,32 @@ function drawPlayer() {
         ctx.stroke();
     }
 
-    // Draw blocking shield when active (with aura/glow)
+    // Draw blocking shield when active (with aura/glow and pull-out animation)
     if (gameState.blockActive) {
+        const now = performance.now(); // Define now at the start
         const shieldCenterY = centerY + jumpOffset;
         const r = Math.max(CELL_SIZE, radius + 10);
+        
+        // Pull-out animation (300ms)
+        const pullOutDuration = 300;
+        const timeSinceStart = now - (gameState.blockStartTime || now);
+        const pullOutProgress = Math.min(1, timeSinceStart / pullOutDuration);
+        const easeOut = 1 - Math.pow(1 - pullOutProgress, 3); // Ease out cubic
+        
+        // Scale and alpha based on animation progress
+        const shieldScale = easeOut;
+        const shieldAlpha = easeOut;
+        
         // Aura
         ctx.save();
-        ctx.globalAlpha = 0.25;
+        ctx.globalAlpha = 0.25 * shieldAlpha;
         ctx.fillStyle = 'rgba(255, 240, 120, 0.25)';
-        ctx.beginPath(); ctx.arc(centerX, shieldCenterY, r + 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(centerX, shieldCenterY, (r + 6) * shieldScale, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+        
         // Directional shield wedge
         ctx.save();
+        ctx.globalAlpha = shieldAlpha;
         ctx.translate(centerX, shieldCenterY);
         ctx.rotate(gameState.blockAngle);
         ctx.fillStyle = 'rgba(255, 213, 0, 0.28)';
@@ -1557,40 +2264,110 @@ function drawPlayer() {
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.arc(0, 0, r, -Math.PI/2, Math.PI/2, false);
+        ctx.arc(0, 0, r * shieldScale, -Math.PI/2, Math.PI/2, false);
         ctx.closePath();
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(0, 0, r, -Math.PI/2, Math.PI/2, false);
+        ctx.arc(0, 0, r * shieldScale, -Math.PI/2, Math.PI/2, false);
         ctx.stroke();
         ctx.restore();
     }
 
     // Collision Shield visuals
-    const now = performance.now();
     const collisionCenterY = centerY + jumpOffset;
     if (gameState.collisionShieldState === 'active') {
-        // Pink outline with subtle pulse
+        // Enhanced active shield with fixed particle positions (not spinning off)
         const pulse = Math.sin(now / 180) * 0.25 + 0.75;
+        
+        // Outer glow aura
         ctx.save();
-        ctx.strokeStyle = `rgba(255, 119, 170, ${0.6 * pulse})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.15 * pulse;
+        const gradient = ctx.createRadialGradient(centerX, collisionCenterY, radius, centerX, collisionCenterY, radius + 12);
+        gradient.addColorStop(0, 'rgba(255, 119, 170, 0.4)');
+        gradient.addColorStop(1, 'rgba(255, 119, 170, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(centerX, collisionCenterY, radius + 12, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
+        
+        // Fixed energy particles on shield perimeter (not spinning off)
+        const particleCount = 8;
+        const rotationSpeed = now / 600;
+        const shieldRadius = radius + 4; // Fixed radius matching the shield ring
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (i / particleCount) * Math.PI * 2 + rotationSpeed;
+            const px = centerX + Math.cos(angle) * shieldRadius;
+            const py = collisionCenterY + Math.sin(angle) * shieldRadius;
+            
+            ctx.save();
+            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 150 + i);
+            ctx.fillStyle = '#ff77aa';
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#ff77aa';
+            ctx.beginPath();
+            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // Main shield ring with enhanced glow
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 119, 170, ${0.8 * pulse})`;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = '#ff77aa';
+        ctx.beginPath();
+        ctx.arc(centerX, collisionCenterY, shieldRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        
+        // Inner highlight ring
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 200, 220, ${0.5 * pulse})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(centerX, collisionCenterY, radius + 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        
     } else if (gameState.collisionShieldState === 'recharging' && gameState.collisionShieldRechargeEnd) {
-        // Faint ring plus progress arc from top, clockwise
+        // Enhanced recharge animation with energy building up
         const remain = Math.max(0, gameState.collisionShieldRechargeEnd - now);
         const t = 1 - Math.min(1, remain / COLLISION_SHIELD_RECHARGE_TIME);
+        
         ctx.save();
         // Base faint ring
-        ctx.strokeStyle = 'rgba(255, 119, 170, 0.18)';
+        ctx.strokeStyle = 'rgba(255, 119, 170, 0.2)';
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2); ctx.stroke();
-        // Progress arc
-        ctx.strokeStyle = 'rgba(255, 119, 170, 0.55)';
+        ctx.beginPath();
+        ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Progress arc with glow
+        ctx.strokeStyle = `rgba(255, 119, 170, ${0.6 + 0.2 * t})`;
         ctx.lineWidth = 3;
+        ctx.shadowBlur = 8 * t;
+        ctx.shadowColor = '#ff77aa';
         const start = -Math.PI / 2;
-        ctx.beginPath(); ctx.arc(centerX, collisionCenterY, radius + 4, start, start + t * Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(centerX, collisionCenterY, radius + 4, start, start + t * Math.PI * 2);
+        ctx.stroke();
+        
+        // Energy sparks appearing along the recharge arc
+        if (t > 0.2) {
+            const sparkCount = Math.floor(t * 6);
+            for (let i = 0; i < sparkCount; i++) {
+                const angle = start + (t * Math.PI * 2) * (i / sparkCount);
+                const sx = centerX + Math.cos(angle) * (radius + 4);
+                const sy = collisionCenterY + Math.sin(angle) * (radius + 4);
+                ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 100 + i);
+                ctx.fillStyle = '#ffaad5';
+                ctx.beginPath();
+                ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
         ctx.restore();
     }
 
@@ -1613,6 +2390,107 @@ function drawPlayer() {
             ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         }
         ctx.restore();
+    }
+    
+    // Draw bazooka weapon when player has it - RENDERS ON TOP OF SHIELD
+    if (gameState.bazooka && gameState.bazooka.has) {
+        const sprite = getSprite('bazooka'); // Use bazooka.png sprite
+        const weaponCenterY = centerY + jumpOffset;
+        
+        // Get mouse position for aiming
+        let mousePos = { x: centerX + 20, y: weaponCenterY, inCanvas: false }; // default to right
+        if (gameState.mousePosition) {
+            mousePos = gameState.mousePosition;
+        }
+        
+        // Calculate angle to mouse cursor (default to pointing right if mouse not in canvas)
+        let aimAngle = 0; // 0 = right, π/2 = down, -π/2 = up
+        if (mousePos.inCanvas) {
+            const dx = mousePos.x - centerX;
+            const dy = mousePos.y - weaponCenterY;
+            aimAngle = Math.atan2(dy, dx);
+        }
+        
+        // Recoil animation (15px for 150ms after firing) - more noticeable
+        let recoilOffset = 0;
+        let recoilShake = 0;
+        if (gameState.bazookaFireTime) {
+            const timeSinceFire = now - gameState.bazookaFireTime;
+            if (timeSinceFire < 150) {
+                const progress = timeSinceFire / 150;
+                recoilOffset = 15 * (1 - progress); // Kickback
+                recoilShake = Math.sin(progress * Math.PI * 4) * 2 * (1 - progress); // Vibration
+            }
+        }
+        
+        // Position weapon relative to player with offset based on aim direction
+        const weaponDistance = radius + 15 - recoilOffset; // Increased distance
+        const weaponX = centerX + Math.cos(aimAngle) * weaponDistance + recoilShake * Math.cos(aimAngle + Math.PI/2);
+        const weaponY = weaponCenterY + Math.sin(aimAngle) * weaponDistance + recoilShake * Math.sin(aimAngle + Math.PI/2);
+        const weaponSize = 35; // MUCH LARGER - 35px so it's very visible
+        
+        // Draw weapon sprite rotated to aim at cursor
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            ctx.save();
+            ctx.translate(weaponX, weaponY);
+            ctx.rotate(aimAngle); // Rotate to face mouse
+            // Add drop shadow for depth
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.drawImage(sprite, -weaponSize / 2, -weaponSize / 2, weaponSize, weaponSize);
+            ctx.restore();
+        } else {
+            // Fallback rendering with rotation - larger
+            ctx.save();
+            ctx.translate(weaponX, weaponY);
+            ctx.rotate(aimAngle);
+            ctx.fillStyle = '#555';
+            ctx.fillRect(-15, -5, 30, 10);
+            ctx.fillStyle = '#777';
+            ctx.fillRect(12, -4, 6, 8);
+            ctx.restore();
+        }
+        
+        // Muzzle flash effect (first 100ms after firing) - enhanced
+        if (gameState.bazookaFireTime) {
+            const timeSinceFire = now - gameState.bazookaFireTime;
+            if (timeSinceFire < 100) {
+                const flashAlpha = 1 - (timeSinceFire / 100);
+                ctx.save();
+                ctx.globalAlpha = flashAlpha;
+                
+                // Flash appears at the tip of the weapon in aim direction
+                const flashDistance = weaponDistance + weaponSize / 2 + 8;
+                const flashX = centerX + Math.cos(aimAngle) * flashDistance;
+                const flashY = weaponCenterY + Math.sin(aimAngle) * flashDistance;
+                
+                // Bright flash core
+                const gradient = ctx.createRadialGradient(flashX, flashY, 0, flashX, flashY, 15);
+                gradient.addColorStop(0, 'rgba(255, 255, 200, 1)');
+                gradient.addColorStop(0.5, 'rgba(255, 200, 100, 0.6)');
+                gradient.addColorStop(1, 'rgba(255, 150, 50, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(flashX, flashY, 15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Flash rays oriented with weapon
+                ctx.strokeStyle = 'rgba(255, 220, 100, 0.8)';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 6; i++) {
+                    const angle = aimAngle + (i / 6) * Math.PI * 2 + (timeSinceFire / 20);
+                    const rayLength = 12 + Math.random() * 8;
+                    ctx.beginPath();
+                    ctx.moveTo(flashX, flashY);
+                    ctx.lineTo(flashX + Math.cos(angle) * rayLength, flashY + Math.sin(angle) * rayLength);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+            }
+        }
     }
 }
 

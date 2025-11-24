@@ -1,10 +1,11 @@
 // main.js - Game loop and initialization
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
-import { playLose } from './audio.js';
+import { playLose, playExplosion } from './audio.js';
 import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
+import { loadSprites } from './sprites.js';
 
 // Expose gameState to window for background renderer
 window.gameState = gameState;
@@ -438,6 +439,12 @@ function gameLoop(currentTime) {
     const deltaTime = currentTime - lastFrameTime;
         gameRunning = true;
 
+    // Check for crash explosion sound trigger from renderer
+    if (gameState.pigCrashAnimation?.playExplosion) {
+        try { playExplosion(); } catch {}
+        gameState.pigCrashAnimation.playExplosion = false;
+    }
+
     // Update game state (throttle movement to ~60fps)
     if (deltaTime >= 16) {
         // Collision shield should update regardless of pause state (it self-pauses internally)
@@ -834,6 +841,7 @@ function wireMenuUi() {
     }
 
     // Settings overlay wiring
+    const helpBtn = document.getElementById('helpBtn');
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsOverlay = document.getElementById('settingsOverlay');
     const movementAudioChk = document.getElementById('movementAudioChk');
@@ -844,6 +852,15 @@ function wireMenuUi() {
     const bazookaModeSection = document.getElementById('bazookaModeSection');
     const bazookaModeDesc = document.getElementById('bazookaModeDesc');
     const settingsBackBtn = document.getElementById('settingsBackBtn');
+    
+    // Help button handler
+    if (helpBtn && !helpBtn._wired) {
+        helpBtn.addEventListener('click', () => {
+            window.location.href = 'help.html';
+        });
+        helpBtn._wired = true;
+    }
+    
     if (settingsBtn && !settingsBtn._wired) {
         settingsBtn.addEventListener('click', () => {
             const s = getSettings();
@@ -868,6 +885,7 @@ function wireMenuUi() {
         });
         settingsBtn._wired = true;
     }
+    
     if (settingsBackBtn && !settingsBackBtn._wired) {
         settingsBackBtn.addEventListener('click', () => {
             if (settingsOverlay) settingsOverlay.style.display = 'none';
@@ -1333,6 +1351,11 @@ function postFrameChecks(currentTime) {
 async function startApp() {
     // Signal that modules loaded successfully
     window.__SMG_LOADED__ = true;
+
+    // Load sprites first
+    console.log('Loading game sprites...');
+    await loadSprites();
+    console.log('Sprites loaded successfully!');
 
     // Mobile: Initialize virtual controls if on touch device
     const mobile = await loadMobileControls();

@@ -22,11 +22,35 @@ export function setupInputHandlers() {
     document.addEventListener('keyup', handleKeyUp, { passive: false });
     document.addEventListener('mousedown', handleMouseDown, { passive: false });
 
-    // Add touch support for canvas (bazooka firing on mobile)
+    // Track mouse position for bazooka aiming (store in gameState to avoid circular dependency)
     const canvas = document.getElementById('canvas');
     if (canvas) {
+        canvas.addEventListener('mousemove', handleMouseMove, { passive: true });
+        canvas.addEventListener('mouseenter', () => { 
+            if (gameState.mousePosition) gameState.mousePosition.inCanvas = true; 
+        });
+        canvas.addEventListener('mouseleave', () => { 
+            if (gameState.mousePosition) gameState.mousePosition.inCanvas = false; 
+        });
         canvas.addEventListener('pointerdown', handleCanvasPointer, { passive: false });
     }
+    
+    // Initialize mouse position in gameState
+    if (!gameState.mousePosition) {
+        gameState.mousePosition = { x: 0, y: 0, inCanvas: false };
+    }
+}
+
+// Handle mouse movement for bazooka aiming
+function handleMouseMove(e) {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!gameState.mousePosition) {
+        gameState.mousePosition = { x: 0, y: 0, inCanvas: false };
+    }
+    gameState.mousePosition.x = e.clientX - rect.left;
+    gameState.mousePosition.y = e.clientY - rect.top;
 }
 
 // Mobile: Initialize touch handlers (called from main.js)
