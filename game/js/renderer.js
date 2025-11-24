@@ -1044,10 +1044,11 @@ function drawEnemies(currentTime) {
                 ctx.restore();
             }
             ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-            // Smaller black center on mobile for better purple visibility
+            // No black center on mobile for better purple visibility, small black center on desktop
             const mobile = isMobile();
-            const centerRadius = mobile ? 1.5 : 3;
-            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy, centerRadius, 0, Math.PI * 2); ctx.fill();
+            if (!mobile) {
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+            }
         }
     }
 }
