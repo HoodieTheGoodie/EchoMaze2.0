@@ -249,7 +249,6 @@
 .dpad-btn:active {
     background: linear-gradient(135deg, rgba(255, 123, 0, 0.9), rgba(255, 123, 0, 0.7));
     box-shadow: 0 0 15px rgba(255, 123, 0, 0.6);
-    transform: rotate(45deg) scale(0.95);
 }
 
 /* Counter-rotate arrow icons to face correct direction */
@@ -266,7 +265,7 @@
 }
 
 .dpad-up:active {
-    transform: translateX(-50%) rotate(45deg) scale(0.95);
+    transform: translateX(-50%) rotate(45deg);
 }
 
 .dpad-down {
@@ -276,7 +275,7 @@
 }
 
 .dpad-down:active {
-    transform: translateX(-50%) rotate(45deg) scale(0.95);
+    transform: translateX(-50%) rotate(45deg);
 }
 
 .dpad-left {
@@ -286,7 +285,7 @@
 }
 
 .dpad-left:active {
-    transform: translateY(-50%) rotate(45deg) scale(0.95);
+    transform: translateY(-50%) rotate(45deg);
 }
 
 .dpad-right {
@@ -296,7 +295,7 @@
 }
 
 .dpad-right:active {
-    transform: translateY(-50%) rotate(45deg) scale(0.95);
+    transform: translateY(-50%) rotate(45deg);
 }
 
 /* Action Buttons Container (Right Side) */
@@ -331,7 +330,6 @@
 
 .action-btn:active {
     background: linear-gradient(135deg, rgba(97, 218, 251, 1), rgba(97, 218, 251, 0.8));
-    transform: scale(0.95);
     box-shadow: 0 0 20px rgba(97, 218, 251, 0.7);
 }
 
@@ -354,6 +352,7 @@
 .action-shield:active {
     background: linear-gradient(135deg, rgba(255, 119, 170, 1), rgba(255, 119, 170, 0.8));
     box-shadow: 0 0 20px rgba(255, 119, 170, 0.7);
+    transform: translateX(50%);
 }
 
 .action-sprint {
@@ -367,6 +366,7 @@
 .action-sprint:active {
     background: linear-gradient(135deg, rgba(255, 209, 102, 1), rgba(255, 209, 102, 0.8));
     box-shadow: 0 0 20px rgba(255, 209, 102, 0.7);
+    transform: translateX(50%);
 }
 
 .action-interact {
@@ -375,9 +375,17 @@
     transform: translateY(-50%);
 }
 
+.action-interact:active {
+    transform: translateY(-50%);
+}
+
 .action-trap {
     right: 5px;
     top: 50%;
+    transform: translateY(-50%);
+}
+
+.action-trap:active {
     transform: translateY(-50%);
 }
 
@@ -396,6 +404,7 @@
 .action-reload:active {
     background: linear-gradient(135deg, rgba(130, 200, 255, 1), rgba(100, 170, 255, 0.8));
     box-shadow: 0 0 20px rgba(130, 200, 255, 0.7);
+    transform: translate(50%, -50%);
 }
 
 /* Sprint button - "hold" indicator when active */
