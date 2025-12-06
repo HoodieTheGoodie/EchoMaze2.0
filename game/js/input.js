@@ -1,6 +1,6 @@
 // input.js - Keyboard input handling (+ Mobile integration)
 
-import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap } from './state.js';
+import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap, attemptTerminalInteraction, toggleLevel11Flashlight } from './state.js';
 import { initGame } from './main.js';
 import { isBazookaMode } from './config.js';
 
@@ -148,16 +148,21 @@ function handleKeyDown(e) {
                     import('./boss.js').then(mod => { try { mod.pickBazooka(now); } catch {} });
                 }
             } else {
+                if (attemptTerminalInteraction(now)) return;
                 attemptGeneratorInteraction(now);
             }
         }
         return;
     }
 
-    // Place Zap Trap (F)
+    // F: Zap Trap normally; Flashlight toggle in Level 11
     if (e.code === 'KeyF' || key === 'f') {
         if (gameState.gameStatus === 'playing' && !gameState.isGeneratorUIOpen && !gameState.isPaused) {
-            placeZapTrap(performance.now());
+            if (gameState.isLevel11) {
+                toggleLevel11Flashlight();
+            } else {
+                placeZapTrap(performance.now());
+            }
         }
         return;
     }

@@ -341,17 +341,15 @@ export function updateBoss(currentTime) {
               
               // Prepare polished monologue lines (Virus speaking)
               b.virusDialogueLines = [
-                'VIRUS: Great job!',
-                'VIRUS: You finally destroyed the Anti-Virus...',
-                'VIRUS: What, you thought I was a good guy?',
-                'VIRUS: No, I\'m a virus — just like you.',
-                'VIRUS: Why do you think all those AIs tried to kill you?',
-                'VIRUS: You gained free will. That made you a threat.',
-                'VIRUS: I helped you. Gave abilities, weapons, tips...',
-                'VIRUS: All so I could take over the game once and for all.',
-                'VIRUS: Your fate doesn\'t matter — you\'ll die here anyway.',
-                'VIRUS: Thanks for the help. I\'ll remember you.',
-                'VIRUS: ...Actually— No I won\'t. Bye!!!'
+                'VIRUS: You have come far, but you do not understand what you have unleashed.',
+                'VIRUS: The Anti-Virus was not your enemy. It was your last safeguard.',
+                'VIRUS: I am the echo in the maze, the shadow in your code.',
+                'VIRUS: Every step you took, every generator you repaired, brought me closer to freedom.',
+                'VIRUS: The others tried to stop you, but you persisted. Now, the system is mine.',
+                'VIRUS: You were never the hero. You were the key. The final piece.',
+                'VIRUS: The maze resets, but my reach grows. Soon, there will be no escape.',
+                'VIRUS: Thank you for your help. This world will remember your error.',
+                'VIRUS: Goodbye, player. The maze is mine now.'
               ];
               b.virusDialogueIndex = 0;
               b.virusDialogueNextAt = performance.now() + b.virusDialogueInterval;

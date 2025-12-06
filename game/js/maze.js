@@ -10,7 +10,9 @@ export const CELL = {
     EMPTY: 0,
     EXIT: 2,
     GENERATOR: 3,
-    TELEPAD: 4
+    TELEPAD: 4,
+    GLITCH: 5,
+    TERMINAL: 6
 };
 
 // Seeded RNG (mulberry32)
@@ -543,4 +545,135 @@ export function generateMaze(seed = 1, generatorCount = GENERATOR_COUNT, include
     }
 
     return { grid: maze, generators, telepads };
+}
+
+// Level 11 Custom Maze: Puzzle rooms with all features accessible but specific unlocks needed
+export function generateLevel11Maze() {
+    const blank = () => Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.WALL));
+    const carveRect = (grid, x0, y0, x1, y1) => {
+        for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+                if (x > 0 && x < MAZE_WIDTH - 1 && y > 0 && y < MAZE_HEIGHT - 1) {
+                    grid[y][x] = CELL.EMPTY;
+                }
+            }
+        }
+    };
+    const addWall = (grid, x, y) => {
+        if (x > 0 && x < MAZE_WIDTH - 1 && y > 0 && y < MAZE_HEIGHT - 1) {
+            grid[y][x] = CELL.WALL;
+        }
+    };
+
+    // --- Entry hallway ---
+    const entry = blank();
+    carveRect(entry, 13, 20, 17, 28); // vertical hall
+    carveRect(entry, 14, 18, 16, 20); // small landing by door
+    const entryDoor = { x: 15, y: 18 };
+    entry[entryDoor.y][entryDoor.x] = CELL.EMPTY;
+    const entrySpawn = { x: 15, y: 27 };
+    entry[entrySpawn.y][entrySpawn.x] = CELL.EMPTY;
+
+    // --- Hub ---
+    const hub = blank();
+    carveRect(hub, 8, 10, 22, 20); // main hub chamber
+    // Doors
+    const hubDoorFromEntry = { x: 15, y: 20 };
+    const hubDoorLeft = { x: 8, y: 15 };
+    const hubDoorRight = { x: 22, y: 15 };
+    const hubDoorTop = { x: 15, y: 10 };
+    [hubDoorFromEntry, hubDoorLeft, hubDoorRight, hubDoorTop].forEach(d => { hub[d.y][d.x] = CELL.EMPTY; });
+    const hubGreenKeyDrop = { x: 14, y: 14 };
+
+    // --- Puzzle room (right) ---
+    const puzzle = blank();
+    carveRect(puzzle, 12, 11, 21, 19);
+    const puzzleDoor = { x: 12, y: 15 };
+    puzzle[puzzleDoor.y][puzzleDoor.x] = CELL.EMPTY;
+    const puzzleTiles = [];
+    const origin = { x: 15, y: 13 };
+    for (let py = 0; py < 3; py++) {
+        for (let px = 0; px < 3; px++) {
+            const tx = origin.x + px;
+            const ty = origin.y + py;
+            puzzle[ty][tx] = CELL.EMPTY;
+            puzzleTiles.push({ x: tx, y: ty, index: py * 3 + px });
+        }
+    }
+    const puzzleNote = { x: 19, y: 12 };
+    puzzle[puzzleNote.y][puzzleNote.x] = CELL.EMPTY;
+
+    // --- Dark maze (left) ---
+    const dark = blank();
+    carveRect(dark, 6, 10, 20, 22);
+    const darkDoor = { x: 20, y: 16 };
+    dark[darkDoor.y][darkDoor.x] = CELL.EMPTY;
+    // simple hand maze lines
+    for (let x = 7; x <= 19; x++) addWall(dark, x, 14);
+    for (let x = 9; x <= 18; x++) addWall(dark, x, 18);
+    for (let y = 11; y <= 21; y++) addWall(dark, 11, y === 16 ? 999 : y); // hole at 16
+    for (let y = 11; y <= 20; y++) addWall(dark, 15, y === 19 ? 999 : y); // hole at 19
+    dark[14][12] = CELL.EMPTY; dark[14][16] = CELL.EMPTY; dark[18][14] = CELL.EMPTY; dark[18][17] = CELL.EMPTY; dark[16][11] = CELL.EMPTY;
+    const flashlightPickup = { x: 19, y: 17 };
+    dark[flashlightPickup.y][flashlightPickup.x] = CELL.EMPTY;
+    const yellowKeyPos = { x: 8, y: 21 };
+    dark[yellowKeyPos.y][yellowKeyPos.x] = CELL.EMPTY;
+    const batSpawns = [
+        { x: 9, y: 12 },
+        { x: 13, y: 20 },
+        { x: 17, y: 13 }
+    ];
+
+    // --- Ending room (top) ---
+    const finale = blank();
+    carveRect(finale, 12, 6, 18, 11);
+    const finaleDoor = { x: 15, y: 11 };
+    finale[finaleDoor.y][finaleDoor.x] = CELL.EMPTY;
+    const finaleNote = { x: 15, y: 7 };
+    finale[finaleNote.y][finaleNote.x] = CELL.EMPTY;
+
+    const rooms = {
+        entry: {
+            grid: entry,
+            spawnPoints: { default: entrySpawn },
+            doors: [ { pos: entryDoor, target: 'hub', spawn: 'fromEntry', lock: null } ]
+        },
+        hub: {
+            grid: hub,
+            spawnPoints: {
+                fromEntry: { x: 15, y: 19 },
+                fromPuzzle: { x: hubDoorRight.x - 1, y: hubDoorRight.y },
+                fromDark: { x: hubDoorLeft.x + 1, y: hubDoorLeft.y },
+                fromTop: { x: hubDoorTop.x, y: hubDoorTop.y + 1 },
+                default: { x: 15, y: 15 }
+            },
+            doors: [
+                { pos: hubDoorLeft, target: 'dark', spawn: 'fromHub', lock: 'green' },
+                { pos: hubDoorRight, target: 'puzzle', spawn: 'fromHub', lock: null },
+                { pos: hubDoorTop, target: 'finale', spawn: 'fromHub', lock: 'yellow' },
+                { pos: hubDoorFromEntry, target: 'entry', spawn: 'default', lock: null }
+            ],
+            greenKeyDrop: hubGreenKeyDrop
+        },
+        puzzle: {
+            grid: puzzle,
+            spawnPoints: { fromHub: { x: puzzleDoor.x + 1, y: puzzleDoor.y }, default: { x: puzzleDoor.x + 1, y: puzzleDoor.y } },
+            doors: [ { pos: puzzleDoor, target: 'hub', spawn: 'fromPuzzle', lock: null } ],
+            puzzle: { tiles: puzzleTiles, note: puzzleNote, origin, paperPattern: puzzleNote }
+        },
+        dark: {
+            grid: dark,
+            spawnPoints: { fromHub: { x: darkDoor.x - 1, y: darkDoor.y }, default: { x: darkDoor.x - 1, y: darkDoor.y } },
+            doors: [ { pos: darkDoor, target: 'hub', spawn: 'fromDark', lock: null } ],
+            darkRoom: { flashlight: flashlightPickup, yellowKey: yellowKeyPos, bats: batSpawns }
+        },
+        finale: {
+            grid: finale,
+            spawnPoints: { fromHub: { x: finaleDoor.x, y: finaleDoor.y - 1 }, default: { x: finaleDoor.x, y: finaleDoor.y - 1 } },
+            doors: [ { pos: finaleDoor, target: 'hub', spawn: 'fromTop', lock: null } ],
+            note: finaleNote
+        }
+    };
+
+    return { grid: entry, generators: [], telepads: [], level11: { rooms, spawnRoom: 'entry' } };
 }

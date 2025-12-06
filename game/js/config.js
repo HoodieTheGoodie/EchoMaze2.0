@@ -1,6 +1,6 @@
 // config.js - Level configs, seeds, and persistence
 
-export const LEVEL_COUNT = 10;
+export const LEVEL_COUNT = 11;
 
 // Get color for current level (blue at level 1 -> red at level 10)
 export function getLevelColor(level) {
@@ -29,7 +29,8 @@ export const LEVEL_SEEDS = [
     77778888, // 7
     12344321, // 8
     98761234, // 9
-    24682468  // 10
+    24682468, // 10
+    13579246  // 11
 ];
 
 export function getDefaultLevelConfig(level) {
@@ -73,8 +74,8 @@ export function getDefaultLevelConfig(level) {
     if (level === 8) {
         return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true, mortar: false };
     }
-    // Levels 9-10: include all (Chaser + Pig + Seeker + Batter + Mortar)
-    if (level >= 9) {
+    // Levels 9-11: include all (Chaser + Pig + Seeker + Batter + Mortar)
+    if (level >= 9 && level <= 11) {
         return { ...base, enemyEnabled: true, flyingPig: true, seeker: true, batter: true, mortar: true };
     }
     // Placeholder for levels 4-10 (use base defaults for now)
@@ -93,7 +94,8 @@ export function getLevelTip(level) {
         7: "Batters charge when close. Reflect their attack to stagger them. Very clever of you... if you survive.",
         8: "Four threats now. The protocols are... escalating. Don't worry, it's all part of the *design*.",
         9: "Mortars. They fire explosive projectiles. Dodge them. Or embrace the chaos. I'm not here to judge... yet.",
-        10: "Final level. The Core awaits. Everything has led to this moment. I wonder... will you escape?"
+        10: "Final level. The Core awaits. Everything has led to this moment. I wonder... will you escape?",
+        11: "You found the secret. This maze is yours to conquer. Show me what you've learned."
     };
     return tips[level] || "The maze shifts. Adapt or fail.";
 }
@@ -116,6 +118,9 @@ export const BOSS_AMMO_STATION_COOLDOWN = 30000; // ms
 
 // Persistence keys
 const KEY_UNLOCKED = 'smg_unlockedLevel';
+const KEY_LEVEL11_UNLOCKED = 'smg_level11Unlocked';
+const KEY_TERMINALS_UNLOCKED = 'smg_terminalsUnlocked';
+const KEY_TERMINAL_ACCESS = 'smg_terminalAccess';
 const KEY_GODMODE = 'smg_godMode';
 const KEY_DEVUNLOCK = 'smg_devUnlocked';
 const KEY_SKIP_PREBOSS = 'smg_skip_preboss';
@@ -133,12 +138,83 @@ export function setUnlockedLevel(level) {
 
 export function resetProgress() {
     localStorage.setItem(KEY_UNLOCKED, '1');
+    localStorage.setItem(KEY_LEVEL11_UNLOCKED, '0');
+    localStorage.setItem(KEY_TERMINALS_UNLOCKED, JSON.stringify([]));
+    localStorage.setItem(KEY_TERMINAL_ACCESS, JSON.stringify([]));
     // Clear all best times (1-10)
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= LEVEL_COUNT; i++) {
         try {
             localStorage.removeItem(`smg_bestTime_L${i}`);
         } catch {}
     }
+}
+
+// Level 11 unlock persistence
+export function isLevel11Unlocked() {
+    return localStorage.getItem(KEY_LEVEL11_UNLOCKED) === '1';
+}
+
+export function setLevel11Unlocked(enabled) {
+    localStorage.setItem(KEY_LEVEL11_UNLOCKED, enabled ? '1' : '0');
+}
+
+// Terminal puzzle solves (supports up to 4 "glitch" terminals)
+export function getUnlockedTerminals() {
+    try {
+        const raw = localStorage.getItem(KEY_TERMINALS_UNLOCKED);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+
+export function unlockTerminal(terminalId) {
+    try {
+        const unlocked = getUnlockedTerminals();
+        if (!unlocked.includes(terminalId)) {
+            unlocked.push(terminalId);
+            localStorage.setItem(KEY_TERMINALS_UNLOCKED, JSON.stringify(unlocked));
+        }
+    } catch {}
+}
+
+export function isTerminalUnlocked(terminalId) {
+    return getUnlockedTerminals().includes(terminalId);
+}
+
+export function resetTerminals() {
+    try {
+        localStorage.setItem(KEY_TERMINALS_UNLOCKED, JSON.stringify([]));
+        localStorage.setItem(KEY_TERMINAL_ACCESS, JSON.stringify([]));
+    } catch {}
+}
+
+// Terminal access gating (enter password from previous puzzle to view next)
+export function getTerminalAccess() {
+    try {
+        const raw = localStorage.getItem(KEY_TERMINAL_ACCESS);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+
+export function unlockTerminalAccess(id) {
+    try {
+        const unlocked = getTerminalAccess();
+        if (!unlocked.includes(id)) {
+            unlocked.push(id);
+            localStorage.setItem(KEY_TERMINAL_ACCESS, JSON.stringify(unlocked));
+        }
+    } catch {}
+}
+
+export function hasTerminalAccess(id) {
+    return getTerminalAccess().includes(id);
 }
 
 export function isGodMode() {

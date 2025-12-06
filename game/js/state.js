@@ -1,12 +1,39 @@
 // state.js - Game state management
 
-import { generateMaze, CELL } from './maze.js';
+import { generateMaze, generateLevel11Maze, CELL } from './maze.js';
 import { getDefaultLevelConfig, isGodMode, BOSS_AMMO_STATION_COOLDOWN, isBazookaMode } from './config.js';
 import { updateBoss, pickBazooka, bossExplosion, fireRocketAt, damageCoreAt, loadPrepRoom, spawnBossArena } from './boss.js';
 import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
+
+// Level 11 puzzle patterns (3 presets the paper can show)
+const LEVEL11_PATTERNS = [
+    // X cross
+    [1, 0, 1,
+     0, 1, 0,
+     1, 0, 1],
+    // Corner L
+    [1, 1, 1,
+     1, 0, 0,
+     1, 0, 0],
+    // Plus sign
+    [0, 1, 0,
+     1, 1, 1,
+     0, 1, 0]
+];
+
+// Terminal/glitch configuration
+export const GLITCH_LEVEL_TERMINAL = {
+    1: 1,
+    3: 2,
+    5: 3,
+    8: 4
+};
+export const TERMINAL_ROOM_SIZE = 7;
+export const TERMINAL_ROOM_ENTRANCE = { x: 3, y: 6 };
+export const TERMINAL_ROOM_COMPUTER = { x: 3, y: 1 };
 
 export const MAZE_WIDTH = 30;
 export const MAZE_HEIGHT = 30;
@@ -52,7 +79,13 @@ export const gameState = {
     lives: 3,
     stamina: 100,
     statusMessage: '',
-    isPaused: false
+    isPaused: false,
+    inTerminalRoom: false,
+    currentTerminalId: null,
+    glitchTile: null,
+    savedLevelState: null,
+    mazeDirty: false,
+    terminalRoomOrigin: null
 };
 
 // Screen fade helper used for transitions (fade overlay alpha ramp)
@@ -88,6 +121,294 @@ export function fadeToBlack(seconds = 1.0) {
 export function fadeFromBlack(seconds = 1.0) {
     const now = performance.now();
     gameState.screenFade = { from: 1, to: 0, startAt: now, duration: Math.max(1, seconds * 1000) };
+}
+
+// --- Level 11 helpers ---
+function closeLevel11Paper() {
+    try {
+        const el = document.getElementById('level11-paper-overlay');
+        if (el) el.remove();
+    } catch {}
+    if (gameState.level11) gameState.level11.paperOpen = false;
+}
+
+function closeLevel11FinalNote() {
+    try {
+        const el = document.getElementById('level11-finale-overlay');
+        if (el) el.remove();
+    } catch {}
+    if (gameState.level11) gameState.level11.finalNoteOpen = false;
+}
+
+function triggerLevel11Credits() {
+    if (!gameState.level11 || gameState.level11.creditsShown) return;
+    gameState.level11.creditsShown = true;
+    gameState.isPaused = true;
+    gameState.inputLocked = true;
+    fadeToBlack(1.2);
+    setTimeout(() => {
+        const overlay = document.getElementById('creditsOverlay');
+        if (overlay) {
+            overlay.style.display = 'block';
+            overlay.style.opacity = '0';
+            overlay.style.transition = 'opacity 2s ease';
+            overlay.style.opacity = '1';
+        }
+        import('./config.js').then(mod => {
+            if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
+        }).catch(() => {});
+    }, 900);
+}
+
+function showLevel11FinalNote() {
+    if (!gameState.level11) return;
+    closeLevel11FinalNote();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'level11-finale-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        color: #f5f5f5;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: rgba(14, 14, 22, 0.95);
+        border: 2px solid #6bc1ff;
+        box-shadow: 0 0 28px rgba(107,193,255,0.4);
+        padding: 18px 20px;
+        border-radius: 12px;
+        min-width: 260px;
+        text-align: center;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = 'A Final Note';
+    title.style.cssText = 'font-weight: bold; letter-spacing: 1px; margin-bottom: 10px;';
+    panel.appendChild(title);
+
+    const body = document.createElement('div');
+    body.innerHTML = 'EchoMaze 2 coming soon<br/>This is your fault. Fix it.';
+    body.style.cssText = 'margin-bottom: 14px; line-height: 1.3;';
+    panel.appendChild(body);
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Close';
+    btn.style.cssText = `
+        width: 100%;
+        padding: 10px 12px;
+        background: #6bc1ff;
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+    `;
+    btn.addEventListener('click', () => {
+        closeLevel11FinalNote();
+        triggerLevel11Credits();
+    });
+    panel.appendChild(btn);
+
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closeLevel11FinalNote();
+            triggerLevel11Credits();
+        }
+    });
+
+    document.body.appendChild(overlay);
+    gameState.level11.finalNoteOpen = true;
+}
+
+function showLevel11Paper() {
+    if (!gameState.level11) return;
+    closeLevel11Paper();
+    const pattern = gameState.level11.puzzleSolution || LEVEL11_PATTERNS[0];
+    const overlay = document.createElement('div');
+    overlay.id = 'level11-paper-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        color: #e6ff4f;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: rgba(12, 12, 12, 0.92);
+        border: 2px solid #e6ff4f;
+        box-shadow: 0 0 30px rgba(230,255,79,0.35);
+        padding: 18px 20px;
+        border-radius: 12px;
+        min-width: 260px;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = 'Pattern Note';
+    title.style.cssText = 'font-weight: bold; letter-spacing: 1px; margin-bottom: 12px; text-align: center;';
+    panel.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: repeat(3, 48px); gap: 10px; justify-content: center;';
+    pattern.forEach((cell, idx) => {
+        const c = document.createElement('div');
+        c.style.cssText = `
+            height: 48px;
+            border-radius: 8px;
+            background: ${cell ? '#e6ff4f' : '#1a1a1a'};
+            box-shadow: ${cell ? '0 0 12px rgba(230,255,79,0.7)' : 'inset 0 0 6px rgba(255,255,255,0.08)'};
+            border: 1px solid ${cell ? '#f5ff9c' : '#333'};
+        `;
+        c.title = `Cell ${idx + 1}`;
+        grid.appendChild(c);
+    });
+    panel.appendChild(grid);
+
+    const close = document.createElement('button');
+    close.textContent = 'Close (click)';
+    close.style.cssText = `
+        margin-top: 16px;
+        width: 100%;
+        padding: 10px 12px;
+        background: #e6ff4f;
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+    `;
+    close.addEventListener('click', closeLevel11Paper);
+    panel.appendChild(close);
+
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeLevel11Paper();
+    });
+
+    document.body.appendChild(overlay);
+    gameState.level11.paperOpen = true;
+}
+
+function initLevel11State(level11Data = {}) {
+    const patternIndex = Math.floor(Math.random() * LEVEL11_PATTERNS.length);
+    const puzzleSolution = LEVEL11_PATTERNS[patternIndex];
+    const puzzleState = Array(9).fill(0);
+
+    gameState.level11 = {
+        data: level11Data,
+        patternIndex,
+        puzzleSolution,
+        puzzleState,
+        puzzleSolved: false,
+        greenKeyAvailable: false,
+        hasGreenKey: false,
+        hasYellowKey: false,
+        flashlightFound: false,
+        flashlightOn: false,
+        yellowKeyPos: level11Data?.rooms?.dark?.darkRoom?.yellowKey,
+        bats: [],
+        paperOpen: false,
+        currentRoom: level11Data?.spawnRoom || 'entry',
+        greenKeyPickedUp: false,
+        finalNoteRead: false,
+        finalNoteOpen: false,
+        creditsShown: false,
+        flashlightDir: { dx: 0, dy: -1 }
+    };
+
+    // start in entry hallway
+    loadLevel11Room(gameState.level11.currentRoom, 'default', false);
+    // Explicitly clear generators and traps for the custom level
+    gameState.generators = [];
+    gameState.zapTraps = 0;
+    closeLevel11Paper();
+    closeLevel11FinalNote();
+}
+
+function loadLevel11Room(name, spawnLabel = 'default', fade = true) {
+    if (!gameState.level11 || !gameState.level11.data?.rooms) return;
+    const room = gameState.level11.data.rooms[name];
+    if (!room) return;
+    if (fade) fadeToBlack(0.35);
+    // Copy grid to avoid shared mutations
+    const copy = room.grid.map(row => row.slice());
+    gameState.maze = copy;
+    gameState.mazeDirty = true;
+    gameState.level11.currentRoom = name;
+
+    const spawn = room.spawnPoints?.[spawnLabel] || room.spawnPoints?.default || { x: 1, y: 1 };
+    gameState.player.x = spawn.x;
+    gameState.player.y = spawn.y;
+
+    // Handle room-specific setup
+    if (name === 'dark') {
+        const bats = (room.darkRoom?.bats || []).map((b, idx) => ({
+            id: `bat_${idx}`,
+            x: b.x,
+            y: b.y,
+            fx: b.x + 0.5,
+            fy: b.y + 0.5,
+            dir: { dx: 0, dy: 0 },
+            speed: 2.3,
+            nextTurnAt: 0,
+            alive: true,
+            exposedAt: 0
+        }));
+        gameState.level11.bats = bats;
+        gameState.level11.yellowKeyPos = room.darkRoom?.yellowKey;
+    } else {
+        gameState.level11.bats = [];
+    }
+
+    // Keep flashlight pickup pos when in dark room
+    gameState.level11.flashlightPos = room.darkRoom?.flashlight;
+
+    if (fade) setTimeout(() => fadeFromBlack(0.35), 60);
+}
+
+function resetLevel11Puzzle() {
+    if (!gameState.level11) return;
+    gameState.level11.puzzleState = Array(9).fill(0);
+    gameState.level11.puzzleSolved = false;
+}
+
+function toggleLevel11PuzzleTile(tileIndex) {
+    if (!gameState.level11 || tileIndex < 0 || tileIndex >= 9) return;
+    const current = gameState.level11.puzzleState[tileIndex] || 0;
+    gameState.level11.puzzleState[tileIndex] = current ? 0 : 1;
+}
+
+function evaluateLevel11Puzzle() {
+    if (!gameState.level11) return;
+    const solved = gameState.level11.puzzleState.every((v, i) => v === gameState.level11.puzzleSolution[i]);
+    if (solved && !gameState.level11.puzzleSolved) {
+        gameState.level11.puzzleSolved = true;
+        gameState.level11.greenKeyAvailable = true;
+        setStatusMessage('Correct! Find the green key in the hub.', 2200);
+    }
+}
+
+export function toggleLevel11Flashlight() {
+    if (!gameState.level11 || !gameState.level11.flashlightFound) {
+        setStatusMessage('You need the flashlight first.');
+        return;
+    }
+    gameState.level11.flashlightOn = !gameState.level11.flashlightOn;
+    setStatusMessage(gameState.level11.flashlightOn ? 'Flashlight ON.' : 'Flashlight OFF.', 1200);
 }
 
 // Simple dialogue helper that sequences status messages
@@ -168,6 +489,13 @@ export function initGame() {
         gameState.textSequenceCallback = null;
     }
     gameState.prepPickupLocked = false;
+    
+    // Level 11: Custom level setup
+    gameState.isLevel11 = gameState.currentLevel === 11;
+    gameState.level11JumpDisabled = gameState.isLevel11;
+    gameState.level11ShieldDisabled = gameState.isLevel11;
+    if (!gameState.isLevel11) closeLevel11Paper();
+    
     let seed = 1;
     let genCount = 3;
     if (gameState.mode === 'endless') {
@@ -184,11 +512,33 @@ export function initGame() {
         genCount = gameState.levelConfig.generatorCount || 3;
         gameState.difficulty = 'normal';
     }
-    const includeTelepads = (gameState.mode === 'endless') || (gameState.currentLevel >= 5);
-    const mazeData = generateMaze(seed, genCount, includeTelepads);
+
+    // Level 11 uses a bespoke layout and no standard enemies/generators
+    if (gameState.isLevel11) {
+        gameState.levelConfig = { generatorCount: 0, enemyEnabled: false, flyingPig: false, seeker: false, batter: false, mortar: false, seed: 11 };
+        seed = 11;
+        genCount = 0;
+    }
+
+    const includeTelepads = gameState.isLevel11 ? false : ((gameState.mode === 'endless') || (gameState.currentLevel >= 5));
+    
+    // Use custom Level 11 maze if applicable
+    let mazeData;
+    if (gameState.isLevel11) {
+        mazeData = generateLevel11Maze();
+    } else {
+        mazeData = generateMaze(seed, genCount, includeTelepads);
+    }
+    
     gameState.maze = mazeData.grid;
     gameState.generators = mazeData.generators;
     gameState.teleportPads = (mazeData.telepads || []).map((p, idx) => ({ ...p, id: idx, pair: idx === 0 ? 1 : 0 }));
+    gameState.glitchTile = null;
+    gameState.inTerminalRoom = false;
+    gameState.currentTerminalId = null;
+    gameState.savedLevelState = null;
+    gameState.mazeDirty = false;
+    gameState.terminalRoomOrigin = null;
     // Zap traps reset
     gameState.zapTraps = 0;
     gameState.traps = [];
@@ -229,21 +579,25 @@ export function initGame() {
     gameState.enemies = [];
     gameState.enemiesFrozenUntil = 0;
     gameState.playerInvincibleUntil = 0;
-    
-    if (gameState.levelConfig.enemyEnabled) {
-        spawnInitialEnemy();
-    }
-    if (gameState.levelConfig.flyingPig) {
-        spawnFlyingPig();
-    }
-    if (gameState.levelConfig.seeker) {
-        spawnSeeker();
-    }
-    if (gameState.levelConfig.batter) {
-        spawnBatter();
-    }
-    if (gameState.levelConfig.mortar) {
-        spawnMortar();
+
+    if (gameState.isLevel11) {
+        initLevel11State(mazeData.level11 || {});
+    } else {
+        if (gameState.levelConfig.enemyEnabled) {
+            spawnInitialEnemy();
+        }
+        if (gameState.levelConfig.flyingPig) {
+            spawnFlyingPig();
+        }
+        if (gameState.levelConfig.seeker) {
+            spawnSeeker();
+        }
+        if (gameState.levelConfig.batter) {
+            spawnBatter();
+        }
+        if (gameState.levelConfig.mortar) {
+            spawnMortar();
+        }
     }
     // Player stun state
     gameState.playerStunned = false;
@@ -552,10 +906,10 @@ export function movePlayer(dx, dy, currentTime) {
                     // Mark as boss victory for special handling
                     gameState.bossVictory = true;
                     
-                    // Fade to black over 2 seconds
+                    // Fade to black over 2 seconds and stay black until menu
                     fadeToBlack(2.0);
                     
-                    // After fade completes, trigger boss victory overlay
+                    // After fade completes, trigger boss victory overlay (keep black)
                     setTimeout(() => {
                         try { finishRun(performance.now()); } catch {}
                         gameState.gameStatus = 'won';
@@ -643,6 +997,9 @@ export function movePlayer(dx, dy, currentTime) {
     }
     gameState.player.x = targetX;
     gameState.player.y = targetY;
+    if (gameState.isLevel11 && gameState.level11 && (dx !== 0 || dy !== 0)) {
+        gameState.level11.flashlightDir = { dx: Math.sign(dx), dy: Math.sign(dy) };
+    }
     // Throttled step sound for movement feedback (respect movementAudio setting)
     if (!gameState._lastStepAt || currentTime - gameState._lastStepAt > 120) {
         if (!gameState.settings || gameState.settings.movementAudio !== false) {
@@ -655,11 +1012,30 @@ export function movePlayer(dx, dy, currentTime) {
         triggerStaminaCooldown(currentTime);
         gameState.isSprinting = false;
     }
+
+    // Interaction prompts for glitch/terminal
+    if (!gameState.statusMessage) {
+        if (gameState.inTerminalRoom && gameState.terminalRoomOrigin) {
+            const origin = gameState.terminalRoomOrigin;
+            const entrance = { x: origin.x + TERMINAL_ROOM_ENTRANCE.x, y: origin.y + TERMINAL_ROOM_ENTRANCE.y };
+            const computer = { x: origin.x + TERMINAL_ROOM_COMPUTER.x, y: origin.y + TERMINAL_ROOM_COMPUTER.y };
+            if (gameState.player.x === computer.x && gameState.player.y === computer.y) {
+                setStatusMessage('Press E to access the terminal.', 1800);
+            } else if (gameState.player.x === entrance.x && gameState.player.y === entrance.y) {
+                setStatusMessage('Press E to exit the glitch.', 1800);
+            }
+        } else if (gameState.glitchTile && gameState.player.x === gameState.glitchTile.x && gameState.player.y === gameState.glitchTile.y) {
+            setStatusMessage('Press E to enter the glitch.', 1800);
+        }
+    }
     
     return true;
 }
 
 export async function performJump(dx, dy, currentTime) {
+    // Level 11: Jump is disabled
+    if (gameState.level11JumpDisabled) return false;
+    
     if (!gameState.isJumpCharging) return false;
     
     const landingX = gameState.player.x + dx * 2;
@@ -852,6 +1228,9 @@ export const BLOCK_MAX_DURATION_MS = 2000; // full stamina lasts 2s
 export const BLOCK_DURABILITY = 1.0; // simple durability threshold
 
 export function startBlock(currentTime) {
+    // Level 11: Shield is disabled
+    if (gameState.level11ShieldDisabled) return;
+    
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen || gameState.playerStunned) return;
     if (gameState.shieldBrokenLock && (gameState.stamina < 100)) return; // lock after break until full
     const staminaPct = Math.max(0, Math.min(100, gameState.stamina));
@@ -1389,6 +1768,76 @@ export function spawnMortar() {
     gameState.enemies.push(m);
 }
 
+function updateLevel11Enemies(currentTime) {
+    if (!gameState.level11) return;
+    if (gameState.level11.currentRoom !== 'dark') return;
+
+    const bats = gameState.level11.bats || [];
+    const px = gameState.player.x + 0.5;
+    const py = gameState.player.y + 0.5;
+
+    const passable = (x, y) => gameState.maze[y]?.[x] !== CELL.WALL;
+
+    for (const bat of bats) {
+        if (!bat.alive) continue;
+        const dt = Math.max(0, (currentTime - (bat.lastUpdate || currentTime)) / 1000);
+        bat.lastUpdate = currentTime;
+
+        if (!bat.dir || currentTime >= (bat.nextTurnAt || 0)) {
+            const dirs = [ { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 } ];
+            const options = dirs
+                .filter(d => passable(bat.x + d.dx, bat.y + d.dy))
+                .map(d => ({ ...d, dist: Math.hypot((bat.x + d.dx + 0.5) - px, (bat.y + d.dy + 0.5) - py) }));
+            if (options.length) {
+                options.sort((a, b) => a.dist - b.dist);
+                const stalk = Math.random() < 0.8;
+                const pick = stalk ? options[0] : options[Math.floor(Math.random() * options.length)];
+                bat.dir = { dx: pick.dx, dy: pick.dy };
+            } else {
+                bat.dir = { dx: 0, dy: 0 };
+            }
+            bat.nextTurnAt = currentTime + 500 + Math.random() * 320;
+        }
+
+        const step = (bat.speed || 2.3) * dt;
+        const nx = bat.fx + (bat.dir?.dx || 0) * step;
+        const ny = bat.fy + (bat.dir?.dy || 0) * step;
+        const gx = Math.floor(nx);
+        const gy = Math.floor(ny);
+        if (passable(gx, gy)) {
+            bat.fx = nx; bat.fy = ny; bat.x = gx; bat.y = gy;
+        } else {
+            bat.dir = { dx: 0, dy: 0 };
+            bat.nextTurnAt = currentTime;
+        }
+
+        const dist = Math.hypot(bat.fx - px, bat.fy - py);
+
+        // Flashlight exposure kills the player after 0.5s on target
+        if (gameState.level11.flashlightOn && dist <= 1.5) {
+            bat.exposedAt = bat.exposedAt || currentTime;
+            if (!gameState.godMode && currentTime - bat.exposedAt >= 500) {
+                gameState.lives = 0;
+                gameState.deathCause = 'bat_flashlight';
+                gameState.gameStatus = 'lost';
+                setStatusMessage('The bat strikes when lit.');
+            }
+        } else {
+            bat.exposedAt = 0;
+        }
+
+        // Physical collision is lethal
+        if (dist < 0.65 && !gameState.godMode) {
+            gameState.lives = 0;
+            gameState.deathCause = 'bat';
+            gameState.gameStatus = 'lost';
+            setStatusMessage('A bat shredded you.');
+        }
+    }
+
+    gameState.level11.bats = bats.filter(b => b.alive);
+}
+
 function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
@@ -1581,6 +2030,12 @@ function findReachableDropTile(distField, fx, fy) {
 
 export function updateEnemies(currentTime) {
     if (!gameState.maze || gameState.gameStatus !== 'playing') return;
+
+    // Level 11 uses custom bat AI and flashlight rules
+    if (gameState.isLevel11) {
+        updateLevel11Enemies(currentTime);
+        return;
+    }
 
     // BAZOOKA MODE: Speed multiplier for all enemies (makes them faster and more aggressive)
     const bazookaSpeedMult = isBazookaMode() ? 1.4 : 1.0; // 40% faster in bazooka mode
@@ -3326,8 +3781,116 @@ function handleBatterHit(currentTime) {
     }
 }
 
+function attemptLevel11Interaction(currentTime) {
+    if (!gameState.isLevel11 || !gameState.level11 || gameState.gameStatus !== 'playing') return false;
+
+    const rooms = gameState.level11.data?.rooms || {};
+    const room = rooms[gameState.level11.currentRoom];
+    if (!room) return false;
+
+    const px = gameState.player.x;
+    const py = gameState.player.y;
+
+    const at = (pos) => pos && pos.x === px && pos.y === py;
+
+    // Handle doors in current room
+    if (Array.isArray(room.doors)) {
+        const door = room.doors.find(d => at(d.pos));
+        if (door) {
+            // Lock checks
+            if (door.lock === 'green' && !gameState.level11.hasGreenKey) {
+                setStatusMessage('Locked. Need the green key.');
+                return true;
+            }
+            if (door.lock === 'yellow' && !gameState.level11.hasYellowKey) {
+                setStatusMessage('Locked. Need the yellow key.');
+                return true;
+            }
+            loadLevel11Room(door.target, door.spawn || 'default');
+            return true;
+        }
+    }
+
+    // Room-specific interactions
+    if (gameState.level11.currentRoom === 'entry') {
+        setStatusMessage('A silent hallway. Door leads onward.');
+        return true;
+    }
+
+    if (gameState.level11.currentRoom === 'hub') {
+        // Green key pickup if available
+        const drop = room.greenKeyDrop;
+        if (gameState.level11.greenKeyAvailable && !gameState.level11.hasGreenKey && drop && at(drop)) {
+            gameState.level11.hasGreenKey = true;
+            gameState.level11.greenKeyAvailable = false;
+            setStatusMessage('Green key acquired. Left door unlocked.');
+            return true;
+        }
+        setStatusMessage('Choose a door.');
+        return true;
+    }
+
+    if (gameState.level11.currentRoom === 'puzzle') {
+        // Pattern note
+        if (at(room.puzzle?.note)) {
+            showLevel11Paper();
+            setStatusMessage('Pattern note opened.');
+            return true;
+        }
+        // Puzzle tiles
+        const tile = room.puzzle?.tiles?.find(t => at(t));
+        if (tile) {
+            toggleLevel11PuzzleTile(tile.index);
+            evaluateLevel11Puzzle();
+            const lit = gameState.level11.puzzleState.filter(Boolean).length;
+            setStatusMessage(`Toggled tile (${lit}/9 lit).`);
+            return true;
+        }
+        setStatusMessage('Solve the pattern to earn the green key.');
+        return true;
+    }
+
+    if (gameState.level11.currentRoom === 'dark') {
+        if (!gameState.level11.flashlightFound && room.darkRoom?.flashlight && at(room.darkRoom.flashlight)) {
+            gameState.level11.flashlightFound = true;
+            setStatusMessage('Flashlight picked up. Toggle with F.');
+            return true;
+        }
+        const yk = gameState.level11.yellowKeyPos;
+        if (!gameState.level11.hasYellowKey && yk && at(yk)) {
+            gameState.level11.hasYellowKey = true;
+            setStatusMessage('Yellow key acquired. Top door unlocked.');
+            return true;
+        }
+        setStatusMessage('It is dark. Move carefully.');
+        return true;
+    }
+
+    if (gameState.level11.currentRoom === 'finale') {
+        if (at(room.note)) {
+            if (!gameState.level11.finalNoteRead) {
+                gameState.level11.finalNoteRead = true;
+            }
+            showLevel11FinalNote();
+            setStatusMessage('The note fades as you read.');
+            return true;
+        }
+        setStatusMessage('A lone note rests here.');
+        return true;
+    }
+
+    setStatusMessage('Nothing to interact with here.');
+    return true;
+}
+
 export function attemptGeneratorInteraction(currentTime) {
     if (gameState.isGeneratorUIOpen || gameState.gameStatus !== 'playing' || gameState.playerStunned) return;
+
+    // Level 11 uses bespoke interactions (puzzle, keys, flashlight)
+    if (gameState.isLevel11) {
+        attemptLevel11Interaction(currentTime);
+        return;
+    }
     
     const index = gameState.generators.findIndex(gen => {
         if (gen.completed) return false;
@@ -3474,6 +4037,187 @@ export function attemptSkillCheck() {
     }
 }
 
+// --- Glitch/Terminal helpers ---
+function findExitTile() {
+    for (let y = 0; y < MAZE_HEIGHT; y++) {
+        for (let x = 0; x < MAZE_WIDTH; x++) {
+            if (gameState.maze[y][x] === CELL.EXIT) return { x, y };
+        }
+    }
+    return { x: MAZE_WIDTH - 2, y: MAZE_HEIGHT - 2 };
+}
+
+function seededRng(seed) {
+    let t = seed >>> 0;
+    return () => {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ t >>> 15, 1 | t);
+        r ^= r + Math.imul(r ^ r >>> 7, 61 | r);
+        return ((r ^ r >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+function findGlitchSpawnTile() {
+    const exitPos = findExitTile();
+    const startPos = { x: 1, y: 1 };
+    const steps = [ { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 } ];
+    const rng = seededRng((gameState.levelConfig?.seed || gameState.currentLevel || 1) ^ 0x9e3779b9);
+    const candidates = [];
+
+    for (let y = 1; y < MAZE_HEIGHT - 1; y++) {
+        for (let x = 1; x < MAZE_WIDTH - 1; x++) {
+            const cell = gameState.maze[y][x];
+            if (cell === CELL.EXIT || cell === CELL.GENERATOR || cell === CELL.TELEPAD || cell === CELL.TERMINAL || cell === CELL.GLITCH) continue;
+            // Require at least one walkable neighbor so the tile is reachable
+            const hasNeighbor = steps.some(s => {
+                const nx = x + s.dx, ny = y + s.dy;
+                const nCell = gameState.maze[ny][nx];
+                return nCell === CELL.EMPTY || nCell === CELL.EXIT || nCell === CELL.TELEPAD;
+            });
+            if (!hasNeighbor) continue;
+            // Prefer spots far from both start and exit for variety
+            const distExit = Math.abs(x - exitPos.x) + Math.abs(y - exitPos.y);
+            const distStart = Math.abs(x - startPos.x) + Math.abs(y - startPos.y);
+            const score = distExit + distStart;
+            candidates.push({ x, y, score, isWall: cell === CELL.WALL });
+        }
+    }
+
+    if (!candidates.length) return null;
+
+    // Favor farthest locations; small bias toward walls for visual glitching
+    candidates.sort((a, b) => {
+        const biasA = a.isWall ? 0.5 : 0;
+        const biasB = b.isWall ? 0.5 : 0;
+        return (b.score + biasB) - (a.score + biasA);
+    });
+    const topCount = Math.min(25, candidates.length);
+    const pick = candidates[Math.floor(rng() * topCount)];
+    return pick ? { x: pick.x, y: pick.y } : null;
+}
+
+export function spawnGlitchTile() {
+    if (gameState.glitchTile) return;
+    if (!GLITCH_LEVEL_TERMINAL[gameState.currentLevel]) return;
+    const spot = findGlitchSpawnTile();
+    if (!spot) return;
+    gameState.maze[spot.y][spot.x] = CELL.GLITCH;
+    gameState.glitchTile = { ...spot };
+    gameState.mazeDirty = true;
+    setStatusMessage('A glitch ripples through the wall. Press E on the glitching tile.', 5000);
+}
+
+function buildTerminalRoomGrid() {
+    const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.WALL));
+    const offsetX = Math.floor((MAZE_WIDTH - TERMINAL_ROOM_SIZE) / 2);
+    const offsetY = Math.floor((MAZE_HEIGHT - TERMINAL_ROOM_SIZE) / 2);
+    for (let y = 0; y < TERMINAL_ROOM_SIZE; y++) {
+        for (let x = 0; x < TERMINAL_ROOM_SIZE; x++) {
+            const worldX = offsetX + x;
+            const worldY = offsetY + y;
+            const isBorder = x === 0 || y === 0 || x === TERMINAL_ROOM_SIZE - 1 || y === TERMINAL_ROOM_SIZE - 1;
+            grid[worldY][worldX] = isBorder ? CELL.WALL : CELL.EMPTY;
+        }
+    }
+    const entrance = { x: offsetX + TERMINAL_ROOM_ENTRANCE.x, y: offsetY + TERMINAL_ROOM_ENTRANCE.y };
+    const computer = { x: offsetX + TERMINAL_ROOM_COMPUTER.x, y: offsetY + TERMINAL_ROOM_COMPUTER.y };
+    grid[entrance.y][entrance.x] = CELL.GLITCH;
+    grid[computer.y][computer.x] = CELL.TERMINAL;
+    return { grid, origin: { x: offsetX, y: offsetY }, entrance, computer };
+}
+
+export function enterTerminalRoom(currentTime = performance.now()) {
+    if (gameState.inTerminalRoom) return false;
+    if (!gameState.glitchTile) return false;
+    const requiredTerminal = GLITCH_LEVEL_TERMINAL[gameState.currentLevel];
+    if (!requiredTerminal) return false;
+    if (gameState.player.x !== gameState.glitchTile.x || gameState.player.y !== gameState.glitchTile.y) return false;
+
+    const room = buildTerminalRoomGrid();
+    gameState.savedLevelState = {
+        maze: gameState.maze,
+        player: { ...gameState.player },
+        enemies: gameState.enemies,
+        projectiles: gameState.projectiles,
+        traps: gameState.traps,
+        teleportPads: gameState.teleportPads,
+        generators: gameState.generators,
+        statusMessage: gameState.statusMessage,
+        glitchTile: gameState.glitchTile,
+        bfs: gameState._bfsCache,
+        enemiesFrozenUntil: gameState.enemiesFrozenUntil
+    };
+
+    gameState.maze = room.grid;
+    gameState.player = { ...room.entrance };
+    gameState.enemies = [];
+    gameState.projectiles = [];
+    gameState.traps = [];
+    gameState.teleportPads = [];
+    gameState.generators = [];
+    gameState._bfsCache = null;
+    gameState.enemiesFrozenUntil = Infinity;
+    gameState.inTerminalRoom = true;
+    gameState.currentTerminalId = requiredTerminal;
+    gameState.glitchTile = { ...room.entrance };
+    gameState.terminalRoomOrigin = room.origin;
+    gameState.mazeDirty = true;
+    fadeToBlack(0.5);
+    setTimeout(() => fadeFromBlack(0.6), 600);
+    setStatusMessage('Systems frozen. Terminal ready.', 4000);
+    return true;
+}
+
+export function exitTerminalRoom() {
+    if (!gameState.inTerminalRoom || !gameState.savedLevelState) return false;
+    const saved = gameState.savedLevelState;
+    gameState.maze = saved.maze;
+    gameState.player = { ...saved.player };
+    gameState.enemies = saved.enemies || [];
+    gameState.projectiles = saved.projectiles || [];
+    gameState.traps = saved.traps || [];
+    gameState.teleportPads = saved.teleportPads || [];
+    gameState.generators = saved.generators || gameState.generators;
+    gameState.statusMessage = saved.statusMessage || '';
+    gameState.glitchTile = null; // Remove glitch until level restart
+    gameState._bfsCache = saved.bfs || null;
+    gameState.enemiesFrozenUntil = performance.now() + 500;
+    gameState.inTerminalRoom = false;
+    gameState.currentTerminalId = null;
+    gameState.terminalRoomOrigin = null;
+    gameState.savedLevelState = null;
+    gameState.mazeDirty = true;
+    fadeToBlack(0.4);
+    setTimeout(() => fadeFromBlack(0.5), 450);
+    setStatusMessage('Back to the maze.', 2500);
+    return true;
+}
+
+export function attemptTerminalInteraction(currentTime = performance.now()) {
+    // In-room interactions: glitch exit or terminal access
+    if (gameState.inTerminalRoom) {
+        const origin = gameState.terminalRoomOrigin || { x: 0, y: 0 };
+        const entrance = { x: origin.x + TERMINAL_ROOM_ENTRANCE.x, y: origin.y + TERMINAL_ROOM_ENTRANCE.y };
+        const computer = { x: origin.x + TERMINAL_ROOM_COMPUTER.x, y: origin.y + TERMINAL_ROOM_COMPUTER.y };
+        if (gameState.player.x === entrance.x && gameState.player.y === entrance.y) {
+            return exitTerminalRoom();
+        }
+        if (gameState.player.x === computer.x && gameState.player.y === computer.y) {
+            if (typeof window !== 'undefined' && typeof window.showTerminalOverlay === 'function') {
+                window.showTerminalOverlay(gameState.currentTerminalId, { lockedToSingle: true, fromRoom: true });
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // Maze interaction: enter glitch tile after generators
+    if (gameState.glitchTile && gameState.player.x === gameState.glitchTile.x && gameState.player.y === gameState.glitchTile.y) {
+        return enterTerminalRoom(currentTime);
+    }
+    return false;
+}
+
 export function completeGenerator() {
     if (gameState.activeGeneratorIndex === null) return;
     
@@ -3505,6 +4249,8 @@ export function completeGenerator() {
         setTimeout(() => {
             setStatusMessage('All generators repaired! The exit is unlocked.', 5000);
         }, 1000);
+        // Spawn glitch wall for terminal access on specific levels
+        spawnGlitchTile();
     }
 }
 

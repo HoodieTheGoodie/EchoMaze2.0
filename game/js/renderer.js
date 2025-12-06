@@ -141,6 +141,32 @@ function buildMazeBase() {
                 }
                 
                 bctx.restore();
+            } else if (cellType === CELL.GLITCH) {
+                // Glitching wall tile (use noisy stripes)
+                bctx.fillStyle = '#120012';
+                bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                const grad = bctx.createLinearGradient(px, py, px + CELL_SIZE, py + CELL_SIZE);
+                grad.addColorStop(0, 'rgba(255,0,255,0.45)');
+                grad.addColorStop(0.5, 'rgba(0,255,255,0.35)');
+                grad.addColorStop(1, 'rgba(255,255,0,0.35)');
+                bctx.fillStyle = grad;
+                bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                bctx.strokeStyle = 'rgba(255,255,255,0.35)';
+                bctx.lineWidth = 1;
+                bctx.beginPath();
+                bctx.moveTo(px, py + CELL_SIZE * 0.25);
+                bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE * 0.35);
+                bctx.moveTo(px, py + CELL_SIZE * 0.65);
+                bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE * 0.55);
+                bctx.stroke();
+            } else if (cellType === CELL.TERMINAL) {
+                // Terminal console pad
+                bctx.fillStyle = '#0f0f18';
+                bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                bctx.fillStyle = '#00f6ff';
+                bctx.fillRect(px + CELL_SIZE * 0.25, py + CELL_SIZE * 0.25, CELL_SIZE * 0.5, CELL_SIZE * 0.5);
+                bctx.fillStyle = '#00151a';
+                bctx.fillRect(px + CELL_SIZE * 0.3, py + CELL_SIZE * 0.3, CELL_SIZE * 0.4, CELL_SIZE * 0.4);
             } else {
                 bctx.fillStyle = FLOOR_COLOR;
                 bctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
@@ -150,9 +176,69 @@ function buildMazeBase() {
     mazeBaseDirty = false;
 }
 
+function drawLevel11Darkness() {
+    if (!canvas || !ctx || !gameState.isLevel11 || !gameState.level11 || gameState.level11.currentRoom !== 'dark') return;
+    const l11 = gameState.level11;
+    
+    // Create darkness overlay layer
+    const darkCanvas = document.createElement('canvas');
+    darkCanvas.width = canvas.width;
+    darkCanvas.height = canvas.height;
+    const darkCtx = darkCanvas.getContext('2d');
+    
+    // Fill with solid black
+    darkCtx.fillStyle = 'rgba(0,0,0,0.95)';
+    darkCtx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Use destination-out to "cut holes" in the darkness
+    darkCtx.globalCompositeOperation = 'destination-out';
+    
+    const px = (gameState.player.x + 0.5) * CELL_SIZE;
+    const py = (gameState.player.y + 0.5) * CELL_SIZE;
+
+    // Always give a small aura around the player
+    const baseR = CELL_SIZE * 0.85;
+    const aura = darkCtx.createRadialGradient(px, py, 0, px, py, baseR);
+    aura.addColorStop(0, 'rgba(0,0,0,1)');
+    aura.addColorStop(0.7, 'rgba(0,0,0,0.7)');
+    aura.addColorStop(1, 'rgba(0,0,0,0)');
+    darkCtx.fillStyle = aura;
+    darkCtx.beginPath();
+    darkCtx.arc(px, py, baseR, 0, Math.PI * 2);
+    darkCtx.fill();
+
+    // Flashlight cone
+    if (l11.flashlightFound && l11.flashlightOn) {
+        const dir = l11.flashlightDir || { dx: 0, dy: -1 };
+        const normDx = dir.dx || 0;
+        const normDy = dir.dy || 0;
+        const ang = Math.atan2(normDy, normDx);
+        const beamLen = CELL_SIZE * 2.8;
+        const beamWidth = CELL_SIZE * 1.6;
+        
+        darkCtx.save();
+        darkCtx.translate(px, py);
+        darkCtx.rotate(ang);
+        
+        // Create flashlight beam gradient
+        const beam = darkCtx.createLinearGradient(0, 0, beamLen, 0);
+        beam.addColorStop(0, 'rgba(0,0,0,0.9)');
+        beam.addColorStop(0.3, 'rgba(0,0,0,1)');
+        beam.addColorStop(1, 'rgba(0,0,0,0)');
+        darkCtx.fillStyle = beam;
+        darkCtx.fillRect(0, -beamWidth / 2, beamLen, beamWidth);
+        
+        darkCtx.restore();
+    }
+
+    // Draw the darkness layer on top of the main canvas
+    ctx.drawImage(darkCanvas, 0, 0);
+}
+
 export function render(currentTime) {
     // Safety check
     if (!canvas || !ctx || !gameState.maze) return;
+    if (gameState.mazeDirty) { mazeBaseDirty = true; gameState.mazeDirty = false; }
     if (lastMazeRef !== gameState.maze) { mazeBaseDirty = true; lastMazeRef = gameState.maze; }
     if (!mazeBaseCanvas || mazeBaseDirty) buildMazeBase();
     // Screen shake if active
@@ -185,6 +271,7 @@ export function render(currentTime) {
     }
     drawShieldParticles(currentTime);
     drawPlayer();
+    drawLevel11Darkness();
     drawUI();
     
     if (gameState.isGeneratorUIOpen) {
@@ -272,6 +359,24 @@ export function render(currentTime) {
 }
 
 function drawEnemies(currentTime) {
+    if (gameState.isLevel11 && gameState.level11) {
+        const bats = gameState.level11.bats || [];
+        ctx.save();
+        bats.forEach(b => {
+            const px = b.fx * CELL_SIZE;
+            const py = b.fy * CELL_SIZE;
+            ctx.fillStyle = '#ffdd55';
+            ctx.beginPath();
+            ctx.arc(px, py, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#221700';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
+        ctx.restore();
+        return;
+    }
+
     if (!gameState.enemies) return;
     // Helpers for smooth facing and FOV rays
     const angleLerp = (a, b, t) => {
@@ -1563,17 +1668,24 @@ function drawBossArena(currentTime) {
 
     // Virus monologue overlay bar (appears after door fade; replaces boss HP region)
     if (b.defeated && (b.virusDialogueActive || b.virusDialogueFinished) && b.virusDialogueLines) {
-        const barW = canvas.width * 0.75; const barH = 32; const bx = (canvas.width - barW)/2; const by = 12;
         ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.fillRect(bx - 6, by - 6, barW + 12, barH + 12);
-        ctx.strokeStyle = '#ffdd33'; ctx.lineWidth = 3; ctx.strokeRect(bx - 6, by - 6, barW + 12, barH + 12);
         const idx = Math.min(b.virusDialogueIndex, b.virusDialogueLines.length - 1);
         const line = b.virusDialogueActive ? b.virusDialogueLines[idx] : (b.virusDialogueFinished ? 'ESCAPE!' : '');
         ctx.font = 'bold 16px Arial';
+        const m = ctx.measureText(line);
+        const barW = Math.min(canvas.width * 0.9, m.width + 28);
+        const barH = 36;
+        const bx = (canvas.width - barW) / 2;
+        const by = 12;
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(bx - 6, by - 6, barW + 12, barH + 12);
+        ctx.strokeStyle = '#ffdd33';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx - 6, by - 6, barW + 12, barH + 12);
         ctx.fillStyle = '#ffdd33';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(line, bx + barW/2, by + barH/2);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(line, bx + barW / 2, by + barH / 2);
         ctx.restore();
     }
 
@@ -1654,6 +1766,80 @@ function drawDynamicMazeOverlays() {
                     }
                 }
             }
+        }
+    }
+
+    // Level 11 overlays (keys, locks, pickups)
+    if (gameState.isLevel11 && gameState.level11 && gameState.level11.data?.rooms) {
+        const l11 = gameState.level11;
+        const room = l11.data.rooms[l11.currentRoom];
+        ctx.save();
+        // Door visibility + lock hints
+        if (room && Array.isArray(room.doors)) {
+            room.doors.forEach(d => {
+                ctx.fillStyle = 'rgba(80,150,255,0.35)';
+                ctx.strokeStyle = 'rgba(20,90,200,0.8)';
+                ctx.lineWidth = 2;
+                ctx.fillRect(d.pos.x * CELL_SIZE, d.pos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                ctx.strokeRect(d.pos.x * CELL_SIZE + 1, d.pos.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+                if (d.lock) {
+                    ctx.fillStyle = d.lock === 'green' ? 'rgba(0,255,120,0.55)' : 'rgba(255,255,0,0.55)';
+                    const pad = CELL_SIZE * 0.18;
+                    ctx.fillRect(d.pos.x * CELL_SIZE + pad, d.pos.y * CELL_SIZE + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                }
+            });
+        }
+        // Hub green key drop
+        if (l11.currentRoom === 'hub') {
+            const drop = room?.greenKeyDrop;
+            if (l11.greenKeyAvailable && !l11.hasGreenKey && drop) {
+                ctx.fillStyle = 'rgba(0,255,120,0.9)';
+                ctx.fillRect(drop.x * CELL_SIZE, drop.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+        }
+        // Puzzle note + tiles
+        if (l11.currentRoom === 'puzzle' && room?.puzzle) {
+            const tiles = room.puzzle.tiles || [];
+            tiles.forEach(t => {
+                const lit = l11.puzzleState?.[t.index];
+                ctx.fillStyle = lit ? 'rgba(0,200,90,0.9)' : 'rgba(200,60,60,0.85)';
+                const pad = CELL_SIZE * 0.12;
+                ctx.fillRect(t.x * CELL_SIZE + pad, t.y * CELL_SIZE + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+                ctx.strokeStyle = lit ? '#0f3d1f' : '#3d0f0f';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(t.x * CELL_SIZE + pad, t.y * CELL_SIZE + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+            });
+            if (room.puzzle.note) {
+                ctx.fillStyle = 'rgba(240,230,120,0.9)';
+                ctx.fillRect(room.puzzle.note.x * CELL_SIZE, room.puzzle.note.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                ctx.strokeStyle = 'rgba(90,80,30,0.9)';
+                ctx.strokeRect(room.puzzle.note.x * CELL_SIZE + 1, room.puzzle.note.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            }
+        }
+        // Dark room pickups
+        if (l11.currentRoom === 'dark') {
+            if (!l11.flashlightFound && room?.darkRoom?.flashlight) {
+                ctx.fillStyle = 'rgba(240,240,120,0.85)';
+                ctx.fillRect(room.darkRoom.flashlight.x * CELL_SIZE, room.darkRoom.flashlight.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+            if (!l11.hasYellowKey && l11.yellowKeyPos) {
+                ctx.fillStyle = 'rgba(255,255,0,0.9)';
+                ctx.fillRect(l11.yellowKeyPos.x * CELL_SIZE, l11.yellowKeyPos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+        }
+        ctx.restore();
+    }
+    // Finale note overlay
+    if (gameState.isLevel11 && gameState.level11 && gameState.level11.currentRoom === 'finale') {
+        const room = gameState.level11.data?.rooms?.finale;
+        if (room?.note) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(240,230,120,0.9)';
+            ctx.fillRect(room.note.x * CELL_SIZE, room.note.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = 'rgba(90,80,30,0.9)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(room.note.x * CELL_SIZE + 1, room.note.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            ctx.restore();
         }
     }
 
@@ -2496,6 +2682,27 @@ function drawUI() {
     const jumpEl = ui.jumpIndicator;
     const streakEl = ui.streak;
     const streakSection = ui.streakSection;
+    
+    // Level 11: Show ERROR text in all UI elements instead of real stats
+    if (gameState.isLevel11) {
+        if (healthEl) healthEl.textContent = '[ERROR]';
+        if (staminaEl) staminaEl.textContent = '[ERROR]';
+        if (staminaFill) staminaFill.style.width = '0%';
+        if (shieldEl) shieldEl.textContent = '[ERROR]';
+        if (generatorsEl) generatorsEl.textContent = '[ERROR]';
+        if (trapsEl) trapsEl.textContent = '[ERROR]';
+        if (timerEl) timerEl.textContent = '[ERROR]';
+        
+        // Also update simplified UI error text
+        const healthSimple = document.getElementById('health-simple');
+        const staminaSimple = document.getElementById('stamina-simple');
+        const shieldSimple = document.getElementById('shield-simple');
+        if (healthSimple) healthSimple.textContent = '[ERROR]';
+        if (staminaSimple) staminaSimple.textContent = '[ERROR]';
+        if (shieldSimple) shieldSimple.textContent = '[ERROR]';
+        
+        return; // Skip normal UI updates
+    }
     
     // Update main health display
     const healthText = gameState.fakeZeroHp ? '0' : '❤️'.repeat(gameState.lives);

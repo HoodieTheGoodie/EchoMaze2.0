@@ -1,11 +1,57 @@
 // main.js - Game loop and initialization
 
-import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition } from './state.js';
+import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom } from './state.js';
+import { completeGenerator } from './state.js';
 import { playLose, playExplosion } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor, isLevel11Unlocked, setLevel11Unlocked, getUnlockedTerminals, unlockTerminal, isTerminalUnlocked, hasTerminalAccess, unlockTerminalAccess } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 import { loadSprites } from './sprites.js';
+
+// Terminal progression/puzzle definitions for glitch-wall access codes
+const TERMINAL_UNLOCK_LEVELS = [1, 3, 5, 8];
+const terminalPuzzles = [
+    {
+        id: 1,
+        unlockLevel: 1,
+        title: 'Terminal 1 — Broken Binary',
+        prompt: 'Binary stream captured from the walls: 01000111 01001100 01001001 01010100 01000011 01001000. Decode to ASCII and enter the code.',
+        hint: '8-bit ASCII → uppercase letters.',
+        answer: 'glitch',
+        reward: 'Password #1 = GLITCH',
+        how: 'Each 8-bit group is an ASCII character; together they spell GLITCH.'
+    },
+    {
+        id: 2,
+        unlockLevel: 3,
+        title: 'Terminal 2 — Encoded Pulse',
+        prompt: 'Data fragment: VmlydXM=. Decode it, then enter the resulting code.',
+        hint: 'Looks like Base64. Lowercase letters.',
+        answer: 'virus',
+        reward: 'Password #2 = VIRUS',
+        how: 'Base64 decode the fragment to reveal VIRUS.'
+    },
+    {
+        id: 3,
+        unlockLevel: 5,
+        title: 'Terminal 3 — Shifted Key',
+        prompt: 'Ciphertext on the monitor: GSCAHG. Undo the shift to recover the code.',
+        hint: 'Caesar shift backward by 2 letters. Lowercase output.',
+        answer: 'escape',
+        reward: 'Password #3 = ESCAPE',
+        how: 'Shift each letter two steps backward (G→E, S→Q... wait, try ROT24). The result is ESCAPE.'
+    },
+    {
+        id: 4,
+        unlockLevel: 8,
+        title: 'Terminal 4 — Hex Dump',
+        prompt: 'Wall core outputs: 65 63 68 6F 6D 61 7A 65. Translate the hex to text and enter it. ⚠️ SAVE THIS CODE — it may be useful later...',
+        hint: 'Hex bytes → ASCII. Lowercase letters. You know this one.',
+        answer: 'echomaze',
+        reward: 'Password #4 = ECHOMAZE',
+        how: 'Each hex pair is an ASCII character; combined they read ECHOMAZE.'
+    }
+];
 
 // Expose gameState to window for background renderer
 window.gameState = gameState;
@@ -72,6 +118,7 @@ function applyUIStyle() {
     const titleEl = document.getElementById('echo-maze-title');
     const gameContainer = document.getElementById('game-container');
     const instructionsEl = document.getElementById('instructions');
+    const staminaSection = document.getElementById('stamina') ? document.getElementById('stamina').parentElement : null;
     
     if (!uiPanel || !gameContainer) return;
     
@@ -182,23 +229,17 @@ function applyUIStyle() {
         if (canvas) {
             canvas.style.order = '1';
         }
-        
-        // Hide health and stamina from right panel in simplified mode
-        const sections = uiPanel.querySelectorAll('.ui-section');
-        sections.forEach((section, index) => {
-            if (index === 0 || index === 1) { // Health and Stamina sections
-                section.style.display = 'none';
-            }
-        });
+
+        // Hide redundant stamina/shield block on the right when simplified UI is active
+        if (staminaSection) staminaSection.style.display = 'none';
     } else {
-        // Default UI: restore original styling completely
+        // Default UI: restore original styling
         gameContainer.style.display = 'flex';
         gameContainer.style.flexDirection = 'column';
         gameContainer.style.alignItems = 'center';
         gameContainer.style.justifyContent = '';
         gameContainer.style.gap = '20px';
         
-        // Reset ui-panel to original CSS styling (remove inline styles)
         uiPanel.style.display = '';
         uiPanel.style.flexDirection = '';
         uiPanel.style.order = '';
@@ -217,6 +258,9 @@ function applyUIStyle() {
         if (leftPanel) {
             leftPanel.remove();
         }
+
+        // Restore stamina/shield section visibility
+        if (staminaSection) staminaSection.style.display = '';
         
         // Show all sections in main panel
         const sections = uiPanel.querySelectorAll('.ui-section');
@@ -229,6 +273,180 @@ function applyUIStyle() {
             canvas.style.order = '';
         }
     }
+}
+
+// --- Terminal overlay helpers ---
+let activeTerminalId = null;
+let terminalOverlayContext = { lockedToSingle: false, fromRoom: false };
+
+function normalizeAnswer(ans) {
+    return (ans || '').trim().toLowerCase();
+}
+
+function getTerminalById(id) {
+    return terminalPuzzles.find(t => t.id === id) || null;
+}
+
+function isTerminalAccessible(terminal) {
+    if (terminalOverlayContext.lockedToSingle) return true;
+    const unlocked = getUnlockedLevel();
+    return unlocked >= terminal.unlockLevel;
+}
+
+function isTerminalSolved(id) {
+    return getUnlockedTerminals().includes(id);
+}
+
+function renderTerminalList(targetId = null) {
+    const list = document.getElementById('terminalList');
+    const pills = document.getElementById('terminalPills');
+    const solved = getUnlockedTerminals();
+    const unlockedLevel = getUnlockedLevel();
+    if (!list || !pills) return;
+    list.innerHTML = '';
+    pills.innerHTML = '';
+
+    const entries = terminalOverlayContext.lockedToSingle && targetId ? terminalPuzzles.filter(t => t.id === targetId) : terminalPuzzles;
+
+    entries.forEach(term => {
+        const accessible = unlockedLevel >= term.unlockLevel;
+        const solvedState = solved.includes(term.id);
+        const btn = document.createElement('button');
+        btn.className = 'terminal-btn';
+        btn.textContent = term.title;
+        const enabled = terminalOverlayContext.lockedToSingle ? term.id === targetId : accessible;
+        btn.disabled = !enabled;
+        btn.style.opacity = enabled ? '1' : '0.4';
+        if (enabled) {
+            btn.addEventListener('click', () => setActiveTerminal(term.id));
+        } else if (!terminalOverlayContext.lockedToSingle) {
+            btn.title = `Unlocks after Level ${term.unlockLevel}`;
+        }
+        if (term.id === targetId) btn.classList.add('terminal-btn-active');
+        list.appendChild(btn);
+
+        const pill = document.createElement('div');
+        pill.className = 'terminal-pill';
+        pill.textContent = `P${term.id}`;
+        pill.dataset.state = solvedState ? 'solved' : (accessible ? 'open' : 'locked');
+        pills.appendChild(pill);
+    });
+
+    // Hide the sidebar when locked to a single terminal for in-level use
+    const sidebar = list.parentElement;
+    if (sidebar && sidebar.style) {
+        sidebar.style.display = terminalOverlayContext.lockedToSingle ? 'none' : 'block';
+    }
+}
+
+function setActiveTerminal(id) {
+    const terminal = getTerminalById(id);
+    const title = document.getElementById('terminalTitle');
+    const prompt = document.getElementById('terminalPrompt');
+    const hint = document.getElementById('terminalHint');
+    const answerInput = document.getElementById('terminalAnswer');
+    const submitBtn = document.getElementById('terminalSubmit');
+    const status = document.getElementById('terminalStatus');
+    if (!terminal || !title || !prompt || !hint || !answerInput || !submitBtn || !status) return;
+
+    activeTerminalId = id;
+    const accessible = isTerminalAccessible(terminal);
+    const solved = isTerminalSolved(id);
+    const needsAccess = terminal.id > 1 && !hasTerminalAccess(terminal.id);
+
+    title.textContent = terminal.title;
+    prompt.textContent = needsAccess ? 'Access required. Enter the previous password to unlock this terminal.' : terminal.prompt;
+    hint.textContent = needsAccess ? `Lock: Password from Terminal ${terminal.id - 1}.` : `Hint: ${terminal.hint}`;
+    status.textContent = solved ? `${terminal.reward}. ${terminal.how}` : (needsAccess ? 'Locked — enter previous password to proceed.' : '');
+    status.style.color = solved ? '#61dafb' : (needsAccess ? '#ffcc66' : '#ffd166');
+
+    answerInput.value = '';
+    answerInput.disabled = !accessible;
+    submitBtn.disabled = !accessible;
+    submitBtn.textContent = solved ? 'Solved' : (needsAccess ? 'Unlock' : 'Submit');
+    submitBtn.style.opacity = solved ? '0.7' : '1';
+
+    renderTerminalList(id);
+}
+
+function checkTerminalAnswer() {
+    const answerInput = document.getElementById('terminalAnswer');
+    if (!answerInput || activeTerminalId === null) return;
+    const terminal = getTerminalById(activeTerminalId);
+    if (!terminal) return;
+    if (!isTerminalAccessible(terminal)) return;
+
+    const guess = normalizeAnswer(answerInput.value);
+    const expected = normalizeAnswer(terminal.answer);
+    const status = document.getElementById('terminalStatus');
+    const needsAccess = terminal.id > 1 && !hasTerminalAccess(terminal.id);
+
+    if (needsAccess) {
+        const prev = getTerminalById(terminal.id - 1);
+        const expectedGate = normalizeAnswer(prev?.answer || '');
+        if (guess === expectedGate) {
+            unlockTerminalAccess(terminal.id);
+            if (status) {
+                status.textContent = 'Access granted. Terminal unlocked.';
+                status.style.color = '#61dafb';
+            }
+            showBottomAlert(`🔓 Terminal ${terminal.id} unlocked.`);
+            setActiveTerminal(terminal.id);
+        } else if (status) {
+            status.textContent = 'Wrong password. Use the previous terminal code.';
+            status.style.color = '#ff6666';
+        }
+        return;
+    }
+
+    if (guess === expected) {
+        unlockTerminal(terminal.id);
+        unlockTerminalAccess(terminal.id + 1);
+        if (status) {
+            status.textContent = `${terminal.reward}. ${terminal.how}`;
+            status.style.color = '#61dafb';
+        }
+        showBottomAlert(`✅ Terminal ${terminal.id} solved: ${terminal.reward}`);
+        if (terminal.id === 4) {
+            if (status) {
+                status.textContent = 'Access code accepted. You might need this later...';
+                status.style.color = '#ffd166';
+            }
+            showBottomAlert('Code stored. You might need it later...', 4500);
+        }
+        setActiveTerminal(terminal.id);
+    } else {
+        if (status) {
+            status.textContent = 'Incorrect. Try again.';
+            status.style.color = '#ff6666';
+        }
+    }
+}
+
+function showTerminalOverlay(targetId = null, options = {}) {
+    terminalOverlayContext = { lockedToSingle: !!options.lockedToSingle, fromRoom: !!options.fromRoom };
+    const ov = document.getElementById('terminalOverlay');
+    if (!ov) return;
+    ov.style.display = 'flex';
+    renderTerminalList(targetId || activeTerminalId);
+    const unlocked = getUnlockedLevel();
+    const firstAvailable = targetId ? getTerminalById(targetId) : (terminalPuzzles.find(t => unlocked >= t.unlockLevel) || terminalPuzzles[0]);
+    if (firstAvailable) {
+        setActiveTerminal(firstAvailable.id);
+    }
+}
+
+function hideTerminalOverlay() {
+    const ov = document.getElementById('terminalOverlay');
+    if (ov) ov.style.display = 'none';
+}
+
+// Expose for in-level access without menu buttons
+if (typeof window !== 'undefined') {
+    window.showTerminalOverlay = showTerminalOverlay;
+    window.hideTerminalOverlay = hideTerminalOverlay;
+    window.setActiveTerminal = setActiveTerminal;
+    window.checkTerminalAnswer = checkTerminalAnswer;
 }
 
 // Update canvas border color to match level theme
@@ -458,7 +676,13 @@ function gameLoop(currentTime) {
             updateEnemies(currentTime);
 
             if (gameState.isGeneratorUIOpen) {
-                updateGeneratorProgress(currentTime);
+                // Dev: Instant generator completion
+                const instaGen = typeof window !== 'undefined' && window.__instaGenEnabled;
+                if (instaGen && gameState.activeGeneratorIndex !== null) {
+                    completeGenerator();
+                } else {
+                    updateGeneratorProgress(currentTime);
+                }
             } else {
                 processMovement(currentTime);
             }
@@ -514,11 +738,15 @@ function buildMenu() {
     grid.innerHTML = '';
     const unlocked = getUnlockedLevel();
     for (let i = 1; i <= LEVEL_COUNT; i++) {
+        // Level 11 should not appear in the main menu grid (access via Settings only)
+        if (i === 11) continue;
         const btn = document.createElement('button');
         btn.className = 'level-btn';
         btn.textContent = `Level ${i}`;
         btn.dataset.level = String(i);
-        if (i > unlocked) {
+        const lockedByProgress = i > unlocked;
+        const lockedBySecret = (i === 11 && !isLevel11Unlocked());
+        if (lockedByProgress || lockedBySecret) {
             btn.disabled = true;
             btn.style.opacity = '0.5';
             btn.style.cursor = 'not-allowed';
@@ -630,6 +858,9 @@ function showMenu() {
     if (menu) menu.style.display = 'flex';
     if (gameContainer) gameContainer.style.display = 'none';
     buildMenu();
+
+    // Clear any screen fade back to visible when in menu
+    gameState.screenFade = { from: 0, to: 0, startAt: performance.now(), duration: 1 };
     
     // Clear boss victory flag
     if (gameState) gameState.bossVictory = false;
@@ -661,6 +892,10 @@ function showMenu() {
 }
 
 function startLevel(level) {
+    if (level === 11 && !isLevel11Unlocked()) {
+        alert('Level 11 is locked. Enter the password in Settings to unlock.');
+        return;
+    }
     gameState.currentLevel = level;
     gameState.mode = 'level';
     // Show game UI, hide menu
@@ -762,6 +997,7 @@ function wireMenuUi() {
     const godChk = document.getElementById('godModeChk');
     const skipPreBossChk = document.getElementById('skipPreBossChk');
     const bossDmg10xChk = document.getElementById('bossDmg10xChk');
+    const instaGenChk = document.getElementById('instaGenChk');
     if (godChk && !godChk._wired) {
         godChk.addEventListener('change', () => {
             setGodMode(godChk.checked);
@@ -780,11 +1016,19 @@ function wireMenuUi() {
         });
         bossDmg10xChk._wired = true;
     }
+    if (instaGenChk && !instaGenChk._wired) {
+        instaGenChk.addEventListener('change', () => {
+            window.__instaGenEnabled = !!instaGenChk.checked;
+        });
+        window.__instaGenEnabled = !!instaGenChk.checked;
+        instaGenChk._wired = true;
+    }
 
     const unlockAllBtn = document.getElementById('unlockAllBtn');
     if (unlockAllBtn && !unlockAllBtn._wired) {
         unlockAllBtn.addEventListener('click', () => {
             setUnlockedLevel(LEVEL_COUNT);
+            setLevel11Unlocked(true);
             buildMenu();
         });
         unlockAllBtn._wired = true;
@@ -852,6 +1096,18 @@ function wireMenuUi() {
     const bazookaModeSection = document.getElementById('bazookaModeSection');
     const bazookaModeDesc = document.getElementById('bazookaModeDesc');
     const settingsBackBtn = document.getElementById('settingsBackBtn');
+    const level11Section = document.getElementById('level11Section');
+    const level11Status = document.getElementById('level11Status');
+    const level11PlayBtn = document.getElementById('level11PlayBtn');
+
+    const refreshLevel11UI = () => {
+        const unlocked = isLevel11Unlocked();
+        if (level11Section) level11Section.style.display = unlocked ? 'block' : 'none';
+        if (level11Status && unlocked) level11Status.textContent = 'Unlocked — Play whenever you are ready.';
+        if (level11PlayBtn) level11PlayBtn.disabled = !unlocked;
+    };
+    // Make accessible to other handlers in this module
+    window.__refreshLevel11UI = refreshLevel11UI;
     
     // Help button handler
     if (helpBtn && !helpBtn._wired) {
@@ -884,6 +1140,36 @@ function wireMenuUi() {
             if (settingsOverlay) settingsOverlay.style.display = 'flex';
         });
         settingsBtn._wired = true;
+    }
+    
+    // Wire terminal submit button
+    const terminalSubmit = document.getElementById('terminalSubmit');
+    if (terminalSubmit && !terminalSubmit._wired) {
+        terminalSubmit.addEventListener('click', () => {
+            checkTerminalAnswer();
+        });
+        terminalSubmit._wired = true;
+    }
+    
+    // Wire terminal close button
+    const terminalCloseBtn = document.getElementById('terminalCloseBtn');
+    if (terminalCloseBtn && !terminalCloseBtn._wired) {
+        terminalCloseBtn.addEventListener('click', () => {
+            hideTerminalOverlay();
+            if (gameState.inTerminalRoom) {
+                exitTerminalRoom();
+            }
+        });
+        terminalCloseBtn._wired = true;
+    }
+    
+    // Allow Enter key in terminal answer field
+    const terminalAnswer = document.getElementById('terminalAnswer');
+    if (terminalAnswer && !terminalAnswer._wired) {
+        terminalAnswer.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') checkTerminalAnswer();
+        });
+        terminalAnswer._wired = true;
     }
     
     if (settingsBackBtn && !settingsBackBtn._wired) {
@@ -949,6 +1235,14 @@ function wireMenuUi() {
             }
         });
         bazookaModeChk._wired = true;
+    }
+
+    if (level11PlayBtn && !level11PlayBtn._wired) {
+        level11PlayBtn.addEventListener('click', () => {
+            if (settingsOverlay) settingsOverlay.style.display = 'none';
+            startLevel(11);
+        });
+        level11PlayBtn._wired = true;
     }
     
     // Wire secret button (3 attempts to unlock bazooka mode)
@@ -1166,56 +1460,89 @@ function launchConfetti() {
 function stopConfetti() { cancelAnimationFrame(confettiAnimId); confettiAnimId = 0; }
 
 function showWinOverlay() {
-    // Special handling for boss victory - skip normal win screen, go straight to credits
+    // Special handling for boss victory - show win overlay with Secret?/Credits instead of auto-credits
     if (gameState.currentLevel === 10 && gameState.bossVictory) {
-        // Play victory music/sound (add later if we have one)
-        // try { playVictoryMusic(); } catch {}
-        
-        // Launch confetti
-        launchConfetti();
-        
-        // Mark secret as unlocked
-        setSecretUnlocked(true);
-        
-        // Show credits overlay after a brief delay to let fade finish
-        setTimeout(() => {
-            const creditsOverlay = document.getElementById('creditsOverlay');
-            if (creditsOverlay) {
-                creditsOverlay.style.display = 'block';
-                // Fade in credits from black
-                creditsOverlay.style.opacity = '0';
-                setTimeout(() => {
-                    creditsOverlay.style.transition = 'opacity 2s ease';
-                    creditsOverlay.style.opacity = '1';
-                }, 50);
-            }
-        }, 500);
-        
-        // Wire up credits menu button if not already wired
+        const win = document.getElementById('winOverlay');
+        const winMsg = document.getElementById('winMsg');
+        const nextBtn = document.getElementById('nextLevelBtn');
+        const menuBtn = document.getElementById('winReturnMenuBtn');
+        const winSecretBtn = document.getElementById('winSecretBtn');
+        const creditsBtn = document.getElementById('creditsBtn');
         const creditsMenuBtn = document.getElementById('creditsMenuBtn');
+        const closeAndMenu = () => {
+            stopConfetti();
+            if (win) win.style.display = 'none';
+            showMenu();
+        };
+
+        setSecretUnlocked(true);
+        if (win) win.style.display = 'flex';
+        if (winMsg) winMsg.textContent = 'You survived the final collapse!';
+        if (nextBtn) nextBtn.style.display = 'none';
+        if (menuBtn) menuBtn.style.display = '';
+        if (creditsBtn) creditsBtn.style.display = 'inline-block';
+        if (winSecretBtn) winSecretBtn.style.display = 'inline-block';
+
+        if (menuBtn && !menuBtn._wired) {
+            menuBtn.addEventListener('click', () => {
+                closeAndMenu();
+            });
+            menuBtn._wired = true;
+        }
+
+        if (creditsBtn && !creditsBtn._wired) {
+            creditsBtn.addEventListener('click', () => {
+                const c = document.getElementById('creditsOverlay');
+                if (c) c.style.display = 'block';
+            });
+            creditsBtn._wired = true;
+        }
         if (creditsMenuBtn && !creditsMenuBtn._wired) {
             creditsMenuBtn.addEventListener('click', () => {
                 const c = document.getElementById('creditsOverlay');
                 if (c) c.style.display = 'none';
-                stopConfetti();
-                showMenu();
+                closeAndMenu();
             });
             creditsMenuBtn._wired = true;
         }
-        
+
+        if (winSecretBtn && !winSecretBtn._wired) {
+            winSecretBtn.addEventListener('click', () => {
+                const pwd = prompt('Enter secret password:');
+                if (!pwd) {
+                    closeAndMenu();
+                    return;
+                }
+                if (pwd.trim().toLowerCase() === 'echomaze') {
+                    setLevel11Unlocked(true);
+                    setUnlockedLevel(Math.max(getUnlockedLevel(), 11));
+                    alert('Password accepted! Check Settings to play Level 11.');
+                    if (window.__refreshLevel11UI) window.__refreshLevel11UI();
+                    closeAndMenu();
+                } else {
+                    alert('Incorrect password. Returning to menu.');
+                    closeAndMenu();
+                }
+            });
+            winSecretBtn._wired = true;
+        }
+
+        launchConfetti();
         return;
     }
     
     // Normal win screen for regular levels
     const curUnlocked = getUnlockedLevel();
     if (gameState.currentLevel >= curUnlocked) {
-        setUnlockedLevel(Math.min(LEVEL_COUNT, gameState.currentLevel + 1));
+        const maxNext = (gameState.currentLevel === 10 && !isLevel11Unlocked()) ? 10 : LEVEL_COUNT;
+        setUnlockedLevel(Math.min(maxNext, gameState.currentLevel + 1));
     }
     const win = document.getElementById('winOverlay');
     if (win) win.style.display = 'flex';
     // Disable Next Level at last level
     const nextBtn = document.getElementById('nextLevelBtn');
     if (nextBtn) {
+        nextBtn.style.display = '';
         if (gameState.currentLevel >= LEVEL_COUNT) {
             nextBtn.disabled = true;
             nextBtn.style.opacity = '0.6';

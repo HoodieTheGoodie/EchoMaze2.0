@@ -244,6 +244,39 @@
             background: linear-gradient(180deg, #1a2a2f, #0f1a1f);
             border: 2px dashed #00f6ff;
         }
+        
+        /* Terminal overlay styles */
+        .terminal-btn {
+            background: linear-gradient(180deg, #1a2428, #0f1618);
+            border: 2px solid #00f6ff;
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s ease;
+        }
+        .terminal-btn:hover { filter: brightness(1.12); box-shadow: 0 0 12px rgba(0, 246, 255, 0.5); }
+        .terminal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .terminal-btn-active { background: linear-gradient(180deg, #0f4a4f, #0a2a2f); box-shadow: 0 0 15px rgba(0, 246, 255, 0.6); }
+        
+        .terminal-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 2px solid rgba(0, 246, 255, 0.5);
+            color: #fff;
+        }
+        .terminal-pill[data-state="locked"] { background: rgba(100, 100, 100, 0.4); border-color: rgba(100, 100, 100, 0.6); color: #888; }
+        .terminal-pill[data-state="open"] { background: rgba(0, 246, 255, 0.2); border-color: rgba(0, 246, 255, 0.8); color: #00f6ff; }
+        .terminal-pill[data-state="solved"] { background: rgba(97, 218, 251, 0.3); border-color: #61dafb; color: #61dafb; box-shadow: 0 0 8px rgba(97, 218, 251, 0.6); }
     </style>
 </head>
 <body>
@@ -261,7 +294,7 @@
     <div id="game-container" style="display:none;">
         
         <div id="ui-panel">
-            <div class="ui-section">
+            <div class="ui-section" style="display:none">
                 <span class="ui-label">Health:</span>
                 <span id="health">❤️❤️❤️</span>
             </div>
@@ -342,6 +375,7 @@
             <div style="display:flex; gap:12px; justify-content:center; position:relative; z-index:1;">
                 <button id="nextLevelBtn" type="button">Next Level</button>
                 <button id="winReturnMenuBtn" type="button">Main Menu</button>
+                <button id="winSecretBtn" type="button" style="display:none;">Secret?</button>
                 <button id="creditsBtn" type="button" style="display:none;">Credits</button>
             </div>
         </div>
@@ -427,6 +461,10 @@
                     <span>10x Boss Damage</span>
                 </label>
                 <button id="unlockAllBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Unlock All Levels</button>
+                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                    <input id="instaGenChk" type="checkbox" />
+                    <span>Instant Complete Generators</span>
+                </label>
             </div>
         </div>
     </div>
@@ -537,6 +575,18 @@
                         Start every level with a regenerating bazooka.<br>Destroy inner walls and unleash chaos!
                     </div>
                 </div>
+
+                <!-- Level 11 Access Section (unlocks via secret on win screen) -->
+                <div id="level11Section" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.08)); border: 2px solid rgba(255,215,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,215,0,0.3), 0 0 40px rgba(255,215,0,0.1) inset;">
+                    <div style="text-align:center; margin-bottom:10px;">
+                        <span style="font-size:1.6rem; text-shadow: 0 0 10px rgba(255,215,0,0.8);">🔓</span>
+                        <div style="color:#ffd700; font-weight:bold; font-size:1.05rem; text-shadow: 0 0 8px rgba(255,215,0,0.6); margin-top:4px;">LEVEL 11 ACCESS</div>
+                        <div id="level11Status" style="color:#ffe066; font-size:0.9rem; margin-top:4px;">Locked — discover the secret after defeating the boss.</div>
+                    </div>
+                    <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
+                        <button id="level11PlayBtn" type="button" style="border-color:#ffd700; color:#ffd700;" disabled>Play Level 11</button>
+                    </div>
+                </div>
                 
                 <!-- Secret Button (3 attempts) -->
                 <div style="display:flex; justify-content:center; margin-top:20px;" id="secretButtonContainer">
@@ -551,6 +601,36 @@
             </div>
             <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
                 <button id="settingsBackBtn" type="button">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Overlay -->
+    <div id="terminalOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2200;">
+        <div class="overlay-panel" style="min-width: 600px; text-align:left; max-height:85vh; overflow:auto;">
+            <h2 style="text-align:center; margin-bottom:20px;">🖥️ Computer Terminal</h2>
+            <div style="display:flex; gap:16px;">
+                <!-- Left sidebar: Terminal list -->
+                <div style="flex:0 0 200px; border-right:1px solid rgba(0,246,255,0.3); padding-right:16px;">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:10px; font-size:0.9rem;">AVAILABLE</div>
+                    <div id="terminalList" style="display:flex; flex-direction:column; gap:8px;"></div>
+                    <div style="color:#00f6ff; font-weight:bold; margin:20px 0 10px 0; font-size:0.9rem;">STATUS</div>
+                    <div id="terminalPills" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+                </div>
+                <!-- Right content: Current terminal puzzle -->
+                <div style="flex:1;">
+                    <h3 id="terminalTitle" style="color:#ffd166; margin-bottom:12px; font-size:1.1rem;">Terminal 1</h3>
+                    <div id="terminalPrompt" style="background:rgba(0,0,0,0.5); padding:12px; border-radius:6px; margin-bottom:12px; font-size:0.95rem; line-height:1.5; color:#e0e0e0; font-family:monospace;">Terminal prompt...</div>
+                    <div id="terminalHint" style="color:#88ff88; font-size:0.85rem; margin-bottom:12px; font-style:italic;">Hint: ...</div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <input id="terminalAnswer" type="text" placeholder="Enter answer..." style="flex:1; padding:8px 12px; background:#1a1a1a; border:1px solid #00f6ff; border-radius:6px; color:#fff; font-size:0.95rem;"/>
+                        <button id="terminalSubmit" type="button" style="padding:8px 16px; background:#00f6ff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Submit</button>
+                    </div>
+                    <div id="terminalStatus" style="color:#ffd166; font-size:0.9rem; min-height:20px; margin-bottom:12px;"></div>
+                </div>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; padding-top:12px; border-top:1px solid rgba(0,246,255,0.2);">
+                <button id="terminalCloseBtn" type="button">Close</button>
             </div>
         </div>
     </div>
