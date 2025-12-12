@@ -2,6 +2,23 @@
 
 import { gameState, MAZE_WIDTH, MAZE_HEIGHT, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake } from './state.js';
 import { startPreBossMusic, stopPreBossMusic, playExplosion } from './audio.js';
+
+// Dialog bar helper (DOM)
+function setDialogBarLine(text, color = '#ffdd33', border = color) {
+  try {
+    const bar = document.getElementById('dialogBar');
+    if (!bar) return;
+    if (text) {
+      bar.textContent = text;
+      bar.style.display = 'block';
+      bar.style.color = color;
+      bar.style.borderColor = border;
+    } else {
+      bar.textContent = '';
+      bar.style.display = 'none';
+    }
+  } catch {}
+}
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
 import { CELL, generateMaze } from './maze.js';
@@ -353,6 +370,9 @@ export function updateBoss(currentTime) {
               ];
               b.virusDialogueIndex = 0;
               b.virusDialogueNextAt = performance.now() + b.virusDialogueInterval;
+              if (b.virusDialogueLines.length) {
+                setDialogBarLine(b.virusDialogueLines[0], '#ffdd33', '#ffdd33');
+              }
             }, 500);
           }, 1500);
         }, 200);
@@ -365,22 +385,26 @@ export function updateBoss(currentTime) {
       if (currentTime >= b.virusDialogueNextAt) {
         b.virusDialogueIndex++;
         if (b.virusDialogueIndex >= b.virusDialogueLines.length) {
-          // Finish monologue
           b.virusDialogueActive = false; b.virusDialogueFinished = true;
+          // Hide dialog bar
+          setDialogBarLine('');
           // Spawn final seeker now
           const ex = b.victoryDoor?.x ?? Math.floor(MAZE_WIDTH / 2);
           const ey = b.victoryDoor?.y ?? Math.floor(MAZE_HEIGHT / 2);
           spawnBuffedEndSeeker(ex, ey);
-          // Make center door tile the actual EXIT so player can escape
           if (gameState.maze[ey] && gameState.maze[ey][ex] !== CELL.WALL) {
             gameState.maze[ey][ex] = CELL.EXIT;
           }
-          // Unlock movement (lava will start only when player first moves)
           gameState.playerStunned = false; gameState.playerStunUntil = 0;
           b.postEscapeStarted = true;
         } else {
           b.virusDialogueNextAt = currentTime + b.virusDialogueInterval;
         }
+      }
+      // Show dialog bar with current line
+      if (b.virusDialogueActive && b.virusDialogueLines.length > 0) {
+        const idx = Math.min(b.virusDialogueIndex, b.virusDialogueLines.length - 1);
+        setDialogBarLine(b.virusDialogueLines[idx], '#ffdd33', '#ffdd33');
       }
     }
     return;
@@ -865,12 +889,40 @@ export function bossExplosion(cx, cy, radius, currentTime) {
         // remove (skip pushing)
         continue;
       }
-      // Pink pigs: rockets knock them out when pink present
+      // Pink pigs: rockets knock them into a spinning crash, then to rideable knocked-out state
       if (o.type === 'flying_pig' && o._bossSummoned && src === 'rocket' && boss && (boss.phase === 'pink' || (boss.phase === 'combo' && comboHas('pink')))) {
-        o.state = 'knocked_out';
-        o.stateUntil = currentTime + 10000;
-        o._stateStartAt = currentTime;
-        o._rideableUntil = o.stateUntil;
+        if (o.state !== 'crashing') {
+          const distField2 = bfsDistancesFrom(gameState.maze, Math.floor(o.fx), Math.floor(o.fy));
+          const candidates = [];
+          for (let dy = -5; dy <= 5; dy++) {
+            for (let dx = -5; dx <= 5; dx++) {
+              const nx = Math.floor(o.fx) + dx;
+              const ny = Math.floor(o.fy) + dy;
+              if (nx <= 0 || nx >= MAZE_WIDTH - 1 || ny <= 0 || ny >= MAZE_HEIGHT - 1) continue;
+              if (gameState.maze[ny][nx] === CELL.WALL) continue;
+              const dist = Math.abs(dx) + Math.abs(dy);
+              if (dist >= 3 && dist <= 5 && Number.isFinite(distField2[ny][nx])) {
+                candidates.push({ x: nx, y: ny });
+              }
+            }
+          }
+          if (candidates.length === 0) candidates.push({ x: Math.floor(o.fx), y: Math.floor(o.fy) });
+          const crashTarget = candidates[Math.floor(Math.random() * candidates.length)];
+
+          o.state = 'crashing';
+          o.crashStartTime = currentTime;
+          o.crashDuration = 1200;
+          o.stateUntil = currentTime + o.crashDuration + 10000;
+          o._stateStartAt = currentTime;
+          o.crashRotation = 0;
+          o.crashStartX = o.fx;
+          o.crashStartY = o.fy;
+          o.crashTargetX = crashTarget.x;
+          o.crashTargetY = crashTarget.y;
+          o.crashResultState = 'knocked_out';
+          o.crashPostStateDuration = 10000;
+          o._rideableUntil = o.stateUntil;
+        }
         keep.push(o);
         continue;
       }

@@ -7,6 +7,7 @@ import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
+import { checkAchievements } from './achievements.js';
 
 // Level 11 puzzle patterns (3 presets the paper can show)
 const LEVEL11_PATTERNS = [
@@ -94,6 +95,19 @@ gameState.inputLocked = false; // used for brief cutscenes
 gameState.prepPickupLocked = false; // prevent bazooka pickup before lore completes
 
 /**
+ * Fire achievement event to trigger any matching achievements
+ */
+function fireAchievementEvent(eventType, data = {}) {
+    try {
+        if (typeof checkAchievements === 'function') {
+            checkAchievements(eventType, { ...data, gameState });
+        }
+    } catch (e) {
+        console.error('[state] Achievement event error:', e);
+    }
+}
+
+/**
  * Disable or destroy all active enemies from the current level.
  */
 export function disableAllEnemies() {
@@ -132,40 +146,119 @@ function closeLevel11Paper() {
     if (gameState.level11) gameState.level11.paperOpen = false;
 }
 
-function closeLevel11FinalNote() {
-    try {
-        const el = document.getElementById('level11-finale-overlay');
-        if (el) el.remove();
-    } catch {}
-    if (gameState.level11) gameState.level11.finalNoteOpen = false;
-}
-
-function triggerLevel11Credits() {
-    if (!gameState.level11 || gameState.level11.creditsShown) return;
-    gameState.level11.creditsShown = true;
-    gameState.isPaused = true;
-    gameState.inputLocked = true;
-    fadeToBlack(1.2);
-    setTimeout(() => {
-        const overlay = document.getElementById('creditsOverlay');
-        if (overlay) {
-            overlay.style.display = 'block';
-            overlay.style.opacity = '0';
-            overlay.style.transition = 'opacity 2s ease';
-            overlay.style.opacity = '1';
-        }
-        import('./config.js').then(mod => {
-            if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
-        }).catch(() => {});
-    }, 900);
-}
-
-function showLevel11FinalNote() {
-    if (!gameState.level11) return;
-    closeLevel11FinalNote();
-
+function showPowerSupplyPrompt() {
+    if (!gameState.level11 || gameState.level11.powerDecisionMade) return;
+    
     const overlay = document.createElement('div');
-    overlay.id = 'level11-finale-overlay';
+    overlay.id = 'power-prompt-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.88);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: rgba(18, 18, 28, 0.96);
+        border: 3px solid #ff4455;
+        box-shadow: 0 0 32px rgba(255,68,85,0.5);
+        padding: 22px 26px;
+        border-radius: 14px;
+        min-width: 320px;
+        text-align: center;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = 'Disable Power Supply?';
+    title.style.cssText = 'font-weight: bold; font-size: 18px; letter-spacing: 1.2px; margin-bottom: 18px; color: #ff4455;';
+    panel.appendChild(title);
+
+    const btnContainer = document.createElement('div');
+    btnContainer.style.cssText = 'display: flex; gap: 14px; justify-content: center;';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.innerHTML = '✓ YES';
+    yesBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #00cc66;
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+    `;
+    yesBtn.addEventListener('click', () => {
+        overlay.remove();
+        triggerPowerDisableSequence();
+    });
+
+    const noBtn = document.createElement('button');
+    noBtn.innerHTML = '✗ NO';
+    noBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #ff4455;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+    `;
+    noBtn.addEventListener('click', () => {
+        overlay.remove();
+        triggerBadEndingSequence();
+    });
+
+    btnContainer.appendChild(yesBtn);
+    btnContainer.appendChild(noBtn);
+    panel.appendChild(btnContainer);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+}
+
+function triggerPowerDisableSequence() {
+    if (!gameState.level11) return;
+    gameState.level11.powerDecisionMade = true;
+    gameState.level11.powerSupplyDisabled = true;
+    gameState.inputLocked = true;
+    gameState.level11.endingDialogActive = true;
+    gameState.level11.endingDialogLines = [
+        'Power Supply disabled!',
+        'Data Transfer interrupted!',
+        'Restarting Power Supply... 1% Complete'
+    ];
+    gameState.level11.endingDialogIndex = 0;
+    gameState.level11.endingDialogNextAt = performance.now() + 2500;
+}
+
+function triggerBadEndingSequence() {
+    if (!gameState.level11) return;
+    gameState.level11.powerDecisionMade = true;
+    gameState.level11.powerSupplyDisabled = false;
+    gameState.inputLocked = true;
+    gameState.level11.endingDialogActive = true;
+    gameState.level11.endingDialogLines = [
+        'Warning!',
+        'Transfer complete! Downloading game file onto multiple websites.'
+    ];
+    gameState.level11.endingDialogIndex = 0;
+    gameState.level11.endingDialogNextAt = performance.now() + 2500;
+}
+
+function showGoodEndingNote() {
+    if (!gameState.level11) return;
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'good-ending-note-overlay';
     overlay.style.cssText = `
         position: fixed;
         inset: 0;
@@ -174,29 +267,29 @@ function showLevel11FinalNote() {
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        color: #f5f5f5;
+        color: #e6ff4f;
         font-family: 'Courier New', monospace;
     `;
 
     const panel = document.createElement('div');
     panel.style.cssText = `
-        background: rgba(14, 14, 22, 0.95);
-        border: 2px solid #6bc1ff;
-        box-shadow: 0 0 28px rgba(107,193,255,0.4);
+        background: rgba(12, 12, 12, 0.92);
+        border: 2px solid #e6ff4f;
+        box-shadow: 0 0 30px rgba(230,255,79,0.35);
         padding: 18px 20px;
         border-radius: 12px;
-        min-width: 260px;
+        min-width: 280px;
         text-align: center;
     `;
 
     const title = document.createElement('div');
-    title.textContent = 'A Final Note';
-    title.style.cssText = 'font-weight: bold; letter-spacing: 1px; margin-bottom: 10px;';
+    title.textContent = 'A Note Appears';
+    title.style.cssText = 'font-weight: bold; letter-spacing: 1px; margin-bottom: 12px;';
     panel.appendChild(title);
 
     const body = document.createElement('div');
-    body.innerHTML = 'EchoMaze 2 coming soon<br/>This is your fault. Fix it.';
-    body.style.cssText = 'margin-bottom: 14px; line-height: 1.3;';
+    body.innerHTML = "Now's your chance! Go defeat the virus, save the game.<br/><strong>EchoMaze 2</strong>";
+    body.style.cssText = 'margin-bottom: 14px; line-height: 1.4;';
     panel.appendChild(body);
 
     const btn = document.createElement('button');
@@ -204,7 +297,7 @@ function showLevel11FinalNote() {
     btn.style.cssText = `
         width: 100%;
         padding: 10px 12px;
-        background: #6bc1ff;
+        background: #e6ff4f;
         color: #000;
         border: none;
         border-radius: 8px;
@@ -212,21 +305,139 @@ function showLevel11FinalNote() {
         cursor: pointer;
     `;
     btn.addEventListener('click', () => {
-        closeLevel11FinalNote();
-        triggerLevel11Credits();
+        overlay.remove();
+        showGoodEndingCredits();
     });
     panel.appendChild(btn);
 
     overlay.appendChild(panel);
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-            closeLevel11FinalNote();
-            triggerLevel11Credits();
+            overlay.remove();
+            showGoodEndingCredits();
         }
     });
 
     document.body.appendChild(overlay);
-    gameState.level11.finalNoteOpen = true;
+}
+
+function showBadEndingCredits() {
+    if (!gameState.level11 || gameState.level11.creditsShown) return;
+    gameState.level11.creditsShown = true;
+    gameState.isPaused = true;
+    gameState.inputLocked = true;
+    fadeToBlack(1.2);
+    setTimeout(() => {
+        const overlay = document.getElementById('creditsOverlay');
+        if (overlay) {
+            const content = overlay.querySelector('.credits-content');
+            if (content) {
+                content.innerHTML = `
+                    <h1 style="color: #ff4455; margin-bottom: 20px;">VERY BAD ENDING</h1>
+                    <p style="line-height: 1.6; margin-bottom: 20px;">
+                        Thank you for playing our game! This was created out of boredom and because my school blocked most games, 
+                        so I thought I would just work on developing my own in my free time.
+                    </p>
+                    <p style="line-height: 1.6; margin-bottom: 20px; color: #ff4455;">
+                        It seems you got the <strong>very bad ending</strong> as you didn't disable the power and let the virus 
+                        transfer itself to other sites to ruin them. How can you fix your mistakes now?
+                    </p>
+                    <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.7;">Secret Code: ECHO-NIGHTMARE</p>
+                `;
+            }
+            overlay.style.display = 'block';
+            overlay.style.opacity = '0';
+            overlay.style.transition = 'opacity 2s ease';
+            setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        }
+    }, 900);
+}
+
+function showGoodEndingCredits() {
+    if (!gameState.level11 || gameState.level11.creditsShown) return;
+    gameState.level11.creditsShown = true;
+    gameState.isPaused = true;
+    gameState.inputLocked = true;
+    fadeToBlack(1.2);
+    setTimeout(() => {
+        const overlay = document.getElementById('creditsOverlay');
+        if (overlay) {
+            const content = overlay.querySelector('.credits-content');
+            if (content) {
+                content.innerHTML = `
+                    <h1 style="color: #00ff88; margin-bottom: 20px;">BEST SECRET ENDING</h1>
+                    <p style="line-height: 1.6; margin-bottom: 20px;">
+                        Thank you for playing our game! This was created out of boredom and because my school blocked most games, 
+                        so I thought I would just work on developing my own in my free time.
+                    </p>
+                    <p style="line-height: 1.6; margin-bottom: 20px; color: #00ff88;">
+                        <strong>Congrats!</strong> You got the <strong>Best Secret Ending!</strong> You disabled the virus from 
+                        transferring itself to other websites, but the job still isn't finished.
+                    </p>
+                    <p style="line-height: 1.6; margin-bottom: 20px;">
+                        Now is your chance to go defeat the virus once and for all in <strong>EchoMaze 2</strong>, 
+                        set to release hopefully sometime in 2026 on Steam and app stores!
+                    </p>
+                    <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.7;">Secret Code: ECHO-REDEEMED</p>
+                `;
+            }
+            overlay.style.display = 'block';
+            overlay.style.opacity = '0';
+            overlay.style.transition = 'opacity 2s ease';
+            setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        }
+        import('./config.js').then(mod => {
+            if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
+        }).catch(() => {});
+    }, 900);
+}
+
+function setDialogBarLine(text, color = '#ff4455', border = color) {
+    try {
+        const bar = document.getElementById('dialogBar');
+        if (!bar) return;
+        if (text) {
+            bar.textContent = text;
+            bar.style.display = 'block';
+            bar.style.color = color;
+            bar.style.borderColor = border;
+        } else {
+            bar.textContent = '';
+            bar.style.display = 'none';
+        }
+    } catch {}
+}
+
+export function updateLevel11EndingDialog(currentTime) {
+    if (!gameState.level11 || !gameState.level11.endingDialogActive) {
+        setDialogBarLine('');
+        return;
+    }
+
+    if (currentTime >= gameState.level11.endingDialogNextAt) {
+        gameState.level11.endingDialogIndex++;
+        if (gameState.level11.endingDialogIndex >= gameState.level11.endingDialogLines.length) {
+            gameState.level11.endingDialogActive = false;
+            gameState.inputLocked = false;
+            setDialogBarLine('');
+
+            if (gameState.level11.powerSupplyDisabled) {
+                // Good ending: load hub with note spawned as pickup (player must walk to it)
+                gameState.level11.goodEndingNote = true;
+                loadLevel11Room('hub', 'fromTop', true);
+            } else {
+                showBadEndingCredits();
+            }
+        } else {
+            gameState.level11.endingDialogNextAt = currentTime + 2500;
+        }
+    }
+
+    if (gameState.level11.endingDialogLines && gameState.level11.endingDialogLines.length) {
+        const idx = Math.min(gameState.level11.endingDialogIndex, gameState.level11.endingDialogLines.length - 1);
+        const color = gameState.level11.powerSupplyDisabled ? '#00ff88' : '#ff4455';
+        setDialogBarLine(gameState.level11.endingDialogLines[idx], color, color);
+    }
 }
 
 function showLevel11Paper() {
@@ -319,15 +530,22 @@ function initLevel11State(level11Data = {}) {
         hasYellowKey: false,
         flashlightFound: false,
         flashlightOn: false,
+        flashlightSpawned: false,
+        entryFlashlightPos: { x: 15, y: 24 },
         yellowKeyPos: level11Data?.rooms?.dark?.darkRoom?.yellowKey,
         bats: [],
         paperOpen: false,
         currentRoom: level11Data?.spawnRoom || 'entry',
         greenKeyPickedUp: false,
-        finalNoteRead: false,
-        finalNoteOpen: false,
+        powerSupplyDisabled: false,
+        powerDecisionMade: false,
+        goodEndingNote: false,
         creditsShown: false,
-        flashlightDir: { dx: 0, dy: -1 }
+        flashlightDir: { dx: 0, dy: -1 },
+        endingDialogActive: false,
+        endingDialogLines: [],
+        endingDialogIndex: 0,
+        endingDialogNextAt: 0
     };
 
     // start in entry hallway
@@ -336,7 +554,6 @@ function initLevel11State(level11Data = {}) {
     gameState.generators = [];
     gameState.zapTraps = 0;
     closeLevel11Paper();
-    closeLevel11FinalNote();
 }
 
 function loadLevel11Room(name, spawnLabel = 'default', fade = true) {
@@ -374,6 +591,13 @@ function loadLevel11Room(name, spawnLabel = 'default', fade = true) {
         gameState.level11.bats = [];
     }
 
+    // Setup hub room with note position
+    if (name === 'hub' && gameState.level11.goodEndingNote) {
+        const cx = Math.floor(room.grid[0].length / 2);
+        const cy = Math.floor(room.grid.length / 2);
+        gameState.level11.data.rooms.hubNotePos = { x: cx + 2, y: cy - 3 };
+    }
+
     // Keep flashlight pickup pos when in dark room
     gameState.level11.flashlightPos = room.darkRoom?.flashlight;
 
@@ -403,12 +627,13 @@ function evaluateLevel11Puzzle() {
 }
 
 export function toggleLevel11Flashlight() {
-    if (!gameState.level11 || !gameState.level11.flashlightFound) {
-        setStatusMessage('You need the flashlight first.');
+    if (!gameState.isLevel11 || !gameState.level11) return;
+    if (!gameState.level11.flashlightFound) {
+        setStatusMessage('You need a flashlight first.');
         return;
     }
     gameState.level11.flashlightOn = !gameState.level11.flashlightOn;
-    setStatusMessage(gameState.level11.flashlightOn ? 'Flashlight ON.' : 'Flashlight OFF.', 1200);
+    setStatusMessage(gameState.level11.flashlightOn ? 'Flashlight ON' : 'Flashlight OFF', 1200);
 }
 
 // Simple dialogue helper that sequences status messages
@@ -481,6 +706,8 @@ export function initGame() {
     gameState.interactPressedAt = 0;
     gameState.mountedPigUntil = 0;
     gameState.mountedPigId = null;
+    gameState.pigCrashAnimation = null;
+    gameState._pigCrashLock = false;
     
     // Clear any active dialog sequences (fixes prep room dialog carryover bug)
     if (gameState.textSequenceIntervalId) {
@@ -498,7 +725,7 @@ export function initGame() {
     
     let seed = 1;
     let genCount = 3;
-    if (gameState.mode === 'endless') {
+    if (gameState.mode === 'endless' || gameState.mode === 'endless-progression') {
         // Build a config from endless settings; use a fresh random seed each run
     const cfg = gameState.endlessConfig || { chaser: false, pig: false, seeker: false, batter: false, mortar: false, difficulty: 'normal', generatorCount: 3 };
         gameState.difficulty = cfg.difficulty === 'super' ? 'super' : 'normal';
@@ -522,7 +749,7 @@ export function initGame() {
 
     const includeTelepads = gameState.isLevel11 ? false : ((gameState.mode === 'endless') || (gameState.currentLevel >= 5));
     
-    // Use custom Level 11 maze if applicable
+    // Use legacy Level 11 maze when applicable
     let mazeData;
     if (gameState.isLevel11) {
         mazeData = generateLevel11Maze();
@@ -913,6 +1140,8 @@ export function movePlayer(dx, dy, currentTime) {
                     setTimeout(() => {
                         try { finishRun(performance.now()); } catch {}
                         gameState.gameStatus = 'won';
+                        // Fire achievement event for boss victory
+                        fireAchievementEvent('ending_reached', { ending: 'boss_defeated' });
                     }, 2000);
                     return true;
                 }
@@ -928,6 +1157,16 @@ export function movePlayer(dx, dy, currentTime) {
             fadeToBlack(1.0);
             setTimeout(() => {
                 gameState.gameStatus = 'won';
+                // Fire level_complete achievement event with full data
+                const timeMs = currentTime - (gameState.runStartAt || currentTime);
+                const deathless = gameState.lives >= 3;
+                const noAbilities = gameState.abilitiesUsed === false; // Track if abilities were disabled
+                fireAchievementEvent('level_complete', { 
+                    level: gameState.currentLevel,
+                    timeMs: Math.max(0, timeMs),
+                    deathless,
+                    noAbilities
+                });
             }, 1000);
             return true;
         }
@@ -1776,58 +2015,95 @@ function updateLevel11Enemies(currentTime) {
     const px = gameState.player.x + 0.5;
     const py = gameState.player.y + 0.5;
 
-    const passable = (x, y) => gameState.maze[y]?.[x] !== CELL.WALL;
+    const passable = (x, y) => {
+        if (x < 1 || x >= MAZE_WIDTH - 1 || y < 1 || y >= MAZE_HEIGHT - 1) return false;
+        return gameState.maze[Math.floor(y)]?.[Math.floor(x)] !== CELL.WALL;
+    };
+    
+    // Helper: check if bat is in flashlight beam cone
+    const isInBeam = (bat) => {
+        if (!gameState.level11.flashlightOn || !gameState.mousePosition) return false;
+        
+        // Get beam direction from player to mouse
+        const mouseX = (gameState.mousePosition.x / CELL_SIZE);
+        const mouseY = (gameState.mousePosition.y / CELL_SIZE);
+        const beamDx = mouseX - px;
+        const beamDy = mouseY - py;
+        const beamDist = Math.sqrt(beamDx * beamDx + beamDy * beamDy);
+        if (beamDist < 0.1) return false;
+        
+        // Normalize beam direction
+        const beamNormX = beamDx / beamDist;
+        const beamNormY = beamDy / beamDist;
+        
+        // Vector from player to bat
+        const batDx = bat.fx - px;
+        const batDy = bat.fy - py;
+        const batDist = Math.sqrt(batDx * batDx + batDy * batDy);
+        
+        // Check if bat is within 2.5 tile range
+        if (batDist > 2.5 || batDist < 0.1) return false;
+        
+        // Normalize bat direction
+        const batNormX = batDx / batDist;
+        const batNormY = batDy / batDist;
+        
+        // Calculate angle between beam and bat vector (dot product)
+        const dotProduct = beamNormX * batNormX + beamNormY * batNormY;
+        
+        // Cone angle: ~60 degrees (cos(60°) = 0.5)
+        return dotProduct >= 0.5;
+    };
 
     for (const bat of bats) {
         if (!bat.alive) continue;
-        const dt = Math.max(0, (currentTime - (bat.lastUpdate || currentTime)) / 1000);
+        const dt = Math.max(0, Math.min(0.1, (currentTime - (bat.lastUpdate || currentTime)) / 1000));
         bat.lastUpdate = currentTime;
 
-        if (!bat.dir || currentTime >= (bat.nextTurnAt || 0)) {
-            const dirs = [ { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 } ];
-            const options = dirs
-                .filter(d => passable(bat.x + d.dx, bat.y + d.dy))
-                .map(d => ({ ...d, dist: Math.hypot((bat.x + d.dx + 0.5) - px, (bat.y + d.dy + 0.5) - py) }));
-            if (options.length) {
-                options.sort((a, b) => a.dist - b.dist);
-                const stalk = Math.random() < 0.8;
-                const pick = stalk ? options[0] : options[Math.floor(Math.random() * options.length)];
-                bat.dir = { dx: pick.dx, dy: pick.dy };
-            } else {
-                bat.dir = { dx: 0, dy: 0 };
+        // Free-flying movement like pig - smoothly stalk player
+        const batSpeed = 2.8; // Slightly faster than pig base speed
+        const dx = px - bat.fx;
+        const dy = py - bat.fy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist > 0.5) {
+            // Move towards player with smooth floating motion
+            const moveX = (dx / dist) * batSpeed * dt;
+            const moveY = (dy / dist) * batSpeed * dt;
+            
+            // Try to move, bounce off walls smoothly
+            let nx = bat.fx + moveX;
+            let ny = bat.fy + moveY;
+            
+            if (!passable(nx, bat.fy)) {
+                nx = bat.fx; // Hit wall on X, stop X movement
             }
-            bat.nextTurnAt = currentTime + 500 + Math.random() * 320;
+            if (!passable(bat.fx, ny)) {
+                ny = bat.fy; // Hit wall on Y, stop Y movement
+            }
+            
+            bat.fx = nx;
+            bat.fy = ny;
         }
 
-        const step = (bat.speed || 2.3) * dt;
-        const nx = bat.fx + (bat.dir?.dx || 0) * step;
-        const ny = bat.fy + (bat.dir?.dy || 0) * step;
-        const gx = Math.floor(nx);
-        const gy = Math.floor(ny);
-        if (passable(gx, gy)) {
-            bat.fx = nx; bat.fy = ny; bat.x = gx; bat.y = gy;
-        } else {
-            bat.dir = { dx: 0, dy: 0 };
-            bat.nextTurnAt = currentTime;
-        }
+        const currentDist = Math.hypot(bat.fx - px, bat.fy - py);
 
-        const dist = Math.hypot(bat.fx - px, bat.fy - py);
-
-        // Flashlight exposure kills the player after 0.5s on target
-        if (gameState.level11.flashlightOn && dist <= 1.5) {
+        // Flashlight exposure kills the player after 0.5s if bat is in beam
+        if (isInBeam(bat)) {
             bat.exposedAt = bat.exposedAt || currentTime;
-            if (!gameState.godMode && currentTime - bat.exposedAt >= 500) {
+            const exposureTime = currentTime - bat.exposedAt;
+            if (!gameState.godMode && exposureTime >= 500) {
                 gameState.lives = 0;
                 gameState.deathCause = 'bat_flashlight';
                 gameState.gameStatus = 'lost';
-                setStatusMessage('The bat strikes when lit.');
+                setStatusMessage('The bat strikes when exposed to light!');
             }
         } else {
             bat.exposedAt = 0;
         }
 
         // Physical collision is lethal
-        if (dist < 0.65 && !gameState.godMode) {
+        if (currentDist < 0.65 && !gameState.godMode) {
             gameState.lives = 0;
             gameState.deathCause = 'bat';
             gameState.gameStatus = 'lost';
@@ -1953,7 +2229,6 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
         
         if (crashProgress >= 1) {
             // Crash landing - create explosion
-            e.state = 'weakened';
             const landX = e.fx * CELL_SIZE;
             const landY = e.fy * CELL_SIZE;
             particles.spawn('explosion', landX, landY, 25, { color: '#FFD700' });
@@ -1961,6 +2236,21 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
             gameState.screenShakeMag = 5;
             gameState.screenShakeUntil = currentTime + 200;
             try { playExplosion(); } catch {}
+
+            // Transition to the desired post-crash state
+            const nextState = e.crashResultState || 'weakened';
+            const postDuration = e.crashPostStateDuration || 10000;
+            e.crashResultState = null;
+            e.crashPostStateDuration = null;
+
+            if (nextState === 'knocked_out') {
+                e.state = 'knocked_out';
+                e.stateUntil = currentTime + postDuration;
+                e._stateStartAt = currentTime;
+                e._rideableUntil = e.stateUntil;
+            } else {
+                e.state = nextState;
+            }
         }
     } else if (e.state === 'weakened') {
         // If player touches within 10s, knock out for 45s
@@ -2037,6 +2327,29 @@ export function updateEnemies(currentTime) {
         return;
     }
 
+    // Handle player crash lock (post-pig dismount) to prevent movement while invisible
+    if (gameState._pigCrashLock) {
+        const anim = gameState.pigCrashAnimation;
+        const crashEnd = anim ? (anim.startTime || 0) + (anim.duration || 0) : currentTime;
+        if (anim && anim.targetX !== undefined && anim.targetY !== undefined && currentTime >= crashEnd) {
+            // Ensure player lands at the crash target even if the renderer skipped a frame
+            gameState.player.x = anim.targetX;
+            gameState.player.y = anim.targetY;
+        }
+        if (currentTime >= crashEnd + 100) {
+            gameState._pigCrashLock = false;
+            gameState.inputLocked = false;
+            gameState.playerStunned = false;
+            gameState.playerStunUntil = 0;
+        } else {
+            gameState.inputLocked = true;
+            gameState.playerStunned = true;
+            // Keep stun slightly longer than the crash animation to avoid mid-air inputs
+            const lockUntil = crashEnd + 200;
+            gameState.playerStunUntil = Math.max(gameState.playerStunUntil || 0, lockUntil);
+        }
+    }
+
     // BAZOOKA MODE: Speed multiplier for all enemies (makes them faster and more aggressive)
     const bazookaSpeedMult = isBazookaMode() ? 1.4 : 1.0; // 40% faster in bazooka mode
 
@@ -2082,16 +2395,24 @@ export function updateEnemies(currentTime) {
             ? candidates[Math.floor(Math.random() * candidates.length)]
             : { x: cx, y: cy };
         
+        const crashDuration = 1200; // keep renderer animation length aligned
         gameState.pigCrashAnimation = {
             active: true,
             startTime: currentTime,
-            duration: 1200, // 1.2 seconds for dramatic crash
+            duration: crashDuration, // 1.2 seconds for dramatic crash
             rotation: 0,
             startX: gameState.player.x,
             startY: gameState.player.y,
             targetX: crashTarget.x,
             targetY: crashTarget.y
         };
+
+        // Lock input and keep the player stunned until landing to avoid invisible movement
+        gameState._pigCrashLock = true;
+        gameState.inputLocked = true;
+        gameState.playerStunned = true;
+        gameState.playerStunUntil = currentTime + crashDuration + 200;
+        gameState.blockActive = false;
         
         // Player will be moved to target during the crash animation
     }
@@ -2292,6 +2613,8 @@ export function updateEnemies(currentTime) {
                                 pig.crashRotation = 0;
                                 pig.crashStartX = pig.fx;
                                 pig.crashStartY = pig.fy;
+                                pig.crashResultState = 'weakened';
+                                pig.crashPostStateDuration = 10000;
                                 pig._rideableUntil = pig.stateUntil;
                                 
                                 // Find random nearby accessible tile
@@ -2351,6 +2674,8 @@ export function updateEnemies(currentTime) {
                                 pig.crashRotation = 0;
                                 pig.crashStartX = pig.fx;
                                 pig.crashStartY = pig.fy;
+                                pig.crashResultState = 'weakened';
+                                pig.crashPostStateDuration = 10000;
                                 
                                 // Find random nearby accessible tile (within 3-5 tiles)
                                 const distField2 = bfsDistancesFrom(gameState.maze, Math.floor(pig.fx), Math.floor(pig.fy));
@@ -3806,6 +4131,18 @@ function attemptLevel11Interaction(currentTime) {
                 setStatusMessage('Locked. Need the yellow key.');
                 return true;
             }
+            // Intercept entering dark room without flashlight: spawn flashlight in entry hallway
+            if (door.target === 'dark' && !gameState.level11.flashlightFound) {
+                setStatusMessage('This room is too dark to see. Maybe I should look for a light.');
+                gameState.level11.flashlightSpawned = true;
+                // Ensure entry has a clear tile for flashlight
+                const entryRoom = gameState.level11.data?.rooms?.entry;
+                if (entryRoom && entryRoom.grid) {
+                    const pos = gameState.level11.entryFlashlightPos;
+                    entryRoom.grid[pos.y][pos.x] = CELL.EMPTY;
+                }
+                return true;
+            }
             loadLevel11Room(door.target, door.spawn || 'default');
             return true;
         }
@@ -3813,11 +4150,27 @@ function attemptLevel11Interaction(currentTime) {
 
     // Room-specific interactions
     if (gameState.level11.currentRoom === 'entry') {
+        // Flashlight pickup in entry hallway if spawned
+        const pos = gameState.level11.entryFlashlightPos;
+        if (gameState.level11.flashlightSpawned && !gameState.level11.flashlightFound && pos && (px === pos.x && py === pos.y)) {
+            gameState.level11.flashlightFound = true;
+            setStatusMessage('Picked up flashlight. Toggle with F.');
+            return true;
+        }
         setStatusMessage('A silent hallway. Door leads onward.');
         return true;
     }
 
     if (gameState.level11.currentRoom === 'hub') {
+        // Good ending note pickup (appears after disabling power)
+        if (gameState.level11.goodEndingNote) {
+            const notePos = gameState.level11.data?.rooms?.hubNotePos;
+            if (notePos && at(notePos)) {
+                showGoodEndingNote();
+                gameState.level11.goodEndingNote = false;
+                return true;
+            }
+        }
         // Green key pickup if available
         const drop = room.greenKeyDrop;
         if (gameState.level11.greenKeyAvailable && !gameState.level11.hasGreenKey && drop && at(drop)) {
@@ -3835,6 +4188,12 @@ function attemptLevel11Interaction(currentTime) {
         if (at(room.puzzle?.note)) {
             showLevel11Paper();
             setStatusMessage('Pattern note opened.');
+            return true;
+        }
+        // Flashlight pickup (spawns after puzzle solve)
+        if (gameState.level11.puzzleSolved && room.flashlight && at(room.flashlight) && !gameState.level11.flashlightFound) {
+            gameState.level11.flashlightFound = true;
+            setStatusMessage('Flashlight picked up. Toggle with F.');
             return true;
         }
         // Puzzle tiles
@@ -3867,15 +4226,12 @@ function attemptLevel11Interaction(currentTime) {
     }
 
     if (gameState.level11.currentRoom === 'finale') {
-        if (at(room.note)) {
-            if (!gameState.level11.finalNoteRead) {
-                gameState.level11.finalNoteRead = true;
-            }
-            showLevel11FinalNote();
-            setStatusMessage('The note fades as you read.');
+        const ps = room.powerSupply;
+        if (ps && at(ps) && !gameState.level11.powerDecisionMade) {
+            showPowerSupplyPrompt();
             return true;
         }
-        setStatusMessage('A lone note rests here.');
+        setStatusMessage('The power supply hums ominously.');
         return true;
     }
 

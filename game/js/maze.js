@@ -602,35 +602,124 @@ export function generateLevel11Maze() {
     }
     const puzzleNote = { x: 19, y: 12 };
     puzzle[puzzleNote.y][puzzleNote.x] = CELL.EMPTY;
+    // Flashlight drop location (bottom area of puzzle room)
+    const puzzleFlashlight = { x: 17, y: 18 };
+    puzzle[puzzleFlashlight.y][puzzleFlashlight.x] = CELL.EMPTY;
 
-    // --- Dark maze (left) ---
+    // --- Dark maze (left) - Medium proper maze with 0% brightness ---
     const dark = blank();
-    carveRect(dark, 6, 10, 20, 22);
-    const darkDoor = { x: 20, y: 16 };
+    // Create a 13x11 maze area (from x:4-16, y:9-19) - medium sized room
+    const darkMazeLeft = 4;
+    const darkMazeRight = 16;
+    const darkMazeTop = 9;
+    const darkMazeBottom = 19;
+    
+    // Door on right side connecting to hub
+    const darkDoor = { x: darkMazeRight, y: 14 };
+    
+    // Create maze using simple recursive backtracking
+    // Start by filling entire area with walls
+    for (let y = darkMazeTop; y <= darkMazeBottom; y++) {
+        for (let x = darkMazeLeft; x <= darkMazeRight; x++) {
+            dark[y][x] = CELL.WALL;
+        }
+    }
+    
+    // Always keep door and entrance area clear
     dark[darkDoor.y][darkDoor.x] = CELL.EMPTY;
-    // simple hand maze lines
-    for (let x = 7; x <= 19; x++) addWall(dark, x, 14);
-    for (let x = 9; x <= 18; x++) addWall(dark, x, 18);
-    for (let y = 11; y <= 21; y++) addWall(dark, 11, y === 16 ? 999 : y); // hole at 16
-    for (let y = 11; y <= 20; y++) addWall(dark, 15, y === 19 ? 999 : y); // hole at 19
-    dark[14][12] = CELL.EMPTY; dark[14][16] = CELL.EMPTY; dark[18][14] = CELL.EMPTY; dark[18][17] = CELL.EMPTY; dark[16][11] = CELL.EMPTY;
-    const flashlightPickup = { x: 19, y: 17 };
-    dark[flashlightPickup.y][flashlightPickup.x] = CELL.EMPTY;
-    const yellowKeyPos = { x: 8, y: 21 };
-    dark[yellowKeyPos.y][yellowKeyPos.x] = CELL.EMPTY;
-    const batSpawns = [
-        { x: 9, y: 12 },
-        { x: 13, y: 20 },
-        { x: 17, y: 13 }
-    ];
+    dark[darkDoor.y][darkDoor.x - 1] = CELL.EMPTY;
+    dark[darkDoor.y][darkDoor.x - 2] = CELL.EMPTY;
+    
+    // Use simpler maze generation - carve connected corridors
+    const stack = [{ x: darkDoor.x - 3, y: darkDoor.y }];
+    const visited = new Set();
+    visited.add(`${darkDoor.x - 3},${darkDoor.y}`);
+    dark[darkDoor.y][darkDoor.x - 3] = CELL.EMPTY;
+    
+    while (stack.length > 0) {
+        const current = stack[stack.length - 1];
+        const neighbors = [
+            { x: current.x + 2, y: current.y, wallX: current.x + 1, wallY: current.y },
+            { x: current.x - 2, y: current.y, wallX: current.x - 1, wallY: current.y },
+            { x: current.x, y: current.y + 2, wallX: current.x, wallY: current.y + 1 },
+            { x: current.x, y: current.y - 2, wallX: current.x, wallY: current.y - 1 }
+        ].filter(n => {
+            const key = `${n.x},${n.y}`;
+            return n.x > darkMazeLeft && n.x < darkMazeRight && 
+                   n.y > darkMazeTop && n.y < darkMazeBottom && 
+                   !visited.has(key);
+        }).sort(() => Math.random() - 0.5);
+        
+        if (neighbors.length > 0) {
+            const next = neighbors[0];
+            const key = `${next.x},${next.y}`;
+            visited.add(key);
+            dark[next.y][next.x] = CELL.EMPTY;
+            dark[next.wallY][next.wallX] = CELL.EMPTY;
+            stack.push({ x: next.x, y: next.y });
+        } else {
+            stack.pop();
+        }
+    }
+    
+    // Add some extra connections to make maze less linear (remove ~20% of walls randomly)
+    const wallsToRemove = [];
+    for (let y = darkMazeTop + 1; y < darkMazeBottom; y++) {
+        for (let x = darkMazeLeft + 1; x < darkMazeRight; x++) {
+            if (dark[y][x] === CELL.WALL) {
+                const emptyNeighbors = [
+                    dark[y-1]?.[x] === CELL.EMPTY,
+                    dark[y+1]?.[x] === CELL.EMPTY,
+                    dark[y]?.[x-1] === CELL.EMPTY,
+                    dark[y]?.[x+1] === CELL.EMPTY
+                ].filter(Boolean).length;
+                if (emptyNeighbors >= 2 && Math.random() < 0.2) {
+                    wallsToRemove.push({ x, y });
+                }
+            }
+        }
+    }
+    wallsToRemove.forEach(pos => { dark[pos.y][pos.x] = CELL.EMPTY; });
+    
+    // Final safety: ensure door and entrance are always clear
+    dark[darkDoor.y][darkDoor.x] = CELL.EMPTY;
+    dark[darkDoor.y][darkDoor.x - 1] = CELL.EMPTY;
+    
+    // Find all empty positions in the maze for key/bat spawns
+    const emptyPositions = [];
+    for (let y = darkMazeTop + 1; y < darkMazeBottom; y++) {
+        for (let x = darkMazeLeft + 1; x < darkMazeRight; x++) {
+            if (dark[y][x] === CELL.EMPTY) {
+                emptyPositions.push({ x, y });
+            }
+        }
+    }
+    
+    // Randomly select yellow key position from empty spots
+    const yellowKeyPos = emptyPositions.length > 0
+        ? emptyPositions[Math.floor(Math.random() * emptyPositions.length)]
+        : { x: darkMazeLeft + 2, y: darkMazeTop + 2 };
+    
+    // Bat spawn positions - pick 4 random positions from empty spots (not too close to door or key)
+    const batSpawns = [];
+    const doorDist = (pos) => Math.abs(pos.x - darkDoor.x) + Math.abs(pos.y - darkDoor.y);
+    const keyDist = (pos) => Math.abs(pos.x - yellowKeyPos.x) + Math.abs(pos.y - yellowKeyPos.y);
+    const validBatSpots = emptyPositions.filter(pos => doorDist(pos) > 3 && keyDist(pos) > 2);
+    
+    for (let i = 0; i < 4 && validBatSpots.length > 0; i++) {
+        const idx = Math.floor(Math.random() * validBatSpots.length);
+        const pos = validBatSpots.splice(idx, 1)[0];
+        batSpawns.push({ x: pos.x, y: pos.y, id: i });
+    }
 
     // --- Ending room (top) ---
     const finale = blank();
     carveRect(finale, 12, 6, 18, 11);
     const finaleDoor = { x: 15, y: 11 };
     finale[finaleDoor.y][finaleDoor.x] = CELL.EMPTY;
-    const finaleNote = { x: 15, y: 7 };
-    finale[finaleNote.y][finaleNote.x] = CELL.EMPTY;
+    const powerSupply = { x: 15, y: 7 };
+    finale[powerSupply.y][powerSupply.x] = CELL.EMPTY;
+    const hubNotePos = { x: 15, y: 15 };
 
     const rooms = {
         entry: {
@@ -659,20 +748,22 @@ export function generateLevel11Maze() {
             grid: puzzle,
             spawnPoints: { fromHub: { x: puzzleDoor.x + 1, y: puzzleDoor.y }, default: { x: puzzleDoor.x + 1, y: puzzleDoor.y } },
             doors: [ { pos: puzzleDoor, target: 'hub', spawn: 'fromPuzzle', lock: null } ],
-            puzzle: { tiles: puzzleTiles, note: puzzleNote, origin, paperPattern: puzzleNote }
+            puzzle: { tiles: puzzleTiles, note: puzzleNote, origin, paperPattern: puzzleNote },
+            flashlight: puzzleFlashlight
         },
         dark: {
             grid: dark,
             spawnPoints: { fromHub: { x: darkDoor.x - 1, y: darkDoor.y }, default: { x: darkDoor.x - 1, y: darkDoor.y } },
             doors: [ { pos: darkDoor, target: 'hub', spawn: 'fromDark', lock: null } ],
-            darkRoom: { flashlight: flashlightPickup, yellowKey: yellowKeyPos, bats: batSpawns }
+            darkRoom: { yellowKey: yellowKeyPos, bats: batSpawns, brightness: 0 }
         },
         finale: {
             grid: finale,
             spawnPoints: { fromHub: { x: finaleDoor.x, y: finaleDoor.y - 1 }, default: { x: finaleDoor.x, y: finaleDoor.y - 1 } },
             doors: [ { pos: finaleDoor, target: 'hub', spawn: 'fromTop', lock: null } ],
-            note: finaleNote
-        }
+            powerSupply: powerSupply
+        },
+        hubNotePos: hubNotePos
     };
 
     return { grid: entry, generators: [], telepads: [], level11: { rooms, spawnRoom: 'entry' } };

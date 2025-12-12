@@ -1,6 +1,6 @@
 // level11.js - Level 11: "Redeem Yourself"
 
-import { gameState, MAZE_WIDTH, MAZE_HEIGHT, fadeToBlack, fadeFromBlack, finishRun, setStatusMessage } from './state.js';
+import { gameState, MAZE_WIDTH, MAZE_HEIGHT, fadeToBlack, fadeFromBlack, setStatusMessage } from './state.js';
 import { CELL } from './maze.js';
 import { CELL_SIZE } from './renderer.js';
 
@@ -14,20 +14,28 @@ export const level11State = {
         flashlight: false,
         flashlightOn: false
     },
+    flashlightAngle: 0, // Angle the flashlight is pointing (radians)
+    flashlightBeamX: 0, // Mouse X position for flashlight beam tracking
+    flashlightBeamY: 0, // Mouse Y position for flashlight beam tracking
     rooms: {
         puzzle: {
             visited: false,
             tiles: Array(9).fill(false), // 3x3 grid (false = red/unpressed, true = green/pressed)
             solved: false,
             greenKeyTaken: false,
+            flashlightTaken: false, // Flashlight is now in puzzle room with green key
             loreRead: false
         },
         maze: {
             visited: false,
             yellowKeyTaken: false,
-            yellowKeyPos: null, // {x, y}
-            enemies: [], // [{fx, fy, vx, vy, nextMoveTime, shineStartTime}]
-            flashlightPickedUp: false
+            yellowKeyPos: null, // {x, y} - random spawn
+            enemies: [], // [{fx, fy, targetX, targetY, nextMoveTime, exposureTime, gridX, gridY}]
+            brightness: 0 // 0% brightness = pitch black
+        },
+        hub: {
+            visited: false,
+            notePickedUp: false
         }
     },
     doorTransitioning: false,
@@ -35,7 +43,9 @@ export const level11State = {
     cutsceneActive: false,
     cutsceneStep: 0,
     cutsceneStartTime: 0,
-    noteOverlay: null // {text, visible}
+    noteOverlay: null, // {text, visible}
+    goodEndingNote: false, // True after player disables power supply
+    powerDecisionMade: false // True after player makes power decision
 };
 
 // Puzzle solution pattern (matches paper note)
@@ -60,18 +70,27 @@ export function initLevel11() {
         flashlight: false,
         flashlightOn: false
     };
+    level11State.flashlightAngle = 0;
     level11State.rooms.puzzle = {
         visited: false,
         tiles: Array(9).fill(false),
         solved: false,
         greenKeyTaken: false,
+        flashlightTaken: false, // Flashlight spawns with green key
         loreRead: false
     };
     
-    // Yellow key spawns at one of several designated locations
+    // Yellow key positions in the dark maze (will be randomly chosen when entering maze)
+    // These positions are spread throughout the fixed maze in maze.js
     const yellowKeyPositions = [
-        { x: 5, y: 5 }, { x: 24, y: 5 }, { x: 5, y: 24 }, { x: 24, y: 24 },
-        { x: 15, y: 10 }, { x: 10, y: 15 }, { x: 20, y: 20 }
+        { x: 4, y: 9 },    // Top-left corner area
+        { x: 4, y: 19 },   // Bottom-left corner area
+        { x: 16, y: 9 },   // Top-right area
+        { x: 16, y: 19 },  // Bottom-right area
+        { x: 9, y: 14 },   // Center-left
+        { x: 12, y: 11 },  // Upper-center
+        { x: 6, y: 17 },   // Lower-left
+        { x: 15, y: 17 }   // Lower-right
     ];
     const randomPos = yellowKeyPositions[Math.floor(Math.random() * yellowKeyPositions.length)];
     
@@ -79,19 +98,29 @@ export function initLevel11() {
         visited: false,
         yellowKeyTaken: false,
         yellowKeyPos: randomPos,
+        brightness: 0, // 0% brightness = pitch black
+        // Bat enemies with grid-based movement
         enemies: [
-            { fx: 10.5, fy: 10.5, vx: 0, vy: 1, nextMoveTime: 0, shineStartTime: 0 },
-            { fx: 20.5, fy: 20.5, vx: 1, vy: 0, nextMoveTime: 0, shineStartTime: 0 }
-        ],
-        flashlightPickedUp: false
+            { fx: 6, fy: 9, gridX: 6, gridY: 9, targetX: 6, targetY: 9, nextMoveTime: 0, exposureTime: 0, id: 0 },
+            { fx: 10, fy: 15, gridX: 10, gridY: 15, targetX: 10, targetY: 15, nextMoveTime: 0, exposureTime: 0, id: 1 },
+            { fx: 14, fy: 12, gridX: 14, gridY: 12, targetX: 14, targetY: 12, nextMoveTime: 0, exposureTime: 0, id: 2 },
+            { fx: 5, fy: 18, gridX: 5, gridY: 18, targetX: 5, targetY: 18, nextMoveTime: 0, exposureTime: 0, id: 3 }
+        ]
+    };
+    level11State.rooms.hub = {
+        visited: false,
+        notePickedUp: false
     };
     level11State.cutsceneActive = false;
     level11State.cutsceneStep = 0;
     level11State.noteOverlay = null;
+    level11State.goodEndingNote = false;
+    level11State.powerDecisionMade = false;
     
     // Set game mode
     gameState.mode = 'level11';
     gameState.currentLevel = 11;
+    gameState.isLevel11 = true;
     gameState.isPaused = false;
     gameState.gameStatus = 'playing';
     
@@ -159,6 +188,7 @@ function buildSpawnRoom() {
  * Build the central hub room
  */
 function buildHubRoom() {
+    console.log('[Level 11] Building hub room. Puzzle solved:', level11State.rooms.puzzle.solved);
     const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.WALL));
     
     const cx = Math.floor(MAZE_WIDTH / 2);
@@ -224,7 +254,7 @@ function buildPuzzleRoom() {
             }
         }
     } else {
-        // Puzzle solved: open bottom area with green key
+        // Puzzle solved: open bottom area with green key and flashlight
         for (let y = cy + 1; y <= cy + roomSize; y++) {
             for (let x = cx - roomSize; x <= cx + roomSize; x++) {
                 if (x > 0 && x < MAZE_WIDTH - 1 && y > 0 && y < MAZE_HEIGHT - 1) {
@@ -232,6 +262,10 @@ function buildPuzzleRoom() {
                 }
             }
         }
+        
+        // Spawn green key and flashlight together in bottom area
+        level11State.rooms.puzzle.greenKeyPos = { x: cx - 1, y: cy + 4 };
+        level11State.rooms.puzzle.flashlightPos = { x: cx + 1, y: cy + 4 };
     }
     
     gameState.maze = grid;
@@ -239,58 +273,142 @@ function buildPuzzleRoom() {
 }
 
 /**
- * Build dark maze room
+ * Build dark maze room - Proper medium-sized maze with 0% brightness
+ * Player uses flashlight to navigate, but shining on bats for 0.5s kills you
  */
 function buildMazeRoom() {
-    const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.EMPTY));
+    console.log('[Level 11] Building dark maze room (pitch black, proper maze)');
+    const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.WALL));
     
-    // Add border walls
-    for (let x = 0; x < MAZE_WIDTH; x++) {
-        grid[0][x] = CELL.WALL;
-        grid[MAZE_HEIGHT - 1][x] = CELL.WALL;
-    }
-    for (let y = 0; y < MAZE_HEIGHT; y++) {
-        grid[y][0] = CELL.WALL;
-        grid[y][MAZE_WIDTH - 1] = CELL.WALL;
-    }
+    // Create a medium-sized maze area (16x16 from x:4-19, y:7-22)
+    const mazeLeft = 4;
+    const mazeRight = 19;
+    const mazeTop = 7;
+    const mazeBottom = 22;
     
-    // Add random walls for maze structure
-    for (let i = 0; i < 50; i++) {
-        const x = 2 + Math.floor(Math.random() * (MAZE_WIDTH - 4));
-        const y = 2 + Math.floor(Math.random() * (MAZE_HEIGHT - 4));
-        const len = 2 + Math.floor(Math.random() * 4);
-        const dir = Math.random() < 0.5;
+    // Simple seeded random for consistent maze
+    let seed = 12345;
+    const random = () => {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        return seed / 0x7fffffff;
+    };
+    
+    // Recursive backtracking maze generation
+    const carve = (x, y) => {
+        grid[y][x] = CELL.EMPTY;
         
-        for (let j = 0; j < len; j++) {
-            const wx = dir ? x + j : x;
-            const wy = dir ? y : y + j;
-            if (wx > 0 && wx < MAZE_WIDTH - 1 && wy > 0 && wy < MAZE_HEIGHT - 1) {
-                grid[wy][wx] = CELL.WALL;
+        const dirs = [
+            { dx: 0, dy: -2 },
+            { dx: 2, dy: 0 },
+            { dx: 0, dy: 2 },
+            { dx: -2, dy: 0 }
+        ];
+        
+        // Shuffle directions
+        for (let i = dirs.length - 1; i > 0; i--) {
+            const j = Math.floor(random() * (i + 1));
+            [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+        }
+        
+        for (const dir of dirs) {
+            const nx = x + dir.dx;
+            const ny = y + dir.dy;
+            
+            if (nx >= mazeLeft && nx <= mazeRight && 
+                ny >= mazeTop && ny <= mazeBottom && 
+                grid[ny][nx] === CELL.WALL) {
+                // Carve wall between current and next
+                grid[y + dir.dy / 2][x + dir.dx / 2] = CELL.EMPTY;
+                carve(nx, ny);
+            }
+        }
+    };
+    
+    // Start carving from top-left of maze area (odd coordinates)
+    const startX = mazeLeft + 1;
+    const startY = mazeTop + 1;
+    carve(startX, startY);
+    
+    // Door on right side connecting back to hub (at center-right)
+    const doorX = mazeRight + 1;
+    const doorY = Math.floor((mazeTop + mazeBottom) / 2);
+    grid[doorY][doorX] = CELL.EXIT;
+    grid[doorY][doorX - 1] = CELL.EMPTY; // Clear path to door
+    grid[doorY][mazeRight] = CELL.EMPTY;
+    
+    // Player spawns near the door
+    gameState.player.x = doorX - 1;
+    gameState.player.y = doorY;
+    
+    // Define 8 possible yellow key locations (all reachable empty cells)
+    const possibleKeyPositions = [
+        { x: mazeLeft + 1, y: mazeTop + 1 },      // Top-left
+        { x: mazeLeft + 1, y: mazeBottom - 1 },   // Bottom-left
+        { x: mazeRight - 1, y: mazeTop + 1 },     // Top-right
+        { x: mazeRight - 1, y: mazeBottom - 1 },  // Bottom-right
+        { x: Math.floor((mazeLeft + mazeRight) / 2), y: mazeTop + 3 },  // Top-center
+        { x: Math.floor((mazeLeft + mazeRight) / 2), y: mazeBottom - 3 }, // Bottom-center
+        { x: mazeLeft + 3, y: Math.floor((mazeTop + mazeBottom) / 2) },  // Left-center
+        { x: mazeRight - 3, y: Math.floor((mazeTop + mazeBottom) / 2) }  // Right-center
+    ];
+    
+    // Make sure key positions are valid empty cells (carve if needed)
+    for (const pos of possibleKeyPositions) {
+        if (grid[pos.y] && grid[pos.y][pos.x] === CELL.WALL) {
+            grid[pos.y][pos.x] = CELL.EMPTY;
+            // Connect to adjacent empty cell
+            const neighbors = [
+                { x: pos.x - 1, y: pos.y },
+                { x: pos.x + 1, y: pos.y },
+                { x: pos.x, y: pos.y - 1 },
+                { x: pos.x, y: pos.y + 1 }
+            ];
+            for (const n of neighbors) {
+                if (grid[n.y] && grid[n.y][n.x] === CELL.EMPTY) break;
+                if (grid[n.y] && grid[n.y][n.x] === CELL.WALL) {
+                    grid[n.y][n.x] = CELL.EMPTY;
+                    break;
+                }
             }
         }
     }
     
-    const cx = Math.floor(MAZE_WIDTH / 2);
-    const cy = Math.floor(MAZE_HEIGHT / 2);
-    
-    // Player spawns near center-left (came from hub)
-    gameState.player.x = cx - 8;
-    gameState.player.y = cy;
-    
-    // Back door to hub (left side)
-    grid[cy][1] = CELL.EXIT;
-    
-    // Ensure spawn area is clear
-    for (let y = cy - 1; y <= cy + 1; y++) {
-        for (let x = cx - 9; x <= cx - 7; x++) {
-            if (x > 0 && x < MAZE_WIDTH - 1 && y > 0 && y < MAZE_HEIGHT - 1) {
-                grid[y][x] = CELL.EMPTY;
-            }
-        }
-    }
+    // Randomly select yellow key position
+    const keyIndex = Math.floor(random() * possibleKeyPositions.length);
+    level11State.rooms.maze.yellowKeyPos = possibleKeyPositions[keyIndex];
     
     gameState.maze = grid;
     level11State.rooms.maze.visited = true;
+    
+    // Reset bat positions - 4 bats spread around the maze
+    const batSpawns = [
+        { x: mazeLeft + 2, y: mazeTop + 2 },
+        { x: mazeRight - 2, y: mazeTop + 2 },
+        { x: mazeLeft + 2, y: mazeBottom - 2 },
+        { x: mazeRight - 2, y: mazeBottom - 2 }
+    ];
+    
+    // Make sure bat spawns are on empty cells
+    for (const spawn of batSpawns) {
+        if (grid[spawn.y] && grid[spawn.y][spawn.x] === CELL.WALL) {
+            grid[spawn.y][spawn.x] = CELL.EMPTY;
+        }
+    }
+    
+    level11State.rooms.maze.enemies = batSpawns.map((spawn, idx) => ({
+        fx: spawn.x,
+        fy: spawn.y,
+        gridX: spawn.x,
+        gridY: spawn.y,
+        targetX: spawn.x,
+        targetY: spawn.y,
+        moving: false,
+        nextMoveTime: performance.now() + 1000 + idx * 300,
+        exposureTime: 0,
+        id: idx
+    }));
+    
+    console.log('[Level 11] Dark maze built with', level11State.rooms.maze.enemies.length, 'bats, key at', level11State.rooms.maze.yellowKeyPos);
 }
 
 /**
@@ -320,7 +438,92 @@ function buildFinaleRoom() {
     level11State.cutsceneActive = true;
     level11State.cutsceneStep = 0;
     level11State.cutsceneStartTime = 0;
+    level11State.powerDecisionMade = false;
     gameState.inputLocked = true;
+}
+
+/**
+ * Show power supply disable prompt
+ */
+function showPowerPrompt() {
+    const overlay = document.createElement('div');
+    overlay.id = 'power-prompt-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.88);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: rgba(18, 18, 28, 0.96);
+        border: 3px solid #ff4455;
+        box-shadow: 0 0 32px rgba(255,68,85,0.5);
+        padding: 22px 26px;
+        border-radius: 14px;
+        min-width: 320px;
+        text-align: center;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = 'Disable Power Supply?';
+    title.style.cssText = 'font-weight: bold; font-size: 18px; letter-spacing: 1.2px; margin-bottom: 18px; color: #ff4455;';
+    panel.appendChild(title);
+
+    const btnContainer = document.createElement('div');
+    btnContainer.style.cssText = 'display: flex; gap: 14px; justify-content: center;';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.innerHTML = '✓ YES';
+    yesBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #00cc66;
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+    `;
+    yesBtn.addEventListener('click', () => {
+        overlay.remove();
+        level11State.powerDecisionMade = true;
+        level11State.goodEndingNote = true;
+        level11State.cutsceneStep = 3; // Good ending path
+    });
+
+    const noBtn = document.createElement('button');
+    noBtn.innerHTML = '✗ NO';
+    noBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #ff4455;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+    `;
+    noBtn.addEventListener('click', () => {
+        overlay.remove();
+        level11State.powerDecisionMade = true;
+        level11State.goodEndingNote = false;
+        level11State.cutsceneStep = 4; // Bad ending path
+    });
+
+    btnContainer.appendChild(yesBtn);
+    btnContainer.appendChild(noBtn);
+    panel.appendChild(btnContainer);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
 }
 
 /**
@@ -434,17 +637,54 @@ export function handleLevel11Interact() {
         }
     }
     
-    // Check for flashlight pickup in maze
-    if (level11State.currentRoom === 'maze' && !level11State.rooms.maze.flashlightPickedUp) {
+    // Check for green key and flashlight pickup in puzzle room (after solving puzzle)
+    if (level11State.currentRoom === 'puzzle' && level11State.rooms.puzzle.solved) {
         const cx = Math.floor(MAZE_WIDTH / 2);
         const cy = Math.floor(MAZE_HEIGHT / 2);
-        const flashlightX = cx - 6;
-        const flashlightY = cy;
         
-        if (Math.abs(px - flashlightX) <= 1 && Math.abs(py - flashlightY) <= 1) {
-            level11State.inventory.flashlight = true;
-            level11State.rooms.maze.flashlightPickedUp = true;
-            setStatusMessage('Got flashlight! Press F to toggle.');
+        // Check for green key pickup
+        if (!level11State.rooms.puzzle.greenKeyTaken && level11State.rooms.puzzle.greenKeyPos) {
+            const greenPos = level11State.rooms.puzzle.greenKeyPos;
+            if (Math.abs(px - greenPos.x) <= 1 && Math.abs(py - greenPos.y) <= 1) {
+                level11State.inventory.greenKey = true;
+                level11State.rooms.puzzle.greenKeyTaken = true;
+                setStatusMessage('Got green key!');
+                return;
+            }
+        }
+        
+        // Check for flashlight pickup
+        if (!level11State.inventory.flashlight && !level11State.rooms.puzzle.flashlightTaken && level11State.rooms.puzzle.flashlightPos) {
+            const flashPos = level11State.rooms.puzzle.flashlightPos;
+            if (Math.abs(px - flashPos.x) <= 1 && Math.abs(py - flashPos.y) <= 1) {
+                level11State.inventory.flashlight = true;
+                level11State.rooms.puzzle.flashlightTaken = true;
+                setStatusMessage('Got flashlight! Press F to toggle. Be careful with the bats!');
+                return;
+            }
+        }
+    }
+    
+    // Check for good ending note pickup in hub (after disabling power supply)
+    if (level11State.currentRoom === 'hub' && level11State.goodEndingNote && !level11State.rooms.hub.notePickedUp) {
+        const cx = Math.floor(MAZE_WIDTH / 2);
+        const cy = Math.floor(MAZE_HEIGHT / 2);
+        const noteX = cx + 2;
+        const noteY = cy - 3;
+        
+        if (Math.abs(px - noteX) <= 1 && Math.abs(py - noteY) <= 1) {
+            level11State.rooms.hub.notePickedUp = true;
+            setStatusMessage('Found a note... You won.');
+            // Trigger the secret found achievement and show ending
+            import('./achievements.js').then(mod => {
+                if (mod.checkAchievements) {
+                    mod.checkAchievements('secret_found', { secretId: 'good_ending_note' });
+                }
+            }).catch(() => {});
+            // Trigger the good ending
+            setTimeout(() => {
+                showGoodEndingCredits();
+            }, 2000);
         }
     }
     
@@ -481,18 +721,6 @@ export function handleLevel11Interact() {
             }
         }
         
-        // Check for green key pickup (center bottom, after puzzle solved)
-        if (level11State.rooms.puzzle.solved && !level11State.rooms.puzzle.greenKeyTaken) {
-            const keyX = cx;
-            const keyY = cy + 4; // In bottom area after barrier opens
-            if (Math.abs(px - keyX) <= 1 && Math.abs(py - keyY) <= 1) {
-                level11State.inventory.greenKey = true;
-                level11State.rooms.puzzle.greenKeyTaken = true;
-                setStatusMessage('Got green key!');
-                return;
-            }
-        }
-        
         // Toggle puzzle tiles (3x3 grid centered)
         if (!level11State.rooms.puzzle.solved) {
             const gridStartX = cx - 1;
@@ -513,22 +741,6 @@ export function handleLevel11Interact() {
             }
         }
     }
-}
-
-/**
- * Show puzzle clue
- */
-function showPuzzleClue() {
-    // Show overlay with puzzle solution
-    level11State.puzzleClueVisible = true;
-}
-
-/**
- * Reset puzzle
- */
-function resetPuzzle() {
-    level11State.rooms.puzzle.tiles = [false, false, false, false, false, false, false, false, false];
-    setStatusMessage('Puzzle reset!');
 }
 
 /**
@@ -562,6 +774,12 @@ export function toggleFlashlight() {
 export function updateLevel11(currentTime) {
     if (!level11State.active) return;
     
+    // Update flashlight beam position to track mouse (for maze room)
+    if (level11State.currentRoom === 'maze' && gameState.mousePosition) {
+        level11State.flashlightBeamX = gameState.mousePosition.x;
+        level11State.flashlightBeamY = gameState.mousePosition.y;
+    }
+    
     // Update cutscene
     if (level11State.cutsceneActive) {
         updateCutscene(currentTime);
@@ -574,75 +792,160 @@ export function updateLevel11(currentTime) {
 }
 
 /**
- * Update maze enemies (random wander + flashlight death)
- * Optimized to reduce unnecessary calculations
+ * Update maze enemies with flashlight exposure mechanics
+ * Bats: STRICTLY grid-locked movement, stalk player aggressively in darkness
+ * If flashlight shines on bat for 0.5+ seconds, the bat kills the player
  */
 function updateMazeEnemies(currentTime) {
     const enemies = level11State.rooms.maze.enemies;
-    const px = gameState.player.x;
-    const py = gameState.player.y;
-    const flashlightOn = level11State.inventory.flashlightOn;
+    if (!enemies || enemies.length === 0) return;
     
-    // Cache maze dimensions
-    const maxX = MAZE_WIDTH - 1;
-    const maxY = MAZE_HEIGHT - 1;
+    const px = Math.round(gameState.player.x);
+    const py = Math.round(gameState.player.y);
+    const flashlightOn = level11State.inventory.flashlightOn && level11State.inventory.flashlight;
+    
+    const MOVE_INTERVAL = 600; // ms between moves - faster stalking
     
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
         
-        // Move enemy (only when it's time)
-        if (currentTime > enemy.nextMoveTime) {
-            const newFx = enemy.fx + enemy.vx * 0.5;
-            const newFy = enemy.fy + enemy.vy * 0.5;
+        // === Check if enemy is exposed by flashlight beam ===
+        let isExposedByBeam = false;
+        if (flashlightOn) {
+            const beamStartX = gameState.player.x + 0.5;
+            const beamStartY = gameState.player.y + 0.5;
             
-            const newX = Math.floor(newFx);
-            const newY = Math.floor(newFy);
+            // Mouse position in canvas pixels - convert to tile coordinates
+            const mousePixelX = gameState.mousePosition?.x || 0;
+            const mousePixelY = gameState.mousePosition?.y || 0;
+            const mouseTileX = mousePixelX / CELL_SIZE;
+            const mouseTileY = mousePixelY / CELL_SIZE;
             
-            // Check if can move (bounds check and wall check)
-            if (newX > 0 && newX < maxX && newY > 0 && newY < maxY &&
-                gameState.maze[newY][newX] !== CELL.WALL) {
-                enemy.fx = newFx;
-                enemy.fy = newFy;
-            } else {
-                // Change direction randomly (reuse direction arrays)
-                const rand = Math.floor(Math.random() * 4);
-                if (rand === 0) { enemy.vx = 0; enemy.vy = 1; }
-                else if (rand === 1) { enemy.vx = 0; enemy.vy = -1; }
-                else if (rand === 2) { enemy.vx = 1; enemy.vy = 0; }
-                else { enemy.vx = -1; enemy.vy = 0; }
+            // Calculate beam direction
+            const bdx = mouseTileX - beamStartX;
+            const bdy = mouseTileY - beamStartY;
+            const beamDist = Math.sqrt(bdx * bdx + bdy * bdy);
+            
+            if (beamDist > 0.1) {
+                const normDx = bdx / beamDist;
+                const normDy = bdy / beamDist;
+                
+                // Vector from player to enemy center
+                const enemyCenterX = enemy.gridX + 0.5;
+                const enemyCenterY = enemy.gridY + 0.5;
+                const toEnemyX = enemyCenterX - beamStartX;
+                const toEnemyY = enemyCenterY - beamStartY;
+                const distToEnemy = Math.sqrt(toEnemyX * toEnemyX + toEnemyY * toEnemyY);
+                
+                // Flashlight beam range: 8 tiles
+                if (distToEnemy > 0 && distToEnemy <= 8) {
+                    // Dot product to check if enemy is in beam direction
+                    const dotProduct = (toEnemyX * normDx + toEnemyY * normDy);
+                    // Perpendicular distance from enemy to beam line
+                    const perpDist = Math.abs(toEnemyX * normDy - toEnemyY * normDx);
+                    
+                    // If in forward cone and within beam width
+                    if (dotProduct > 0 && perpDist < 1.8) {
+                        isExposedByBeam = true;
+                    }
+                }
             }
-            
-            enemy.nextMoveTime = currentTime + 300 + Math.random() * 400;
         }
         
-        // Check flashlight death (only if flashlight is on)
-        if (flashlightOn) {
-            const dx = enemy.fx - px;
-            const dy = enemy.fy - py;
-            const distSq = dx * dx + dy * dy; // Use squared distance to avoid sqrt
-            
-            // Simple cone check: if enemy is within 5 tiles (25 squared)
-            if (distSq < 25) {
-                // Start tracking shine time
-                if (enemy.shineStartTime === 0) {
-                    enemy.shineStartTime = currentTime;
-                } else if (currentTime - enemy.shineStartTime > 1000) {
-                    // Been shining for 1+ second - kill player
-                    setStatusMessage('Enemy caught you! Respawning...');
-                    transitionToRoom('hub');
-                    
-                    // Reset enemy positions
-                    enemies[0].fx = 10.5;
-                    enemies[0].fy = 10.5;
-                    enemies[1].fx = 20.5;
-                    enemies[1].fy = 20.5;
-                    return;
-                }
-            } else {
-                enemy.shineStartTime = 0;
-            }
+        // === Update exposure time ===
+        if (isExposedByBeam) {
+            enemy.exposureTime = (enemy.exposureTime || 0) + 16.67;
         } else {
-            enemy.shineStartTime = 0;
+            enemy.exposureTime = 0;
+        }
+        
+        // === KILL PLAYER if bat exposed for 0.5+ seconds ===
+        if (enemy.exposureTime >= 500) {
+            setStatusMessage('The bat attacked! Light angered it!');
+            setTimeout(() => {
+                transitionToRoom('hub');
+            }, 800);
+            return;
+        }
+        
+        // === STRICTLY Grid-based movement (no interpolation) ===
+        // Bats snap directly to grid positions
+        enemy.fx = enemy.gridX;
+        enemy.fy = enemy.gridY;
+        
+        // === Move to new grid position when timer expires ===
+        if (currentTime >= enemy.nextMoveTime) {
+            // 85% chance to stalk player, 15% random
+            const stalkPlayer = Math.random() < 0.85;
+            
+            let bestDir = null;
+            let bestDist = Infinity;
+            
+            const dirs = [
+                { dx: 0, dy: -1 },
+                { dx: 0, dy: 1 },
+                { dx: -1, dy: 0 },
+                { dx: 1, dy: 0 }
+            ];
+            
+            if (stalkPlayer) {
+                // Find direction that gets closest to player
+                for (const dir of dirs) {
+                    const testX = enemy.gridX + dir.dx;
+                    const testY = enemy.gridY + dir.dy;
+                    
+                    // Check if valid move
+                    if (testX > 0 && testX < MAZE_WIDTH - 1 &&
+                        testY > 0 && testY < MAZE_HEIGHT - 1 &&
+                        gameState.maze[testY] && gameState.maze[testY][testX] !== CELL.WALL) {
+                        
+                        const distToPlayer = Math.abs(testX - px) + Math.abs(testY - py);
+                        if (distToPlayer < bestDist) {
+                            bestDist = distToPlayer;
+                            bestDir = dir;
+                        }
+                    }
+                }
+            }
+            
+            // If no stalking direction found or random move, pick random valid direction
+            if (!bestDir) {
+                // Shuffle directions
+                for (let j = dirs.length - 1; j > 0; j--) {
+                    const k = Math.floor(Math.random() * (j + 1));
+                    [dirs[j], dirs[k]] = [dirs[k], dirs[j]];
+                }
+                for (const dir of dirs) {
+                    const testX = enemy.gridX + dir.dx;
+                    const testY = enemy.gridY + dir.dy;
+                    if (testX > 0 && testX < MAZE_WIDTH - 1 &&
+                        testY > 0 && testY < MAZE_HEIGHT - 1 &&
+                        gameState.maze[testY] && gameState.maze[testY][testX] !== CELL.WALL) {
+                        bestDir = dir;
+                        break;
+                    }
+                }
+            }
+            
+            // Apply movement
+            if (bestDir) {
+                enemy.gridX += bestDir.dx;
+                enemy.gridY += bestDir.dy;
+                enemy.fx = enemy.gridX;
+                enemy.fy = enemy.gridY;
+            }
+            
+            // Schedule next move
+            enemy.nextMoveTime = currentTime + MOVE_INTERVAL + Math.random() * 200;
+        }
+        
+        // === Check collision with player ===
+        if (enemy.gridX === px && enemy.gridY === py) {
+            setStatusMessage('A bat caught you in the darkness!');
+            setTimeout(() => {
+                transitionToRoom('hub');
+            }, 800);
+            return;
         }
     }
 }
@@ -657,33 +960,60 @@ function updateCutscene(currentTime) {
     
     const elapsed = currentTime - level11State.cutsceneStartTime;
     
+    // Step 0: Auto-walk player upward toward power supply
     if (level11State.cutsceneStep === 0) {
-        // Auto-walk player upward
         if (gameState.player.y > 5) {
             gameState.player.y -= 0.03;
         }
         
-        // After 3 seconds, show text
-        if (elapsed > 3000) {
+        // After player reaches top, show power prompt
+        if (elapsed > 3000 && !level11State.powerDecisionMade) {
             level11State.cutsceneStep = 1;
+            showPowerPrompt();
         }
     }
     
-    if (level11State.cutsceneStep === 1) {
-        // Show final text
+    // Step 1: Waiting for power decision (prompt is showing)
+    // The prompt buttons will set cutsceneStep to 3 (good) or 4 (bad)
+    
+    // Step 3: Good ending - player disabled power supply
+    if (level11State.cutsceneStep === 3) {
         level11State.noteOverlay = {
-            text: 'EchoMaze 2\n\nRedeem Yourself from the Inside',
+            text: 'Power Supply disabled!\nData Transfer interrupted!',
             visible: true
         };
         
-        // After 5 more seconds, fade to credits
-        if (elapsed > 8000) {
-            level11State.cutsceneStep = 2;
-            fadeToBlack(2.0);
-        }
+        // After showing message, go back to hub with note spawned
+        level11State.cutsceneStartTime = currentTime; // Reset timer
+        level11State.cutsceneStep = 5; // Go to hub transition step
     }
     
-    if (level11State.cutsceneStep === 2 && elapsed > 10000) {
+    // Step 4: Bad ending - player refused
+    if (level11State.cutsceneStep === 4) {
+        level11State.noteOverlay = {
+            text: 'Warning!\nTransfer complete...',
+            visible: true
+        };
+        
+        level11State.cutsceneStartTime = currentTime;
+        level11State.cutsceneStep = 6; // Go to bad credits step
+    }
+    
+    // Step 5: Good ending - wait then go to hub for note pickup
+    if (level11State.cutsceneStep === 5 && elapsed > 3000) {
+        level11State.noteOverlay = null;
+        level11State.cutsceneActive = false;
+        gameState.inputLocked = false;
+        transitionToRoom('hub');
+    }
+    
+    // Step 6: Bad ending - wait then go to credits
+    if (level11State.cutsceneStep === 6 && elapsed > 3000) {
+        fadeToBlack(2.0);
+        level11State.cutsceneStep = 7;
+    }
+    
+    if (level11State.cutsceneStep === 7 && elapsed > 5000) {
         exitLevel11ToCredits();
     }
 }
@@ -702,6 +1032,7 @@ export function exitLevel11() {
     // Return to normal mode
     gameState.mode = 'level';
     gameState.currentLevel = 10;
+    gameState.isLevel11 = false;
     gameState.gameStatus = 'playing';
     gameState.isPaused = false;
     gameState.inputLocked = false;

@@ -291,15 +291,15 @@ export function setEndlessDefaults(cfg) {
 export function getSettings() {
     try {
         const raw = localStorage.getItem(KEY_SETTINGS);
-        if (!raw) return { movementAudio: true, autoMovement: true, simplifiedUI: false };
+        if (!raw) return { movementAudio: true, autoMovement: true, simplifiedUI: true };
         const obj = JSON.parse(raw);
         return {
             movementAudio: obj && obj.movementAudio !== false,
             autoMovement: obj && obj.autoMovement !== false,
-            simplifiedUI: obj && obj.simplifiedUI === true,
+            simplifiedUI: true, // force simplified UI as default and only mode
         };
     } catch {
-        return { movementAudio: true, autoMovement: true, simplifiedUI: false };
+        return { movementAudio: true, autoMovement: true, simplifiedUI: true };
     }
 }
 
@@ -307,7 +307,7 @@ export function setSettings(settings) {
     const s = {
         movementAudio: settings && settings.movementAudio !== false,
         autoMovement: settings && settings.autoMovement !== false,
-        simplifiedUI: settings && settings.simplifiedUI === true,
+        simplifiedUI: true, // locked on
     };
     try { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); } catch {}
 }

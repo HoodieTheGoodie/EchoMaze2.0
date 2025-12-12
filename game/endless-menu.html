@@ -1,0 +1,145 @@
+<!-- Endless Mode Menu UI -->
+<div id="endlessMenu" style="display: none;">
+    <div id="endlessMenuContainer" style="
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+        display: flex;
+        flex-direction: column;
+        padding: 40px;
+        font-family: 'Courier New', monospace;
+        color: #fff;
+        overflow-y: auto;
+    ">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="font-size: 48px; margin: 0; color: #00ff88; text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);">
+                ENDLESS MODE
+            </h1>
+            <p style="font-size: 16px; color: #88ffaa; margin-top: 10px;">
+                Survive infinite rooms • Earn abilities • Unlock permanent upgrades
+            </p>
+        </div>
+
+        <!-- Stats Bar -->
+        <div id="endlessStats" style="
+            display: flex;
+            justify-content: space-around;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ff88;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        ">
+            <div style="text-align: center;">
+                <div style="font-size: 14px; color: #88ffaa;">Best Run</div>
+                <div id="statBestRun" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                <div style="font-size: 12px; color: #666;">rooms</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 14px; color: #88ffaa;">Total Rooms</div>
+                <div id="statTotalRooms" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                <div style="font-size: 12px; color: #666;">cleared</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 14px; color: #88ffaa;">Available Points</div>
+                <div id="statAvailablePoints" style="font-size: 32px; font-weight: bold; color: #ffd700;">0</div>
+                <div style="font-size: 12px; color: #666;">to spend</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 14px; color: #88ffaa;">Total Runs</div>
+                <div id="statTotalRuns" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                <div style="font-size: 12px; color: #666;">attempts</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div style="display: flex; gap: 30px; flex: 1;">
+            <!-- Left: Upgrade Shop -->
+            <div style="flex: 1; background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 20px; overflow-y: auto;">
+                <h2 style="margin-top: 0; color: #00ff88; font-size: 24px;">Permanent Upgrades</h2>
+                <div id="upgradesList"></div>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #00ff88;">
+                    <button id="resetUpgradesBtn" style="
+                        width: 100%;
+                        padding: 12px;
+                        background: #ff4455;
+                        color: #fff;
+                        border: none;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                    ">Reset All Upgrades</button>
+                </div>
+            </div>
+
+            <!-- Right: Run Controls -->
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                <!-- Start Run Panel -->
+                <div style="background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 30px; text-align: center;">
+                    <h2 style="margin-top: 0; color: #00ff88; font-size: 28px;">Start New Run</h2>
+                    <p style="color: #88ffaa; margin-bottom: 20px;">
+                        Face endless randomly generated mazes.<br/>
+                        Earn abilities as you progress.<br/>
+                        How many rooms can you survive?
+                    </p>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                            <input type="checkbox" id="upgradesToggle" checked style="margin-right: 10px; width: 20px; height: 20px;">
+                            <span style="font-size: 16px;">Enable Permanent Upgrades</span>
+                        </label>
+                    </div>
+                    
+                    <button id="startRunBtn" style="
+                        width: 100%;
+                        padding: 20px;
+                        background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+                        color: #000;
+                        border: none;
+                        border-radius: 12px;
+                        font-size: 24px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+                    ">START RUN</button>
+                </div>
+
+                <!-- Ability Preview -->
+                <div style="background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 20px; flex: 1;">
+                    <h3 style="margin-top: 0; color: #00ff88; font-size: 20px;">Ability Unlock Schedule</h3>
+                    <div id="abilitySchedule" style="font-size: 14px; line-height: 1.8;"></div>
+                </div>
+
+                <!-- Classic Mode Button -->
+                <button id="classicEndlessBtn" style="
+                    padding: 15px;
+                    background: rgba(100, 100, 150, 0.3);
+                    color: #aaf;
+                    border: 2px solid #aaf;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                ">Classic Endless Mode</button>
+
+                <!-- Back Button -->
+                <button id="endlessBackBtn" style="
+                    padding: 15px;
+                    background: rgba(100, 100, 100, 0.3);
+                    color: #fff;
+                    border: 2px solid #666;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                ">Back to Main Menu</button>
+            </div>
+        </div>
+    </div>
+</div>

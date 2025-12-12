@@ -277,6 +277,25 @@
         .terminal-pill[data-state="locked"] { background: rgba(100, 100, 100, 0.4); border-color: rgba(100, 100, 100, 0.6); color: #888; }
         .terminal-pill[data-state="open"] { background: rgba(0, 246, 255, 0.2); border-color: rgba(0, 246, 255, 0.8); color: #00f6ff; }
         .terminal-pill[data-state="solved"] { background: rgba(97, 218, 251, 0.3); border-color: #61dafb; color: #61dafb; box-shadow: 0 0 8px rgba(97, 218, 251, 0.6); }
+
+        /* Dialog Bar (for virus/system/lever/pre-boss/ending) */
+        #dialogBar {
+            display:none;
+            width:100%;
+            max-width:720px;
+            margin:8px auto 10px auto;
+            background:rgba(0,0,0,0.92);
+            border:3px solid #ff4455;
+            border-radius:10px;
+            padding:14px 18px;
+            color:#fff;
+            font-size:1.1rem;
+            font-family:Arial,sans-serif;
+            text-align:center;
+            z-index:3000;
+            box-shadow:0 0 18px #ff4455a0;
+            position:relative;
+        }
     </style>
 </head>
 <body>
@@ -291,9 +310,11 @@
         </div>
     </div>
     
+    <div id="dialogBar" style="display:none;"></div>
+
     <div id="game-container" style="display:none;">
-        
-        <div id="ui-panel">
+
+        <div id="ui-panel" style="display:none;">
             <div class="ui-section" style="display:none">
                 <span class="ui-label">Health:</span>
                 <span id="health">❤️❤️❤️</span>
@@ -385,9 +406,12 @@
     <div id="creditsOverlay" style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.9); z-index:3500;">
         <div style="position:absolute; inset:10% 15%; background:#0d0a0f; border:3px solid #00f6ff; border-radius:14px; padding:16px; display:flex; flex-direction:column;">
             <h2 style="color:#00f6ff; text-align:center; margin-bottom:8px;">Credits</h2>
-            <div style="flex:1; overflow:auto; padding:8px; color:#eee; line-height:1.6;">
-                <p style="margin-bottom:8px;">Devloped by Hoodie/Will and Scott Eifel</p>
-                <p style="white-space:pre-wrap; margin-bottom:12px;">Hey thanks for playing my game! I made this in my free time as I was bored and wanted to try something new. Now that the game is finished that doesnt mean I will be stopping as I have many planned games for the future, such as a 2 Player Game and a Tower Defense game that will all be connect to a main story. If any bugs are found I will still be updating this game to fix them so I wont just be fully done with this game.</p>
+            <div class="credits-content" style="flex:1; overflow:auto; padding:8px; color:#eee; line-height:1.6;">
+                <p style="margin-bottom:12px;">Thank you for playing our game! This was created out of boredom and because my school blocked most games in my school so I thought I would just work on developing my own in my free time.</p>
+                <p style="margin-bottom:12px; color:#ff9955;">It seems you didn't get the best possible ending as you were manipulated by the virus into destroying the anti-virus and giving it full access to this game and didn't do anything to fix it.</p>
+                <p style="margin-bottom:12px; color:#ffdd66;">Maybe you missed something in past levels... some sort of puzzles in order to achieve a better ending 👀</p>
+                <div style="height:12px;"></div>
+                <p style="margin-bottom:8px; font-size:0.9em; opacity:0.7;">Developed by Hoodie/Will and Scott Eifel</p>
                 <div style="height:12px;"></div>
                 <div style="color:#aaa; font-size:10px; word-break:break-all;">
                     8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M
@@ -417,13 +441,12 @@
         <div class="menu-panel">
             <div class="menu-title">ECHO MAZE</div>
             <div class="menu-subtitle">Select a level</div>
-            <!-- Top-right controls -->
-            <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:8px;">
-                <button id="trophyBtn" class="level-btn" title="Best Times" style="padding:8px 10px; font-size:0.95rem; border-color:#00f6ff;">🏆</button>
-                <button id="helpBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#00f6ff;">Help</button>
-                <button id="settingsBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#00f6ff;">Settings</button>
-                <button id="resetProgressBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem; border-color:#00f6ff;">Reset Progress</button>
-                <button id="devToggleBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Dev</button>
+            <!-- Primary menu buttons (Achievements, Skins, Help, Settings) -->
+            <div style="display:flex; justify-content:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                <button id="achievementsBtn" class="level-btn" title="Achievements" style="padding:8px 14px; font-size:0.95rem; border-color:#FFD700; color:#FFD700;">🏆 Achievements</button>
+                <button id="skinsBtn" class="level-btn" title="Skins" style="padding:8px 14px; font-size:0.95rem; border-color:#FF69B4; color:#FF69B4;">🎨 Skins</button>
+                <button id="helpBtn" class="level-btn" style="padding:8px 14px; font-size:0.95rem; border-color:#00f6ff;">❓ Help</button>
+                <button id="settingsBtn" class="level-btn" style="padding:8px 14px; font-size:0.95rem; border-color:#00f6ff;">⚙ Settings</button>
             </div>
             <div id="levelsGrid" class="level-grid">
                 <button class="level-btn" data-level="1">Level 1</button>
@@ -437,34 +460,50 @@
                 <button class="level-btn" data-level="9">Level 9</button>
                 <button class="level-btn" data-level="10">Level 10</button>
             </div>
-            <button class="level-btn endless" data-level="endless">Endless Mode</button>
-            <button class="level-btn challenge" data-level="challenge" disabled style="opacity: 0.5; cursor: not-allowed; background: linear-gradient(135deg, #1a0a2e, #16213e); border: 2px solid #ff6b35; box-shadow: 0 0 20px rgba(255, 107, 53, 0.3); grid-column: span 2; justify-self: center;">
-                ⚔️ Challenge Mode
-                <br><span style="font-size:0.7em;color:#ff9966;">Coming Soon - Defeat the Final Boss</span>
+            <button class="level-btn endless" data-level="endless" style="grid-column: span 1;">Endless Mode</button>
+            <button class="level-btn builder" data-level="builder" disabled style="grid-column: span 1; opacity: 0.6; cursor: not-allowed; background: linear-gradient(135deg, #1a0a2e, #16213e); border: 2px solid #ff6b35; box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);">
+                🏗️ Builder Mode
+                <br><span style="font-size:0.7em;color:#ff9966;">Coming Soon</span>
             </button>
+            <!-- Optional secondary buttons (collapsed) -->
+            <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(0,246,255,0.2); display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button id="trophyBtn" class="level-btn" title="Best Times" style="padding:6px 10px; font-size:0.85rem; border-color:#00f6ff; opacity:0.7;">🏆 Times</button>
+                <button id="resetProgressBtn" class="level-btn" style="padding:6px 10px; font-size:0.85rem; border-color:#ff6b6b; color:#ff6b6b; opacity:0.7;">↺ Reset</button>
+                <button id="devToggleBtn" class="level-btn" style="padding:6px 10px; font-size:0.85rem; border-color:#999; opacity:0.5;">Dev</button>
+            </div>
             <!-- Dev Panel (hidden until unlocked) -->
-            <div id="devPanel" style="display:none; margin-top:14px; padding:12px; border:2px solid #00f6ff; border-radius:10px; background:#0f1618; text-align:left;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <strong style="color:#00f6ff;">Dev Tools</strong>
-                    <button id="devCloseBtn" class="level-btn" style="padding:6px 10px; font-size:0.9rem;">Close</button>
+            <div id="devPanel" style="display:none; margin-top:14px; padding:14px; border:2px solid #00f6ff; border-radius:10px; background:#0f1618; text-align:left;">
+                <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
+                  <!-- Game Mechanics -->
+                  <div style="min-width:220px;">
+                    <div style="color:#00f6ff; font-size:0.9rem; margin-bottom:6px; font-weight:bold;">Game Mechanics</div>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="godModeChk" type="checkbox" />
+                        <span>Great Mode</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="skipPreBossChk" type="checkbox" />
+                        <span>Skip to Pre-Boss (Level 10)</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="bossDmg10xChk" type="checkbox" />
+                        <span>10x Boss Damage</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+                        <input id="instaGenChk" type="checkbox" />
+                        <span>Instant Complete Generators</span>
+                    </label>
+                  </div>
+                  <!-- Unlocks & Features -->
+                  <div style="min-width:220px;">
+                    <div style="color:#00f6ff; font-size:0.9rem; margin-bottom:6px; font-weight:bold;">Unlocks & Features</div>
+                    <button id="unlockAllSkinsBtn" type="button" style="width:100%; padding:6px; margin:6px 0; background:#00f6ff; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Unlock All Skins</button>
+                    <button id="unlockAllAchievementsBtn" type="button" style="width:100%; padding:6px; margin:6px 0; background:#00f6ff; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Unlock All Achievements</button>
+                    <button id="unlockAllLevelsBtn" type="button" style="width:100%; padding:6px; margin:6px 0; background:#00f6ff; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Unlock All Levels</button>
+                    <button id="playLevel11Btn" type="button" style="width:100%; padding:6px; margin:6px 0; background:#00d9ff; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">▶ Play Level 11</button>
+                    <button id="resetAllBtn" type="button" style="width:100%; padding:6px; margin:6px 0; background:#ff6b6b; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Reset All</button>
+                  </div>
                 </div>
-                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-                    <input id="godModeChk" type="checkbox" />
-                    <span>Great Mode</span>
-                </label>
-                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-                    <input id="skipPreBossChk" type="checkbox" />
-                    <span>Skip to Pre-Boss (Level 10)</span>
-                </label>
-                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-                    <input id="bossDmg10xChk" type="checkbox" />
-                    <span>10x Boss Damage</span>
-                </label>
-                <button id="unlockAllBtn" class="level-btn" style="padding:8px 10px; font-size:0.95rem;">Unlock All Levels</button>
-                <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-                    <input id="instaGenChk" type="checkbox" />
-                    <span>Instant Complete Generators</span>
-                </label>
             </div>
         </div>
     </div>
@@ -554,11 +593,6 @@
                     <span id="autoMovementLabel">Auto-Movement</span>
                 </label>
                 <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
-                <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
-                    <input id="simplifiedUIChk" type="checkbox" />
-                    <span>Simplified UI</span>
-                </label>
-                <div style="color:#888; font-size:0.9rem; margin-left:30px;">Toggle between traditional top UI and minimalist side panels.</div>
                 
                 <!-- Secret Bazooka Mode Section with Cool Styling -->
                 <div id="bazookaModeSection" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,68,0,0.15), rgba(255,140,0,0.1)); border: 2px solid rgba(255,68,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,68,0,0.3), 0 0 40px rgba(255,68,0,0.1) inset;">
@@ -598,6 +632,15 @@
                 <div style="display:flex; justify-content:center; margin-top:16px;">
                     <button id="viewCreditsBtn" type="button" style="display:none; border-color:#00f6ff;">View Credits</button>
                 </div>
+                
+                <!-- Reset Buttons Section -->
+                <div style="margin-top:24px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.3);">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:12px; font-size:0.95rem;">RESET DATA</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+                        <button id="resetAchievementsBtn" type="button" style="border-color:#ff6b6b; color:#ff6b6b; padding:8px 12px; font-size:0.9rem;">Reset Achievements</button>
+                        <button id="resetSkinsBtn" type="button" style="border-color:#ff6b6b; color:#ff6b6b; padding:8px 12px; font-size:0.9rem;">Reset Skins</button>
+                    </div>
+                </div>
             </div>
             <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
                 <button id="settingsBackBtn" type="button">Back</button>
@@ -635,6 +678,231 @@
         </div>
     </div>
 
+    <!-- Achievements Overlay -->
+    <div id="achievementsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.9); justify-content:center; align-items:center; z-index:2300;">
+        <div class="overlay-panel" style="min-width: 700px; max-width:90vw; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
+            <h2 style="text-align:center; margin-bottom:16px; color:#FFD700; text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);">🏆 Achievements</h2>
+            <div id="achievementsList" style="flex:1; overflow-y:auto; padding:8px 0;"></div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; padding-top:12px; border-top:2px solid rgba(0,246,255,0.3);">
+                <button id="achievementsCloseBtn" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skins Overlay -->
+    <div id="skinsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.9); justify-content:center; align-items:center; z-index:2300;">
+        <div class="overlay-panel" style="min-width: 700px; max-width:90vw; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
+            <h2 style="text-align:center; margin-bottom:16px; color:#FF69B4; text-shadow: 0 0 15px rgba(255, 105, 180, 0.6);">🎨 Skins</h2>
+            <div style="display:flex; gap:12px; margin-bottom:16px; padding:12px; background:rgba(0,0,0,0.3); border-radius:8px;">
+                <input id="skinCodeInput" type="text" placeholder="Enter secret code..." style="flex:1; padding:10px 14px; background:#1a1a1a; border:2px solid #FF69B4; border-radius:8px; color:#fff; font-size:1rem;"/>
+                <button id="skinCodeSubmit" type="button" style="padding:10px 20px; background:#FF69B4; color:#000; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">Redeem</button>
+            </div>
+            <div id="skinCodeStatus" style="color:#FFD700; font-size:0.95rem; min-height:24px; margin-bottom:12px; text-align:center;"></div>
+            <div id="skinsList" style="flex:1; overflow-y:auto; padding:8px 0;"></div>
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; padding-top:12px; border-top:2px solid rgba(0,246,255,0.3);">
+                <button id="skinsCloseBtn" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Endless Mode Menu -->
+    <div id="endlessMenu" style="display: none;">
+        <div id="endlessMenuContainer" style="
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            display: flex;
+            flex-direction: column;
+            padding: 40px;
+            font-family: 'Courier New', monospace;
+            color: #fff;
+            overflow-y: auto;
+            z-index: 2400;
+        ">
+            <!-- Header -->
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 48px; margin: 0; color: #00ff88; text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);">
+                    ENDLESS MODE
+                </h1>
+                <p style="font-size: 16px; color: #88ffaa; margin-top: 10px;">
+                    Survive infinite rooms • Earn abilities • Unlock permanent upgrades
+                </p>
+            </div>
+
+            <!-- Stats Bar -->
+            <div id="endlessStats" style="
+                display: flex;
+                justify-content: space-around;
+                background: rgba(0, 0, 0, 0.5);
+                border: 2px solid #00ff88;
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 30px;
+            ">
+                <div style="text-align: center;">
+                    <div style="font-size: 14px; color: #88ffaa;">Best Run</div>
+                    <div id="statBestRun" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                    <div style="font-size: 12px; color: #666;">rooms</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 14px; color: #88ffaa;">Total Rooms</div>
+                    <div id="statTotalRooms" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                    <div style="font-size: 12px; color: #666;">cleared</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 14px; color: #88ffaa;">Available Points</div>
+                    <div id="statAvailablePoints" style="font-size: 32px; font-weight: bold; color: #ffd700;">0</div>
+                    <div style="font-size: 12px; color: #666;">to spend</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 14px; color: #88ffaa;">Total Runs</div>
+                    <div id="statTotalRuns" style="font-size: 32px; font-weight: bold; color: #00ff88;">0</div>
+                    <div style="font-size: 12px; color: #666;">attempts</div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div style="display: flex; gap: 30px; flex: 1;">
+                <!-- Left: Upgrade Shop -->
+                <div style="flex: 1; background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 20px; overflow-y: auto;">
+                    <h2 style="margin-top: 0; color: #00ff88; font-size: 24px;">Permanent Upgrades</h2>
+                    <div id="upgradesList"></div>
+                    
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #00ff88;">
+                        <button id="resetUpgradesBtn" style="
+                            width: 100%;
+                            padding: 12px;
+                            background: #ff4455;
+                            color: #fff;
+                            border: none;
+                            border-radius: 8px;
+                            font-size: 16px;
+                            font-weight: bold;
+                            cursor: pointer;
+                            font-family: 'Courier New', monospace;
+                        ">Reset All Upgrades</button>
+                    </div>
+                </div>
+
+                <!-- Right: Run Controls -->
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                    <!-- Start Run Panel -->
+                    <div style="background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 30px; text-align: center;">
+                        <h2 style="margin-top: 0; color: #00ff88; font-size: 28px;">Start New Run</h2>
+                        <p style="color: #88ffaa; margin-bottom: 20px;">
+                            Face endless randomly generated mazes.<br/>
+                            Earn abilities as you progress.<br/>
+                            How many rooms can you survive?
+                        </p>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                                <input type="checkbox" id="upgradesToggle" checked style="margin-right: 10px; width: 20px; height: 20px;">
+                                <span style="font-size: 16px;">Enable Permanent Upgrades</span>
+                            </label>
+                        </div>
+                        
+                        <button id="startRunBtn" style="
+                            width: 100%;
+                            padding: 20px;
+                            background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+                            color: #000;
+                            border: none;
+                            border-radius: 12px;
+                            font-size: 24px;
+                            font-weight: bold;
+                            cursor: pointer;
+                            font-family: 'Courier New', monospace;
+                            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+                        ">START RUN</button>
+                    </div>
+
+                    <!-- Ability Preview -->
+                    <div style="background: rgba(0, 0, 0, 0.3); border: 2px solid #00ff88; border-radius: 10px; padding: 20px; flex: 1;">
+                        <h3 style="margin-top: 0; color: #00ff88; font-size: 20px;">Ability Unlock Schedule</h3>
+                        <div id="abilitySchedule" style="font-size: 14px; line-height: 1.8;"></div>
+                    </div>
+
+                    <!-- Classic Mode Button -->
+                    <button id="classicEndlessBtn" style="
+                        padding: 15px;
+                        background: rgba(100, 100, 150, 0.3);
+                        color: #aaf;
+                        border: 2px solid #aaf;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                    ">Classic Endless Mode</button>
+
+                    <!-- Back Button -->
+                    <button id="endlessBackBtn" style="
+                        padding: 15px;
+                        background: rgba(100, 100, 100, 0.3);
+                        color: #fff;
+                        border: 2px solid #666;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                    ">Back to Main Menu</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Builder Mode Menu -->
+    <div id="builderMenu" style="display: none;">
+        <div id="builderMenuContainer" style="
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #0d0a0f, #1a1320);
+            border: 3px solid #ff6b35;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 700px;
+            max-height: 80vh;
+            overflow-y: auto;
+            z-index: 2050;
+            box-shadow: 0 0 40px rgba(255, 107, 53, 0.4);
+        ">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #ff6b35; margin: 0; text-shadow: 0 0 20px rgba(255, 107, 53, 0.6); font-size: 32px;">🏗️ BUILDER MODE</h1>
+                <div style="color: #ff9966; font-size: 18px; margin-top: 10px;">Coming Soon...</div>
+            </div>
+            
+            <div style="
+                background: rgba(0, 0, 0, 0.3);
+                border: 2px solid #ff6b35;
+                border-radius: 10px;
+                padding: 20px;
+                text-align: center;
+                margin-bottom: 20px;
+            ">
+                <p style="color: #ccc; font-size: 16px; line-height: 1.6; margin: 0;">
+                    Create and customize your own endless mode levels.<br>
+                    Set enemy types, maze difficulty, and challenge modifiers.<br>
+                    <br>
+                    <span style="color: #ff9966; font-weight: bold;">More details coming in future updates!</span>
+                </p>
+            </div>
+
+            <!-- Back Button -->
+            <button id="builderBackBtn" style="
+                width: 100%;
+                padding: 15px;
+                background: rgba(100, 100, 100, 0.3);
+                color: #fff;
+                border: 2px solid #666;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                font-family: 'Courier New', monospace;
+                margin-top: 20px;
+            ">Back to Main Menu</button>
+        </div>
+    </div>
+
     <script>
         // Lightweight error surface to help diagnose loading issues
         (function(){
@@ -664,18 +932,24 @@
     </script>
     <!-- Cache-busting query to ensure latest modules load -->
     <script>
-        window.__SMG_VER__ = 'v20251124_mobile';
+        window.__SMG_VER__ = 'v20251209_achievements_fix';
     </script>
     <!-- Load background animation first -->
-    <script src="js/background.js?ver=v20251124"></script>
+    <script src="js/background.js?ver=v20251212a"></script>
     <!-- Load game modules -->
-    <script type="module" src="js/particles.js?ver=v20251124"></script>
-    <script type="module" src="js/audio.js?ver=v20251124"></script>
-    <script type="module" src="js/config.js?ver=v20251124"></script>
-    <script type="module" src="js/maze.js?ver=v20251124"></script>
-    <script type="module" src="js/state.js?ver=v20251124"></script>
-    <script type="module" src="js/renderer.js?ver=v20251124"></script>
-    <script type="module" src="js/input.js?ver=v20251124"></script>
-    <script type="module" src="js/main.js?ver=v20251124"></script>
+    <script type="module" src="js/particles.js?ver=v20251212a"></script>
+    <script type="module" src="js/audio.js?ver=v20251212a"></script>
+    <script type="module" src="js/config.js?ver=v20251212a"></script>
+    <script type="module" src="js/maze.js?ver=v20251212a"></script>
+    <script type="module" src="js/endless-progression.js?ver=v20251212a"></script>
+    <script type="module" src="js/endless-ui.js?ver=v20251212a"></script>
+    <script type="module" src="js/state.js?ver=v20251212a"></script>
+    <script type="module" src="js/renderer.js?ver=v20251212a"></script>
+    <script type="module" src="js/input.js?ver=v20251212a"></script>
+    <script type="module" src="js/achievements.js?ver=v20251212a"></script>
+    <script type="module" src="js/skins.js?ver=v20251212a"></script>
+    <script type="module" src="js/ui-notifications.js?ver=v20251212a"></script>
+    <script type="module" src="js/ui-panels.js?ver=v20251212a"></script>
+    <script type="module" src="js/main.js?ver=v20251212a"></script>
 </body>
 </html>

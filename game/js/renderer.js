@@ -6,6 +6,8 @@ import { particles } from './particles.js';
 import { getLevelColor, isBazookaMode } from './config.js';
 import { getSprite } from './sprites.js';
 import { isMobile } from './mobile-controls.js';
+import { getPlayerVisuals } from './skins.js';
+import { level11State } from './level11.js';
 
 // Export CELL_SIZE so other modules can convert tile to pixel coordinates
 export let CELL_SIZE = 20; // Changed to let for responsive scaling
@@ -176,9 +178,237 @@ function buildMazeBase() {
     mazeBaseDirty = false;
 }
 
+function drawLevel11Items() {
+    // Draw Level 11 items (flashlight, keys, notes, enemies)
+    if (!gameState || (gameState.mode !== 'level11' && !gameState.isLevel11)) return;
+    if (!canvas || !ctx) return;
+    
+    const currentRoom = level11State.currentRoom;
+    
+    // Draw green key in puzzle room (after puzzle solved)
+    if (currentRoom === 'puzzle' && level11State.rooms.puzzle.solved && !level11State.rooms.puzzle.greenKeyTaken && level11State.rooms.puzzle.greenKeyPos) {
+        const keyPos = level11State.rooms.puzzle.greenKeyPos;
+        const sprite = getSprite('greenKey');
+        const px = (keyPos.x + 0.5) * CELL_SIZE;
+        const py = (keyPos.y + 0.5) * CELL_SIZE;
+        
+        // Glow effect
+        ctx.save();
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+        grad.addColorStop(0, 'rgba(0, 255, 0, 0.9)');
+        grad.addColorStop(0.6, 'rgba(0, 255, 0, 0.3)');
+        grad.addColorStop(1, 'rgba(0, 255, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Draw sprite if available, otherwise fallback
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            ctx.save();
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00ff00';
+            ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+            ctx.restore();
+        } else {
+            // Fallback: simple key shape
+            ctx.save();
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(px - CELL_SIZE * 0.25, py - CELL_SIZE * 0.1, CELL_SIZE * 0.5, CELL_SIZE * 0.2);
+            ctx.beginPath();
+            ctx.arc(px - CELL_SIZE * 0.3, py, CELL_SIZE * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+    
+    // Draw flashlight in puzzle room (after puzzle solved, if not yet taken)
+    if (currentRoom === 'puzzle' && level11State.rooms.puzzle.solved && !level11State.rooms.puzzle.flashlightTaken && level11State.rooms.puzzle.flashlightPos) {
+        const flashPos = level11State.rooms.puzzle.flashlightPos;
+        const sprite = getSprite('flashlight');
+        const px = (flashPos.x + 0.5) * CELL_SIZE;
+        const py = (flashPos.y + 0.5) * CELL_SIZE;
+        
+        // Glow effect
+        ctx.save();
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+        grad.addColorStop(0, 'rgba(255, 255, 100, 0.8)');
+        grad.addColorStop(0.5, 'rgba(255, 255, 100, 0.4)');
+        grad.addColorStop(1, 'rgba(255, 255, 100, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Draw sprite if available, otherwise fallback
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            ctx.save();
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ffff00';
+            ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+            ctx.restore();
+        } else {
+            // Fallback: simple flashlight shape
+            ctx.save();
+            ctx.fillStyle = '#888888';
+            ctx.fillRect(px - CELL_SIZE * 0.25, py - CELL_SIZE * 0.35, CELL_SIZE * 0.5, CELL_SIZE * 0.7);
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(px, py + CELL_SIZE * 0.25, CELL_SIZE * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+    
+    // MAZE ROOM ITEMS (legacy Level 11 dark room)
+    if (currentRoom === 'maze' || (gameState.isLevel11 && gameState.level11 && gameState.level11.currentRoom === 'dark')) {
+        // Draw enemies (bats) with exposure highlighting
+        const enemies = (gameState.isLevel11 && gameState.level11) 
+            ? (gameState.level11.bats || [])
+            : (level11State.rooms.maze.enemies || []);
+        const currentTime = performance.now();
+        
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            if (!enemy || !enemy.alive) continue;
+            const ex = enemy.fx * CELL_SIZE;
+            const ey = enemy.fy * CELL_SIZE;
+            
+            // Determine if enemy is currently exposed to flashlight
+            const exposureTime = enemy.exposureTime || 0;
+            const isExposed = enemy.exposedAt > 0;
+            const exposurePercent = isExposed ? Math.min(1, (currentTime - enemy.exposedAt) / 500) : 0; // 0 to 1 over 0.5 seconds
+            
+            ctx.save();
+            
+            // Bat body (GRAY normally, increasingly red when exposed)
+            if (isExposed) {
+                // Glow effect when exposed (red) - intensity increases with exposure time
+                const glowGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, CELL_SIZE * 1.5);
+                glowGrad.addColorStop(0, `rgba(255, 50, 50, ${0.9 * exposurePercent})`);
+                glowGrad.addColorStop(0.4, `rgba(255, 50, 50, ${0.5 * exposurePercent})`);
+                glowGrad.addColorStop(1, 'rgba(255, 50, 50, 0)');
+                ctx.fillStyle = glowGrad;
+                ctx.beginPath();
+                ctx.arc(ex, ey, CELL_SIZE * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Bat turns red based on exposure time
+                const redAmount = Math.floor(255 * exposurePercent);
+                ctx.fillStyle = `rgb(${100 + redAmount * 0.6}, ${70 - exposurePercent * 50}, ${70 - exposurePercent * 50})`;
+            } else {
+                // Gray bat (barely visible in darkness without flashlight)
+                ctx.fillStyle = '#606060';
+            }
+            
+            // Bat shape: main body (circle)
+            ctx.beginPath();
+            ctx.arc(ex, ey, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Bat wings (animated slightly based on movement)
+            const wingFlap = Math.sin(currentTime / 150 + i) * 0.1;
+            ctx.fillRect(ex - CELL_SIZE * 0.5, ey - CELL_SIZE * (0.2 + wingFlap), CELL_SIZE * 0.25, CELL_SIZE * 0.35);
+            ctx.fillRect(ex + CELL_SIZE * 0.25, ey - CELL_SIZE * (0.2 - wingFlap), CELL_SIZE * 0.25, CELL_SIZE * 0.35);
+            
+            // Bat eyes (small glowing dots)
+            ctx.fillStyle = isExposed ? '#ff0000' : '#aaaaaa';
+            ctx.beginPath();
+            ctx.arc(ex - CELL_SIZE * 0.1, ey - CELL_SIZE * 0.05, CELL_SIZE * 0.05, 0, Math.PI * 2);
+            ctx.arc(ex + CELL_SIZE * 0.1, ey - CELL_SIZE * 0.05, CELL_SIZE * 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Warning indicator when close to death threshold (80%+ exposure)
+            if (exposurePercent >= 0.8) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.arc(ex, ey, CELL_SIZE * 0.8, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw yellow key if not picked up (legacy Level 11)
+        if (gameState.isLevel11 && gameState.level11 && gameState.level11.currentRoom === 'dark' && !gameState.level11.hasYellowKey && gameState.level11.yellowKeyPos) {
+            const pos = gameState.level11.yellowKeyPos;
+            const sprite = getSprite('yellowKey');
+            const px = (pos.x + 0.5) * CELL_SIZE;
+            const py = (pos.y + 0.5) * CELL_SIZE;
+            
+            // Key glow (yellow)
+            ctx.save();
+            const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+            grad.addColorStop(0, 'rgba(255, 255, 0, 0.9)');
+            grad.addColorStop(0.6, 'rgba(255, 255, 0, 0.3)');
+            grad.addColorStop(1, 'rgba(255, 255, 0, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            
+            // Draw sprite if available, otherwise fallback
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                ctx.save();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ffff00';
+                ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+                ctx.restore();
+            } else {
+                // Fallback: simple key shape
+                ctx.save();
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(px - CELL_SIZE * 0.25, py - CELL_SIZE * 0.1, CELL_SIZE * 0.5, CELL_SIZE * 0.2);
+                ctx.beginPath();
+                ctx.arc(px - CELL_SIZE * 0.3, py, CELL_SIZE * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+    }
+    
+    // Draw flashlight on player when equipped (legacy Level 11)
+    if (gameState.isLevel11 && gameState.level11 && gameState.level11.flashlightFound && gameState.player) {
+        const sprite = getSprite('flashlight');
+        const px = (gameState.player.x + 0.5) * CELL_SIZE;
+        const py = (gameState.player.y + 0.5) * CELL_SIZE;
+        const mouseX = gameState.mousePosition?.x || px;
+        const mouseY = gameState.mousePosition?.y || py;
+        const angle = Math.atan2(mouseY - py, mouseX - px);
+        const flashlightDist = CELL_SIZE * 0.6;
+        const fx = px + Math.cos(angle) * flashlightDist;
+        const fy = py + Math.sin(angle) * flashlightDist;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(angle);
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            const size = CELL_SIZE * 0.7;
+            ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        } else {
+            ctx.fillStyle = '#888888';
+            ctx.fillRect(-CELL_SIZE * 0.3, -CELL_SIZE * 0.15, CELL_SIZE * 0.6, CELL_SIZE * 0.3);
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(CELL_SIZE * 0.3, 0, CELL_SIZE * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
 function drawLevel11Darkness() {
-    if (!canvas || !ctx || !gameState.isLevel11 || !gameState.level11 || gameState.level11.currentRoom !== 'dark') return;
-    const l11 = gameState.level11;
+    // Only draw darkness in dark room
+    if (!gameState || !gameState.isLevel11 || !gameState.level11) return;
+    if (!canvas || !ctx) return;
+    
+    // Only apply darkness to dark room (0% brightness)
+    if (gameState.level11.currentRoom !== 'dark') return;
     
     // Create darkness overlay layer
     const darkCanvas = document.createElement('canvas');
@@ -186,49 +416,84 @@ function drawLevel11Darkness() {
     darkCanvas.height = canvas.height;
     const darkCtx = darkCanvas.getContext('2d');
     
-    // Fill with solid black
-    darkCtx.fillStyle = 'rgba(0,0,0,0.95)';
+    // Fill with pitch black (0% brightness - complete darkness)
+    darkCtx.fillStyle = 'rgba(0,0,0,1.0)';
     darkCtx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Use destination-out to "cut holes" in the darkness
+    // Use destination-out to "cut holes" in the darkness for visibility
     darkCtx.globalCompositeOperation = 'destination-out';
     
     const px = (gameState.player.x + 0.5) * CELL_SIZE;
     const py = (gameState.player.y + 0.5) * CELL_SIZE;
 
-    // Always give a small aura around the player
-    const baseR = CELL_SIZE * 0.85;
-    const aura = darkCtx.createRadialGradient(px, py, 0, px, py, baseR);
-    aura.addColorStop(0, 'rgba(0,0,0,1)');
-    aura.addColorStop(0.7, 'rgba(0,0,0,0.7)');
-    aura.addColorStop(1, 'rgba(0,0,0,0)');
-    darkCtx.fillStyle = aura;
-    darkCtx.beginPath();
-    darkCtx.arc(px, py, baseR, 0, Math.PI * 2);
-    darkCtx.fill();
-
-    // Flashlight cone
-    if (l11.flashlightFound && l11.flashlightOn) {
-        const dir = l11.flashlightDir || { dx: 0, dy: -1 };
-        const normDx = dir.dx || 0;
-        const normDy = dir.dy || 0;
-        const ang = Math.atan2(normDy, normDx);
-        const beamLen = CELL_SIZE * 2.8;
-        const beamWidth = CELL_SIZE * 1.6;
+    // Faint aura around the player when flashlight is on (so you can see yourself)
+    if (gameState.level11.flashlightOn) {
+        const baseR = CELL_SIZE * 0.5; // Small 0.5 tile radius
+        const aura = darkCtx.createRadialGradient(px, py, 0, px, py, baseR);
+        aura.addColorStop(0, 'rgba(0,0,0,0.8)'); // Faint at center
+        aura.addColorStop(0.7, 'rgba(0,0,0,0.4)');
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+        darkCtx.fillStyle = aura;
+        darkCtx.beginPath();
+        darkCtx.arc(px, py, baseR, 0, Math.PI * 2);
+        darkCtx.fill();
+    }
+    
+    // Draw flashlight beam if flashlight is on (100% brightness cone, 2.5 tile radius)
+    if (gameState.level11.flashlightOn && gameState.level11.flashlightFound) {
+        // Get mouse position in canvas pixels
+        const mousePixelX = gameState.mousePosition?.x || px;
+        const mousePixelY = gameState.mousePosition?.y || py;
         
-        darkCtx.save();
-        darkCtx.translate(px, py);
-        darkCtx.rotate(ang);
+        // Calculate beam direction
+        const dx = mousePixelX - px;
+        const dy = mousePixelY - py;
+        const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // Create flashlight beam gradient
-        const beam = darkCtx.createLinearGradient(0, 0, beamLen, 0);
-        beam.addColorStop(0, 'rgba(0,0,0,0.9)');
-        beam.addColorStop(0.3, 'rgba(0,0,0,1)');
-        beam.addColorStop(1, 'rgba(0,0,0,0)');
-        darkCtx.fillStyle = beam;
-        darkCtx.fillRect(0, -beamWidth / 2, beamLen, beamWidth);
-        
-        darkCtx.restore();
+        if (distance > 1) {
+            // Beam properties - 2.5 tile radius (100% brightness)
+            const beamRange = CELL_SIZE * 2.5;
+            const beamWidth = CELL_SIZE * 1.8; // Width at the end
+            const beamAngle = Math.atan2(dy, dx);
+            
+            // Draw beam as a cone/trapezoid shape
+            darkCtx.save();
+            darkCtx.translate(px, py);
+            darkCtx.rotate(beamAngle);
+            
+            // Create cone shape with gradient (100% brightness core, soft falloff)
+            const beamGrad = darkCtx.createLinearGradient(0, 0, beamRange, 0);
+            beamGrad.addColorStop(0, 'rgba(0,0,0,1)'); // Full cut at player
+            beamGrad.addColorStop(0.15, 'rgba(0,0,0,1)'); // 100% brightness core
+            beamGrad.addColorStop(0.85, 'rgba(0,0,0,0.95)'); // Still very bright
+            beamGrad.addColorStop(1, 'rgba(0,0,0,0.5)'); // Soft falloff at edge
+            
+            // Draw cone (narrow at player, wider at end)
+            const startWidth = CELL_SIZE * 0.25;
+            const endWidth = beamWidth;
+            
+            darkCtx.beginPath();
+            darkCtx.moveTo(0, -startWidth); // Player position (narrow)
+            darkCtx.lineTo(beamRange, -endWidth); // End (wider) - top edge
+            darkCtx.lineTo(beamRange, endWidth); // End (wider) - bottom edge
+            darkCtx.lineTo(0, startWidth); // Back to player
+            darkCtx.closePath();
+            darkCtx.fillStyle = beamGrad;
+            darkCtx.fill();
+            
+            // Add circular bright spotlight at the end of beam (100% brightness center)
+            const spotGrad = darkCtx.createRadialGradient(beamRange, 0, 0, beamRange, 0, endWidth * 0.9);
+            spotGrad.addColorStop(0, 'rgba(0,0,0,1)'); // 100% brightness center
+            spotGrad.addColorStop(0.5, 'rgba(0,0,0,0.9)');
+            spotGrad.addColorStop(0.8, 'rgba(0,0,0,0.6)');
+            spotGrad.addColorStop(1, 'rgba(0,0,0,0)'); // Soft outer edge
+            darkCtx.fillStyle = spotGrad;
+            darkCtx.beginPath();
+            darkCtx.arc(beamRange, 0, endWidth * 0.9, 0, Math.PI * 2);
+            darkCtx.fill();
+            
+            darkCtx.restore();
+        }
     }
 
     // Draw the darkness layer on top of the main canvas
@@ -271,6 +536,7 @@ export function render(currentTime) {
     }
     drawShieldParticles(currentTime);
     drawPlayer();
+    drawLevel11Items();
     drawLevel11Darkness();
     drawUI();
     
@@ -1666,28 +1932,11 @@ function drawBossArena(currentTime) {
         gameState.immuneEffects = keep;
     }
 
-    // Virus monologue overlay bar (appears after door fade; replaces boss HP region)
-    if (b.defeated && (b.virusDialogueActive || b.virusDialogueFinished) && b.virusDialogueLines) {
-        ctx.save();
-        const idx = Math.min(b.virusDialogueIndex, b.virusDialogueLines.length - 1);
-        const line = b.virusDialogueActive ? b.virusDialogueLines[idx] : (b.virusDialogueFinished ? 'ESCAPE!' : '');
-        ctx.font = 'bold 16px Arial';
-        const m = ctx.measureText(line);
-        const barW = Math.min(canvas.width * 0.9, m.width + 28);
-        const barH = 36;
-        const bx = (canvas.width - barW) / 2;
-        const by = 12;
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.fillRect(bx - 6, by - 6, barW + 12, barH + 12);
-        ctx.strokeStyle = '#ffdd33';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(bx - 6, by - 6, barW + 12, barH + 12);
-        ctx.fillStyle = '#ffdd33';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(line, bx + barW / 2, by + barH / 2);
-        ctx.restore();
-    }
+
+    // Virus and system dialog is now rendered in the DOM dialog bar above the canvas.
+
+
+    // Level 11 ending dialog is now rendered in the DOM dialog bar above the canvas.
 
     // Ammo HUD (top-right) — only Level 10 and after bazooka is picked up
     // Ammo counter removed - now shown in main UI only
@@ -1793,8 +2042,34 @@ function drawDynamicMazeOverlays() {
         if (l11.currentRoom === 'hub') {
             const drop = room?.greenKeyDrop;
             if (l11.greenKeyAvailable && !l11.hasGreenKey && drop) {
-                ctx.fillStyle = 'rgba(0,255,120,0.9)';
-                ctx.fillRect(drop.x * CELL_SIZE, drop.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                const sprite = getSprite('greenKey');
+                const px = (drop.x + 0.5) * CELL_SIZE;
+                const py = (drop.y + 0.5) * CELL_SIZE;
+                
+                // Glow effect
+                ctx.save();
+                const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+                grad.addColorStop(0, 'rgba(0, 255, 120, 0.9)');
+                grad.addColorStop(0.6, 'rgba(0, 255, 120, 0.3)');
+                grad.addColorStop(1, 'rgba(0, 255, 120, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Draw sprite
+                if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#00ff00';
+                    ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+                    ctx.restore();
+                } else {
+                    // Fallback cube
+                    ctx.fillStyle = 'rgba(0,255,120,0.9)';
+                    ctx.fillRect(drop.x * CELL_SIZE, drop.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                }
             }
         }
         // Puzzle note + tiles
@@ -1816,29 +2091,110 @@ function drawDynamicMazeOverlays() {
                 ctx.strokeRect(room.puzzle.note.x * CELL_SIZE + 1, room.puzzle.note.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
             }
         }
+        // Entry hallway flashlight spawn after prompt
+        if (l11.currentRoom === 'entry') {
+            if (l11.flashlightSpawned && !l11.flashlightFound && l11.entryFlashlightPos) {
+                const sprite = getSprite('flashlight');
+                const px = (l11.entryFlashlightPos.x + 0.5) * CELL_SIZE;
+                const py = (l11.entryFlashlightPos.y + 0.5) * CELL_SIZE;
+                
+                // Glow effect
+                ctx.save();
+                const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+                grad.addColorStop(0, 'rgba(255, 255, 100, 0.8)');
+                grad.addColorStop(0.5, 'rgba(255, 255, 100, 0.4)');
+                grad.addColorStop(1, 'rgba(255, 255, 100, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Draw sprite
+                if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ffff00';
+                    ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+                    ctx.restore();
+                } else {
+                    // Fallback cube
+                    ctx.fillStyle = 'rgba(160,160,160,0.95)';
+                    ctx.fillRect(l11.entryFlashlightPos.x * CELL_SIZE, l11.entryFlashlightPos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                }
+            }
+        }
         // Dark room pickups
         if (l11.currentRoom === 'dark') {
-            if (!l11.flashlightFound && room?.darkRoom?.flashlight) {
-                ctx.fillStyle = 'rgba(240,240,120,0.85)';
-                ctx.fillRect(room.darkRoom.flashlight.x * CELL_SIZE, room.darkRoom.flashlight.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            }
             if (!l11.hasYellowKey && l11.yellowKeyPos) {
-                ctx.fillStyle = 'rgba(255,255,0,0.9)';
-                ctx.fillRect(l11.yellowKeyPos.x * CELL_SIZE, l11.yellowKeyPos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                const sprite = getSprite('yellowKey');
+                const px = (l11.yellowKeyPos.x + 0.5) * CELL_SIZE;
+                const py = (l11.yellowKeyPos.y + 0.5) * CELL_SIZE;
+                
+                // Glow effect
+                ctx.save();
+                const grad = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+                grad.addColorStop(0, 'rgba(255, 255, 0, 0.9)');
+                grad.addColorStop(0.6, 'rgba(255, 255, 0, 0.3)');
+                grad.addColorStop(1, 'rgba(255, 255, 0, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Draw sprite
+                if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ffff00';
+                    ctx.drawImage(sprite, px - CELL_SIZE * 0.4, py - CELL_SIZE * 0.4, CELL_SIZE * 0.8, CELL_SIZE * 0.8);
+                    ctx.restore();
+                } else {
+                    // Fallback cube
+                    ctx.fillStyle = 'rgba(255,255,0,0.9)';
+                    ctx.fillRect(l11.yellowKeyPos.x * CELL_SIZE, l11.yellowKeyPos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                }
             }
         }
         ctx.restore();
     }
-    // Finale note overlay
+    // Finale power supply
     if (gameState.isLevel11 && gameState.level11 && gameState.level11.currentRoom === 'finale') {
         const room = gameState.level11.data?.rooms?.finale;
-        if (room?.note) {
+        if (room?.powerSupply && !gameState.level11.powerDecisionMade) {
+            const ps = room.powerSupply;
             ctx.save();
-            ctx.fillStyle = 'rgba(240,230,120,0.9)';
-            ctx.fillRect(room.note.x * CELL_SIZE, room.note.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            ctx.strokeStyle = 'rgba(90,80,30,0.9)';
+            // Battery pack with lever - yellow/orange colors
+            ctx.fillStyle = 'rgba(255,200,50,0.9)';
+            ctx.fillRect(ps.x * CELL_SIZE, ps.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = 'rgba(180,100,20,0.9)';
             ctx.lineWidth = 2;
-            ctx.strokeRect(room.note.x * CELL_SIZE + 1, room.note.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            ctx.strokeRect(ps.x * CELL_SIZE + 1, ps.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            // Draw battery terminals at top
+            ctx.fillStyle = '#333';
+            ctx.fillRect(ps.x * CELL_SIZE + 4, ps.y * CELL_SIZE + 2, 4, 6);
+            ctx.fillRect(ps.x * CELL_SIZE + CELL_SIZE - 8, ps.y * CELL_SIZE + 2, 4, 6);
+            // Draw lever
+            ctx.strokeStyle = '#cc0000';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(ps.x * CELL_SIZE + CELL_SIZE / 2, ps.y * CELL_SIZE + CELL_SIZE * 0.6);
+            ctx.lineTo(ps.x * CELL_SIZE + CELL_SIZE / 2 + 6, ps.y * CELL_SIZE + CELL_SIZE * 0.35);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+    // Good ending note in hub (legacy Level 11 rendering)
+    if (gameState.isLevel11 && gameState.level11 && gameState.level11.currentRoom === 'hub' && gameState.level11.goodEndingNote) {
+        const notePos = gameState.level11.data?.rooms?.hubNotePos;
+        if (notePos) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(230,255,79,0.95)';
+            ctx.fillRect(notePos.x * CELL_SIZE, notePos.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = 'rgba(90,100,30,0.9)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(notePos.x * CELL_SIZE + 1, notePos.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
             ctx.restore();
         }
     }
@@ -2182,18 +2538,39 @@ function drawPlayer() {
         ctx.restore();
     }
 
-    // Base color (sprinting = cyan, else royal blue). During stun, fade brightness back to full by stun end.
-    const baseRGB = gameState.isSprinting ? { r: 0, g: 255, b: 255 } : { r: 65, g: 105, b: 225 };
+    // Base color: check for active skin first, otherwise use sprint/normal colors
+    let baseRGB = { r: 65, g: 105, b: 225 }; // Default royal blue
+    let skinEffects = null;
+    
+    // Get skin visuals if available
+    const skinVisuals = getPlayerVisuals();
+    if (skinVisuals) {
+        baseRGB = skinVisuals.color;
+        skinEffects = skinVisuals;
+    } else if (gameState.isSprinting) {
+        // Only use sprint cyan if no skin override
+        baseRGB = { r: 0, g: 255, b: 255 };
+    }
+    
+    // Apply sprint brightness boost on top of skin color
     let r = baseRGB.r, g = baseRGB.g, b = baseRGB.b;
+    if (gameState.isSprinting && skinVisuals) {
+        // Brighten skin color when sprinting (increase lightness)
+        const brighten = 1.3;
+        r = Math.min(255, Math.round(baseRGB.r * brighten));
+        g = Math.min(255, Math.round(baseRGB.g * brighten));
+        b = Math.min(255, Math.round(baseRGB.b * brighten));
+    }
+    
     if (gameState.playerStunned) {
         const start = gameState.playerStunStart || (performance.now() - 1);
         const total = Math.max(1, (gameState.playerStunUntil || (start + 4000)) - start);
         const now = performance.now();
         const t = Math.min(1, Math.max(0, (now - start) / total));
         const f = 0.6 + 0.4 * t; // 60% brightness at start -> 100% at end
-        r = Math.round(baseRGB.r * f);
-        g = Math.round(baseRGB.g * f);
-        b = Math.round(baseRGB.b * f);
+        r = Math.round(r * f);
+        g = Math.round(g * f);
+        b = Math.round(b * f);
     }
 
     // Draw player circle with jump offset
@@ -2273,6 +2650,69 @@ function drawPlayer() {
         ctx.beginPath();
         ctx.arc(centerX, centerY + jumpOffset, radius, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Apply skin effects if available
+        if (skinEffects) {
+            const now = performance.now();
+            
+            // Glow effect
+            if (skinEffects.glow) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(${r},${g},${b},0.6)`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY + jumpOffset, radius + 4, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+            
+            // Particle effect (various types)
+            if (skinEffects.particles) {
+                if (Math.random() < 0.3) {
+                    let particleType = 'move';
+                    let particleColor = `rgba(${r},${g},${b},0.7)`;
+                    
+                    if (skinEffects.particles === 'glitch') {
+                        particleType = 'wallHit';
+                        particleColor = '#00ff00';
+                    } else if (skinEffects.particles === 'rainbow') {
+                        const hue = (now / 20) % 360;
+                        particleColor = `hsl(${hue}, 100%, 50%)`;
+                        particleType = 'generator';
+                    } else if (skinEffects.particles === 'void') {
+                        particleType = 'damage';
+                        particleColor = '#1a0033';
+                    } else if (skinEffects.particles === 'fire') {
+                        particleColor = '#ff6600';
+                        particleType = 'explosion';
+                    }
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = radius + 3;
+                    const px = centerX + Math.cos(angle) * dist;
+                    const py = centerY + jumpOffset + Math.sin(angle) * dist;
+                    
+                    particles.spawn(particleType, px, py, 1, { color: particleColor });
+                }
+            }
+            
+            // Rainbow effect (cycling hue)
+            if (skinEffects.rainbow) {
+                ctx.save();
+                const hue = (now / 20) % 360;
+                
+                for (let i = 0; i < 3; i++) {
+                    const ringHue = (hue + (i * 120)) % 360;
+                    ctx.strokeStyle = `hsl(${ringHue}, 100%, 50%)`;
+                    ctx.lineWidth = 1;
+                    ctx.globalAlpha = 0.4 - (i * 0.1);
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY + jumpOffset, radius + 2 + (i * 3), 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
     }
 
     // Wings + timer ring while mounted (flight mode)
@@ -2422,6 +2862,15 @@ function drawPlayer() {
 
     // Collision Shield visuals
     const collisionCenterY = centerY + jumpOffset;
+    // Get shield color from skin if available, otherwise use default pink
+    let shieldColor = '#ff77aa';
+    let shieldColorRGB = { r: 255, g: 119, b: 170 };
+    if (skinVisuals && skinVisuals.color) {
+        // Use skin color for shield
+        shieldColorRGB = skinVisuals.color;
+        shieldColor = `rgb(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b})`;
+    }
+    
     if (gameState.collisionShieldState === 'active') {
         // Enhanced active shield with fixed particle positions (not spinning off)
         const pulse = Math.sin(now / 180) * 0.25 + 0.75;
@@ -2430,8 +2879,8 @@ function drawPlayer() {
         ctx.save();
         ctx.globalAlpha = 0.15 * pulse;
         const gradient = ctx.createRadialGradient(centerX, collisionCenterY, radius, centerX, collisionCenterY, radius + 12);
-        gradient.addColorStop(0, 'rgba(255, 119, 170, 0.4)');
-        gradient.addColorStop(1, 'rgba(255, 119, 170, 0)');
+        gradient.addColorStop(0, `rgba(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b}, 0.4)`);
+        gradient.addColorStop(1, `rgba(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b}, 0)`);
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 12, 0, Math.PI * 2);
@@ -2449,9 +2898,9 @@ function drawPlayer() {
             
             ctx.save();
             ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 150 + i);
-            ctx.fillStyle = '#ff77aa';
+            ctx.fillStyle = shieldColor;
             ctx.shadowBlur = 8;
-            ctx.shadowColor = '#ff77aa';
+            ctx.shadowColor = shieldColor;
             ctx.beginPath();
             ctx.arc(px, py, 2.5, 0, Math.PI * 2);
             ctx.fill();
@@ -2460,10 +2909,10 @@ function drawPlayer() {
         
         // Main shield ring with enhanced glow
         ctx.save();
-        ctx.strokeStyle = `rgba(255, 119, 170, ${0.8 * pulse})`;
+        ctx.strokeStyle = `rgba(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b}, ${0.8 * pulse})`;
         ctx.lineWidth = 3;
         ctx.shadowBlur = 12;
-        ctx.shadowColor = '#ff77aa';
+        ctx.shadowColor = shieldColor;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, shieldRadius, 0, Math.PI * 2);
         ctx.stroke();
@@ -2471,7 +2920,7 @@ function drawPlayer() {
         
         // Inner highlight ring
         ctx.save();
-        ctx.strokeStyle = `rgba(255, 200, 220, ${0.5 * pulse})`;
+        ctx.strokeStyle = `rgba(${Math.min(255, shieldColorRGB.r + 30)}, ${Math.min(255, shieldColorRGB.g + 30)}, ${Math.min(255, shieldColorRGB.b + 30)}, ${0.5 * pulse})`;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 2, 0, Math.PI * 2);

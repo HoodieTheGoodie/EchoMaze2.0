@@ -1,12 +1,31 @@
 // main.js - Game loop and initialization
 
-import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom } from './state.js';
+import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom, updateLevel11EndingDialog } from './state.js';
 import { completeGenerator } from './state.js';
 import { playLose, playExplosion } from './audio.js';
 import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor, isLevel11Unlocked, setLevel11Unlocked, getUnlockedTerminals, unlockTerminal, isTerminalUnlocked, hasTerminalAccess, unlockTerminalAccess } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 import { loadSprites } from './sprites.js';
+import { initAchievements, checkAchievements, resetAchievements } from './achievements.js';
+import { initSkins, resetSkins } from './skins.js';
+import { initNotifications } from './ui-notifications.js';
+import { initAchievementsSkinsUI } from './ui-panels.js';
+import { updateLevel11, initLevel11 } from './level11.js';
+import { loadEndlessProgress, saveEndlessProgress, getEndlessProgression, startEndlessRun as startProgressionRun, completeEndlessRoom, endEndlessRun, purchaseUpgrade, resetUpgrades, hasAbility, applyPermanentUpgrades } from './endless-progression.js';
+import { generateMaze, GENERATOR_COUNT } from './maze.js';
+
+// Make endless functions available globally for endless-ui.js
+window.loadEndlessProgression = loadEndlessProgress;
+window.saveEndlessProgression = saveEndlessProgress;
+window.getEndlessProgression = getEndlessProgression;
+window.startProgressionRun = startProgressionRun;
+window.completeEndlessRoom = completeEndlessRoom;
+window.endEndlessRun = endEndlessRun;
+window.purchaseUpgrade = purchaseUpgrade;
+window.resetUpgrades = resetUpgrades;
+window.hasAbility = hasAbility;
+window.applyPermanentUpgrades = applyPermanentUpgrades;
 
 // Terminal progression/puzzle definitions for glitch-wall access codes
 const TERMINAL_UNLOCK_LEVELS = [1, 3, 5, 8];
@@ -454,7 +473,18 @@ function updateCanvasBorderColor() {
     const canvas = document.getElementById('canvas');
     if (!canvas) return;
     
-    const levelColor = getLevelColor(gameState.currentLevel || 1);
+    // Use purple for endless progression mode, otherwise use level color
+    let levelColor;
+    if (gameState.mode === 'endless-progression') {
+        // Purple color for endless mode
+        levelColor = {
+            css: '#9945ff',
+            rgba: (alpha) => `rgba(153, 69, 255, ${alpha})`
+        };
+    } else {
+        levelColor = getLevelColor(gameState.currentLevel || 1);
+    }
+    
     const borderColor = levelColor.css;
     const glowColor = levelColor.rgba(0.4);
     const glowColor2 = levelColor.rgba(0.2);
@@ -462,7 +492,8 @@ function updateCanvasBorderColor() {
     const glowColor4 = levelColor.rgba(0.3);
     
     canvas.style.borderColor = borderColor;
-    canvas.style.boxShadow = `0 0 20px ${glowColor}, 0 0 40px ${glowColor2}, inset 0 0 20px rgba(0, 0, 0, 0.5)`;
+    // Only glow on outer edge, not inset
+    canvas.style.boxShadow = `0 0 20px ${glowColor}, 0 0 40px ${glowColor2}`;
     
     // Update hover effect by adding a style element
     let styleEl = document.getElementById('canvas-hover-style');
@@ -473,7 +504,7 @@ function updateCanvasBorderColor() {
     }
     styleEl.textContent = `
         #canvas:hover {
-            box-shadow: 0 0 30px ${glowColor3}, 0 0 50px ${glowColor4}, inset 0 0 20px rgba(0, 0, 0, 0.5) !important;
+            box-shadow: 0 0 30px ${glowColor3}, 0 0 50px ${glowColor4} !important;
         }
     `;
 }
@@ -667,6 +698,11 @@ function gameLoop(currentTime) {
     if (deltaTime >= 16) {
         // Collision shield should update regardless of pause state (it self-pauses internally)
         updateCollisionShield(currentTime);
+        // Level 11 update - runs even when paused to handle flashlight and enemies
+        if (gameState.isLevel11) {
+            updateLevel11(currentTime);
+            updateLevel11EndingDialog(currentTime);
+        }
         if (!gameState.isPaused) {
             updateStaminaCooldown(currentTime);
             updateBazookaAmmo(currentTime); // Regenerate bazooka ammo in bazooka mode
@@ -820,6 +856,11 @@ function showMenu() {
     gameState.projectiles = [];
     gameState.enemies = [];
     gameState.statusMessage = '';
+    // If in endless progression and not dead, do not award points on menu exit
+    if (gameState.mode === 'endless-progression') {
+        // Ensure run remains active without awarding points
+        // No call to endEndlessRun here; player only earns points on win
+    }
     gameState.gameStatus = 'menu';
     gameState.isPaused = true;
     gameState.playerStunned = false;
@@ -891,11 +932,151 @@ function showMenu() {
     loadMobileControls().then(m => m.hideMobileControls());
 }
 
+// Make showMenu available globally for endless UI
+window.showMainMenu = showMenu;
+window.showClassicEndless = showClassicEndless;
+
+// Continue endless progression run - regenerate maze for next room
+function continueEndlessRoom() {
+    if (!gameState || gameState.mode !== 'endless-progression') {
+        console.warn('continueEndlessRoom called but not in endless-progression mode');
+        return;
+    }
+
+    // Force reload of progression to get latest state after completeEndlessRoom()
+    if (typeof window.loadEndlessProgress === 'function') {
+        window.loadEndlessProgress();
+    }
+
+    const progression = getEndlessProgression();
+    if (!progression || !progression.currentRun) {
+        console.warn('No active endless run');
+        return;
+    }
+
+    const roomNum = progression.currentRun.roomNumber || 1;
+    console.log('Continuing endless room, current room number:', roomNum);
+    
+    // Save current health and stamina
+    const savedHealth = gameState.health || 3;
+    const savedStamina = gameState.stamina || 100;
+    
+    // Configure difficulty scaling - add more enemies each room
+    const enemyConfig = {
+        chaser: roomNum >= 1,           // Room 1+
+        pig: roomNum >= 2,              // Room 2+
+        seeker: roomNum >= 3,           // Room 3+
+        batter: roomNum >= 4,           // Room 4+
+        mortar: roomNum >= 5            // Room 5+
+    };
+    
+    // Set the difficulty config BEFORE calling initGame
+    gameState.endlessConfig = {
+        ...enemyConfig,
+        difficulty: roomNum > 10 ? 'super' : 'normal',
+        generatorCount: 3
+    };
+    
+    // Reinitialize the game with new room (will use endlessConfig)
+    gameState._useCustomLevel11 = false;
+    initGame();
+    
+    // Restore health and stamina from previous room
+    gameState.health = savedHealth;
+    gameState.stamina = savedStamina;
+    
+    // Generate random maze (no seed = different maze each time)
+    const mazeData = generateMaze(Math.floor(Math.random() * 0xFFFFFFFF), GENERATOR_COUNT, false);
+    gameState.maze = mazeData.grid;
+    gameState.generators = mazeData.generators || [];
+    
+    // Reset room-level game state but keep run state
+    gameState.gameStatus = 'playing';
+    gameState.isPaused = false;
+    gameState.bossHealth = undefined;
+    gameState.bossVictory = false;
+    gameState.pigCrashAnimation = null;
+    gameState.isGeneratorUIOpen = false;
+    gameState.skillCheckState = null;
+    
+    // Reset player position to start
+    gameState.playerX = 1;
+    gameState.playerY = 1;
+    
+    // Keep health and stamina from run, reset shields/items
+    gameState.shieldHealth = 0;
+    gameState.collisionShieldActive = false;
+    gameState.projectiles = [];
+    gameState.items = [];
+    gameState.generators.forEach(g => g.progress = 0);
+    
+    console.log('Room regenerated successfully with difficulty scaling:', enemyConfig);
+    
+    // Update UI to show new room
+    if (window.__renderEndlessAbilities) {
+        try { window.__renderEndlessAbilities(); } catch {}
+    }
+}
+
 function startLevel(level) {
     if (level === 11 && !isLevel11Unlocked()) {
         alert('Level 11 is locked. Enter the password in Settings to unlock.');
         return;
     }
+    
+    // Handle endless progression mode
+    if (level === 'endless') {
+        gameState.currentLevel = 'endless';
+        gameState.mode = 'endless-progression';
+        
+        // Show game UI, hide menu
+        const menu = document.getElementById('mainMenu');
+        const gameContainer = document.getElementById('game-container');
+        if (menu) menu.style.display = 'none';
+        if (gameContainer) gameContainer.style.display = 'flex';
+        
+        // Hide all overlays
+        const winOverlay = document.getElementById('winOverlay');
+        const loseOverlay = document.getElementById('loseOverlay');
+        const creditsOverlay = document.getElementById('creditsOverlay');
+        if (winOverlay) winOverlay.style.display = 'none';
+        if (loseOverlay) loseOverlay.style.display = 'none';
+        if (creditsOverlay) creditsOverlay.style.display = 'none';
+
+        // Mobile: Show controls when game starts
+        loadMobileControls().then(m => m.showMobileControls());
+
+        // Check if this is a fresh run (room 0) or continuing (room > 0)
+        const progression = getEndlessProgression();
+        if (progression && progression.currentRun && progression.currentRun.roomNumber > 0) {
+            // Continuing a run: just regenerate the room
+            continueEndlessRoom();
+        } else {
+            // Fresh run: initialize game with first room
+            // Set config for room 1 (mortar AI)
+            gameState.endlessConfig = {
+                chaser: true,
+                pig: false,
+                seeker: false,
+                batter: false,
+                mortar: true,
+                difficulty: 'normal',
+                generatorCount: 3
+            };
+            
+            gameState._useCustomLevel11 = false;
+            initGame();
+        }
+        
+        // Apply UI style based on settings
+        applyUIStyle();
+        
+        // Update canvas border color to purple
+        updateCanvasBorderColor();
+        
+        return;
+    }
+    
     gameState.currentLevel = level;
     gameState.mode = 'level';
     // Show game UI, hide menu
@@ -915,6 +1096,8 @@ function startLevel(level) {
     // Mobile: Show controls when game starts
     loadMobileControls().then(m => m.showMobileControls());
 
+    // Run core init only; legacy Level 11 flow handles its own rooms
+    gameState._useCustomLevel11 = false;
     initGame();
     
     // Apply UI style based on settings
@@ -1024,14 +1207,136 @@ function wireMenuUi() {
         instaGenChk._wired = true;
     }
 
-    const unlockAllBtn = document.getElementById('unlockAllBtn');
-    if (unlockAllBtn && !unlockAllBtn._wired) {
-        unlockAllBtn.addEventListener('click', () => {
-            setUnlockedLevel(LEVEL_COUNT);
-            setLevel11Unlocked(true);
-            buildMenu();
+    // Dev menu unlock toggles with save/restore functionality
+    const unlockAllSkinsBtn = document.getElementById('unlockAllSkinsBtn');
+    const unlockAllAchievementsBtn = document.getElementById('unlockAllAchievementsBtn');
+    const unlockAllLevelsBtn = document.getElementById('unlockAllLevelsBtn');
+    const level11UnlockedBtn = document.getElementById('level11UnlockedBtn');
+    const resetAllBtn = document.getElementById('resetAllBtn');
+    
+    // Unlock All Skins button
+    if (unlockAllSkinsBtn && !unlockAllSkinsBtn._wired) {
+        unlockAllSkinsBtn.addEventListener('click', () => {
+            try {
+                // Directly unlock all skins in localStorage
+                const skinsData = localStorage.getItem('smg_skins');
+                let skins = skinsData ? JSON.parse(skinsData) : [];
+                skins.forEach(s => s.unlocked = true);
+                localStorage.setItem('smg_skins', JSON.stringify(skins));
+                
+                // Trigger all necessary events and UI updates
+                if (typeof initSkins === 'function') initSkins();
+                if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+                if (typeof buildMenu === 'function') buildMenu();
+                if (typeof showMenu === 'function') showMenu();
+                
+                showBottomAlert('✨ All skins unlocked!', 2000);
+            } catch (e) {
+                console.log('Could not unlock skins', e);
+                showBottomAlert('❌ Error unlocking skins', 2000);
+            }
         });
-        unlockAllBtn._wired = true;
+        unlockAllSkinsBtn._wired = true;
+    }
+    
+    // Unlock All Achievements button
+    if (unlockAllAchievementsBtn && !unlockAllAchievementsBtn._wired) {
+        unlockAllAchievementsBtn.addEventListener('click', () => {
+            try {
+                // Get all achievement IDs from ACHIEVEMENTS array
+                const allAchievementIds = [
+                    'level1_clear', 'level5_clear', 'level10_clear', 'game_complete',
+                    'ending_good', 'ending_bad', 'ending_virus',
+                    'speedrun_level_60s', 'speedrun_level3_30s', 'speedrun_game_25m',
+                    'no_abilities_level', 'no_abilities_3_consecutive', 'deathless_3_levels', 'deathless_game', 'perfect_shield_10',
+                    'boss_mount_3_pigs', 'boss_no_reload',
+                    'endless_wave_10', 'endless_wave_20', 'endless_wave_30', 'endless_perfect_wave',
+                    'generator_perfect_3', 'generator_perfect_10',
+                    'secret_note', 'secret_level11_power', 'secret_code_alpha', 'pet_pig', 'hub_dance'
+                ];
+                
+                // Directly set achievements in localStorage
+                const now = Date.now();
+                const unlockedAchievements = allAchievementIds.map(id => ({
+                    id: id,
+                    unlockedAt: now
+                }));
+                localStorage.setItem('smg_achievements', JSON.stringify(unlockedAchievements));
+                
+                // Trigger all necessary events and UI updates
+                if (typeof initAchievements === 'function') initAchievements();
+                if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+                if (typeof buildMenu === 'function') buildMenu();
+                if (typeof showMenu === 'function') showMenu();
+                
+                showBottomAlert('🏆 All achievements unlocked!', 2000);
+            } catch (e) {
+                console.log('Could not unlock achievements', e);
+                showBottomAlert('❌ Error unlocking achievements', 2000);
+            }
+        });
+        unlockAllAchievementsBtn._wired = true;
+    }
+    
+    // Unlock All Levels button
+    if (unlockAllLevelsBtn && !unlockAllLevelsBtn._wired) {
+        unlockAllLevelsBtn.addEventListener('click', () => {
+            try {
+                setUnlockedLevel(LEVEL_COUNT);
+                if (typeof buildMenu === 'function') buildMenu();
+                if (typeof showMenu === 'function') showMenu();
+                showBottomAlert('🔓 All levels unlocked!', 2000);
+            } catch (e) {
+                console.log('Could not unlock levels', e);
+                showBottomAlert('❌ Error unlocking levels', 2000);
+            }
+        });
+        unlockAllLevelsBtn._wired = true;
+    }
+    
+    // Play Level 11 button (Unlock Level 11 button removed - use playLevel11Btn instead)
+    const playLevel11Btn = document.getElementById('playLevel11Btn');
+    
+    if (playLevel11Btn && !playLevel11Btn._wired) {
+        playLevel11Btn.addEventListener('click', () => {
+            try {
+                // Make sure Level 11 is unlocked before starting
+                if (!isLevel11Unlocked()) {
+                    setLevel11Unlocked(true);
+                    setUnlockedLevel(Math.max(getUnlockedLevel(), 11));
+                }
+                startLevel(11);
+            } catch (e) {
+                console.log('Could not start Level 11', e);
+                showBottomAlert('❌ Error starting Level 11', 2000);
+            }
+        });
+        playLevel11Btn._wired = true;
+    }
+    
+    // Reset All button
+    if (resetAllBtn && !resetAllBtn._wired) {
+        resetAllBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to reset all skins and achievements?')) {
+                try {
+                    localStorage.removeItem('smg_skins');
+                    localStorage.removeItem('smg_achievements');
+                    localStorage.removeItem('smg_achievementStats');
+                    
+                    if (typeof initSkins === 'function') initSkins();
+                    if (typeof initAchievements === 'function') initAchievements();
+                    if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+                    if (typeof buildMenu === 'function') buildMenu();
+                    if (typeof showMenu === 'function') showMenu();
+                    
+                    showBottomAlert('🔄 All skins and achievements reset!', 2000);
+                } catch (e) {
+                    console.log('Could not reset', e);
+                    showBottomAlert('❌ Error resetting', 2000);
+                }
+            }
+        });
+        resetAllBtn._wired = true;
     }
     // Endless button
     const endlessBtn = document.querySelector("button[data-level='endless']");
@@ -1039,12 +1344,32 @@ function wireMenuUi() {
         endlessBtn.addEventListener('click', () => {
             const unlocked = getUnlockedLevel();
             if (unlocked >= 2) {
-                showEndlessOverlay();
+                showNewEndlessMenu();
             } else {
                 showBottomAlert('🔒 Reach Level 2 to unlock Endless Mode!', 3000);
             }
         });
         endlessBtn._wired = true;
+    }
+    
+    // Builder Mode button
+    const builderBtn = document.querySelector("button[data-level='builder']");
+    const builderMenu = document.getElementById('builderMenu');
+    if (builderBtn && !builderBtn._wired) {
+        builderBtn.addEventListener('click', () => {
+            showBottomAlert('🏗️ Builder Mode coming soon!', 3000);
+        });
+        builderBtn._wired = true;
+    }
+    
+    // Builder Mode menu handler
+    const builderBackBtn = document.getElementById('builderBackBtn');
+    if (builderBackBtn && !builderBackBtn._wired) {
+        builderBackBtn.addEventListener('click', () => {
+            if (builderMenu) builderMenu.style.display = 'none';
+            showMenu();
+        });
+        builderBackBtn._wired = true;
     }
 
     // Endless overlay controls
@@ -1178,6 +1503,43 @@ function wireMenuUi() {
         });
         settingsBackBtn._wired = true;
     }
+    
+    // Reset Achievements button
+    const resetAchievementsBtn = document.getElementById('resetAchievementsBtn');
+    if (resetAchievementsBtn && !resetAchievementsBtn._wired) {
+        resetAchievementsBtn.addEventListener('click', () => {
+            if (confirm('Reset all achievements? This cannot be undone!')) {
+                try {
+                    resetAchievements(); // Call the proper reset function from achievements.js
+                    initAchievements(); // Reinitialize achievements
+                    showBottomAlert('✅ All achievements reset!', 3000);
+                } catch (e) {
+                    console.error('Error resetting achievements:', e);
+                    showBottomAlert('❌ Error resetting achievements', 3000);
+                }
+            }
+        });
+        resetAchievementsBtn._wired = true;
+    }
+    
+    // Reset Skins button
+    const resetSkinsBtn = document.getElementById('resetSkinsBtn');
+    if (resetSkinsBtn && !resetSkinsBtn._wired) {
+        resetSkinsBtn.addEventListener('click', () => {
+            if (confirm('Reset all skins? This cannot be undone!')) {
+                try {
+                    resetSkins(); // Call the proper reset function from skins.js
+                    initSkins(); // Reinitialize skins
+                    showBottomAlert('✅ All skins reset!', 3000);
+                } catch (e) {
+                    console.error('Error resetting skins:', e);
+                    showBottomAlert('❌ Error resetting skins', 3000);
+                }
+            }
+        });
+        resetSkinsBtn._wired = true;
+    }
+    
     if (movementAudioChk && !movementAudioChk._wired) {
         movementAudioChk.addEventListener('change', () => {
             const cur = getSettings();
@@ -1298,7 +1660,66 @@ function wireMenuUi() {
         });
         creditsMenuBtnGlobal._globalWired = true;
     }
+    
+    // Endless Menu Button Handlers
+    const startRunBtn = document.getElementById('startRunBtn');
+    if (startRunBtn && !startRunBtn._wired) {
+        startRunBtn.addEventListener('click', () => {
+            const upgradesEnabled = document.getElementById('upgradesToggle')?.checked ?? true;
+            hideNewEndlessMenu();
+            startProgressionRun(upgradesEnabled);
+            // Start the first room of endless mode
+            startLevel('endless');
+        });
+        startRunBtn._wired = true;
+    }
+    
+    const resetUpgradesBtn = document.getElementById('resetUpgradesBtn');
+    if (resetUpgradesBtn && !resetUpgradesBtn._wired) {
+        resetUpgradesBtn.addEventListener('click', () => {
+            if (confirm('Reset all upgrades and refund all points? This cannot be undone!')) {
+                resetUpgrades();
+                updateEndlessMenuStats();
+                populateUpgradesList();
+                showBottomAlert('✅ All upgrades reset and points refunded!', 3000);
+            }
+        });
+        resetUpgradesBtn._wired = true;
+    }
+    
+    const classicEndlessBtn = document.getElementById('classicEndlessBtn');
+    if (classicEndlessBtn && !classicEndlessBtn._wired) {
+        classicEndlessBtn.addEventListener('click', () => {
+            showClassicEndless();
+        });
+        classicEndlessBtn._wired = true;
+    }
+    
+    const endlessBackBtn = document.getElementById('endlessBackBtn');
+    if (endlessBackBtn && !endlessBackBtn._wired) {
+        endlessBackBtn.addEventListener('click', () => {
+            hideNewEndlessMenu();
+            showMenu();
+        });
+        endlessBackBtn._wired = true;
+    }
 }
+
+// Dialog Bar logic
+function setDialogBar(text, color = '#ff4455', border = '#ff4455') {
+    const bar = document.getElementById('dialogBar');
+    if (!bar) return;
+    if (text) {
+        bar.innerHTML = text;
+        bar.style.display = '';
+        bar.style.color = color;
+        bar.style.borderColor = border;
+    } else {
+        bar.innerHTML = '';
+        bar.style.display = 'none';
+    }
+}
+window.setDialogBar = setDialogBar;
 
 function formatMs(ms) {
     const totalMs = Math.max(0, Math.floor(ms));
@@ -1306,6 +1727,163 @@ function formatMs(ms) {
     const seconds = Math.floor((totalMs % 60000) / 1000);
     const millis = totalMs % 1000;
     return `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}.${String(millis).padStart(3,'0')}`;
+}
+
+// New Endless Menu (with progression system)
+function showNewEndlessMenu() {
+    const menu = document.getElementById('mainMenu');
+    const endlessMenu = document.getElementById('endlessMenu');
+    if (menu) menu.style.display = 'none';
+    if (endlessMenu) {
+        endlessMenu.style.display = 'block';
+        updateEndlessMenuStats();
+        populateUpgradesList();
+        populateAbilitySchedule();
+    }
+}
+
+function hideNewEndlessMenu() {
+    const endlessMenu = document.getElementById('endlessMenu');
+    if (endlessMenu) endlessMenu.style.display = 'none';
+}
+
+function showClassicEndless() {
+    hideNewEndlessMenu();
+    showEndlessOverlay();
+}
+
+// Endless Menu UI Functions
+function updateEndlessMenuStats() {
+    const stats = (typeof window !== 'undefined' && window.getEndlessProgression) ? window.getEndlessProgression() : null;
+    if (!stats || !stats.lifetimeStats) return;
+    const $ = (id) => document.getElementById(id);
+    if ($('statBestRun')) $('statBestRun').textContent = stats.lifetimeStats.bestRun || 0;
+    if ($('statTotalRooms')) $('statTotalRooms').textContent = stats.lifetimeStats.totalRooms || 0;
+    if ($('statAvailablePoints')) $('statAvailablePoints').textContent = stats.availablePoints || 0;
+    if ($('statTotalRuns')) $('statTotalRuns').textContent = stats.lifetimeStats.totalRuns || 0;
+}
+
+function populateUpgradesList() {
+    const upgradesList = document.getElementById('upgradesList');
+    if (!upgradesList) return;
+    
+    const stats = (typeof window !== 'undefined' && window.getEndlessProgression) ? window.getEndlessProgression() : null;
+    if (!stats) return;
+    upgradesList.innerHTML = '';
+    
+    const upgrades = [
+        { id: 'startingLives', name: 'Extra Lives', description: 'Start with additional lives', icon: '❤️', baseCost: 50, maxLevel: 3, valueFormatter: (level) => `+${level} lives` },
+        { id: 'staminaBoost', name: 'Stamina Boost', description: 'Increase maximum stamina', icon: '⚡', baseCost: 40, maxLevel: 5, valueFormatter: (level) => `+${level * 20}%` },
+        { id: 'generatorSpeedUp', name: 'Fast Generators', description: 'Generators start with progress', icon: '⚙️', baseCost: 60, maxLevel: 4, valueFormatter: (level) => `${level * 25}% start` },
+        { id: 'movementSpeed', name: 'Movement Speed', description: 'Move faster permanently', icon: '🏃', baseCost: 45, maxLevel: 3, valueFormatter: (level) => `+${level * 10}%` },
+        { id: 'jumpChargeSpeed', name: 'Quick Jump', description: 'Charge jumps faster', icon: '🦘', baseCost: 35, maxLevel: 5, valueFormatter: (level) => `+${level * 20}%` },
+        { id: 'startWithDoubleJump', name: 'Start with Double Jump', description: 'Begin runs with double jump ability', icon: '⬆️', baseCost: 100, maxLevel: 1, valueFormatter: () => 'Unlocked' },
+        { id: 'startWithShield', name: 'Start with Shield', description: 'Begin runs with wall shield', icon: '🛡️', baseCost: 80, maxLevel: 1, valueFormatter: () => 'Unlocked' }
+    ];
+    
+    upgrades.forEach(upgrade => {
+        const currentLevel = stats.permanentUpgrades[upgrade.id] || 0;
+        const isMaxed = currentLevel >= upgrade.maxLevel;
+        const nextCost = isMaxed ? 0 : upgrade.baseCost * (currentLevel + 1);
+        const canAfford = stats.availablePoints >= nextCost && !isMaxed;
+        
+        const upgradeDiv = document.createElement('div');
+        upgradeDiv.style.cssText = `
+            background: ${isMaxed ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)'};
+            border: 2px solid ${isMaxed ? '#00ff88' : '#444'};
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
+        
+        upgradeDiv.innerHTML = `
+            <div style="font-size: 32px;">${upgrade.icon}</div>
+            <div style="flex: 1;">
+                <div style="font-size: 18px; font-weight: bold; color: #fff;">
+                    ${upgrade.name}
+                    <span style="color: #00ff88; font-size: 16px;">
+                        ${currentLevel > 0 ? `[${upgrade.valueFormatter(currentLevel)}]` : ''}
+                    </span>
+                </div>
+                <div style="font-size: 14px; color: #aaa; margin-top: 4px;">
+                    ${upgrade.description}
+                </div>
+                <div style="font-size: 14px; color: #88ffaa; margin-top: 8px;">
+                    Level: ${currentLevel} / ${upgrade.maxLevel}
+                    ${!isMaxed ? `• Next: ${nextCost} points` : '• MAX'}
+                </div>
+            </div>
+            <button 
+                id="upgrade_${upgrade.id}" 
+                ${isMaxed ? 'disabled' : ''}
+                style="
+                    padding: 12px 24px;
+                    background: ${canAfford ? '#00ff88' : '#444'};
+                    color: ${canAfford ? '#000' : '#666'};
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    cursor: ${canAfford ? 'pointer' : 'not-allowed'};
+                    font-family: 'Courier New', monospace;
+                    ${isMaxed ? 'display: none;' : ''}
+                "
+            >${canAfford ? 'BUY' : 'LOCKED'}</button>
+        `;
+        
+        const button = upgradeDiv.querySelector(`#upgrade_${upgrade.id}`);
+        if (button && canAfford) {
+            button.addEventListener('click', () => {
+                if (purchaseUpgrade(upgrade.id)) {
+                    updateEndlessMenuStats();
+                    populateUpgradesList();
+                }
+            });
+        }
+        
+        upgradesList.appendChild(upgradeDiv);
+    });
+}
+
+function populateAbilitySchedule() {
+    const schedule = document.getElementById('abilitySchedule');
+    if (!schedule) return;
+    
+    const abilities = [
+        { room: 5, name: 'Double Jump', icon: '⬆️', description: 'Jump twice in mid-air' },
+        { room: 10, name: 'Reduced Stamina', icon: '⚡', description: '50% less stamina usage' },
+        { room: 15, name: 'Shield Durability', icon: '🛡️', description: 'Shield takes 5 hits' },
+        { room: 20, name: 'Infinite Projectiles', icon: '🔫', description: 'Unlimited shield ammo' },
+        { room: 25, name: 'Extra Life', icon: '❤️', description: '+1 life (one time)' },
+        { room: 30, name: 'Speed Boost', icon: '🏃', description: '30% faster movement' },
+        { room: 35, name: 'Fast Repair', icon: '⚙️', description: 'Generators 2x speed' },
+        { room: 40, name: 'Extended Jump', icon: '🦘', description: 'Super jump charge' }
+    ];
+    
+    schedule.innerHTML = abilities.map(ability => `
+        <div style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        ">
+            <div style="font-size: 24px;">${ability.icon}</div>
+            <div style="flex: 1;">
+                <div style="font-weight: bold; color: #00ff88;">
+                    Room ${ability.room}: ${ability.name}
+                </div>
+                <div style="font-size: 12px; color: #aaa;">
+                    ${ability.description}
+                </div>
+            </div>
+        </div>
+    `).join('');
 }
 
 function showEndlessOverlay() {
@@ -1531,6 +2109,37 @@ function showWinOverlay() {
         return;
     }
     
+    // Endless progression: customize win UI
+    if (gameState.mode === 'endless-progression') {
+        const win = document.getElementById('winOverlay');
+        const nextBtn = document.getElementById('nextLevelBtn');
+        const menuBtn = document.getElementById('winReturnMenuBtn');
+        const winMsg = document.getElementById('winMsg');
+        if (win) win.style.display = 'flex';
+        if (winMsg) winMsg.textContent = 'Room complete!';
+        // Hide Main Menu, only allow Next Room
+        if (menuBtn) menuBtn.style.display = 'none';
+        if (nextBtn) {
+            nextBtn.textContent = 'Next Room';
+            nextBtn.disabled = false;
+            nextBtn.style.opacity = '';
+            nextBtn.style.display = '';
+            if (!nextBtn._endlessProgressionWired) {
+                nextBtn.addEventListener('click', () => {
+                    stopConfetti();
+                    if (win) win.style.display = 'none';
+                    // Award points and advance room
+                    if (typeof window.completeEndlessRoom === 'function') window.completeEndlessRoom();
+                    // Start next endless room
+                    startLevel('endless');
+                });
+                nextBtn._endlessProgressionWired = true;
+            }
+        }
+        launchConfetti();
+        return;
+    }
+
     // Normal win screen for regular levels
     const curUnlocked = getUnlockedLevel();
     if (gameState.currentLevel >= curUnlocked) {
@@ -1539,6 +2148,13 @@ function showWinOverlay() {
     }
     const win = document.getElementById('winOverlay');
     if (win) win.style.display = 'flex';
+    
+    // Hide credits/secret buttons for non-level 10
+    const creditsBtn = document.getElementById('creditsBtn');
+    const winSecretBtn = document.getElementById('winSecretBtn');
+    if (creditsBtn && gameState.currentLevel !== 10) creditsBtn.style.display = 'none';
+    if (winSecretBtn && gameState.currentLevel !== 10) winSecretBtn.style.display = 'none';
+    
     // Disable Next Level at last level
     const nextBtn = document.getElementById('nextLevelBtn');
     if (nextBtn) {
@@ -1571,7 +2187,6 @@ function showWinOverlay() {
     launchConfetti();
 
     // Wire credits button for final escape scenario
-    const creditsBtn = document.getElementById('creditsBtn');
     if (creditsBtn && !creditsBtn._wired) {
         creditsBtn.addEventListener('click', () => {
             const c = document.getElementById('creditsOverlay');
@@ -1646,23 +2261,50 @@ function postFrameChecks(currentTime) {
     // Show lose overlay once when you die (level mode only)
     if (gameState.gameStatus === 'lost' && !postFrameChecks._handledLose) {
         postFrameChecks._handledLose = true;
+        
+        // Fire death achievement event
+        try {
+            checkAchievements('death', { deathCause: gameState.deathCause, gameState });
+        } catch (e) {
+            console.error('Achievement event error:', e);
+        }
+        
         const lo = document.getElementById('loseOverlay');
         const tip = document.getElementById('loseTip');
         if (tip) {
-            // 5% chance to show secret hint
-            const showSecretHint = Math.random() < 0.05;
-            
-            if (showSecretHint) {
-                tip.textContent = 'That code in the credits is pretty weird... maybe try putting it into the secret code area in the settings..?';
+            // In Level 11, don't show tips (lore-appropriate darkness)
+            if (gameState.currentLevel === 11) {
+                tip.style.display = 'none';
             } else {
-                const cause = gameState.deathCause || 'enemy';
-                let msg = 'Tip: Stay aware of enemy behaviors and use your tools.';
-                if (cause === 'wall') msg = 'Tip: Don\'t run into walls unless sprinting through with full stamina!';
-                else if (cause === 'chaser') msg = 'Tip: Watch for chaser telegraphs, and sidestep or block its jumps.';
-                else if (cause === 'seeker') msg = 'Tip: Stay out of the Seeker\'s vision cone—break line of sight behind walls.';
-                else if (cause === 'pig_projectile') msg = 'Tip: Reflect pink arcs with your shield—aim the shield toward the incoming arc!';
-                else if (cause === 'generator_fail') msg = 'Tip: Nail those skill checks—missing twice blocks the generator and costs a life.';
-                tip.textContent = msg;
+                tip.style.display = 'block';
+                // 5% chance to show secret hint
+                const showSecretHint = Math.random() < 0.05;
+                
+                if (showSecretHint) {
+                    tip.textContent = 'That code in the credits is pretty weird... maybe try putting it into the secret code area in the settings..?';
+                } else {
+                    const cause = gameState.deathCause || 'enemy';
+                    let msg = 'Tip: Stay aware of enemy behaviors and use your tools.';
+                    if (cause === 'wall') msg = 'Tip: Don\'t run into walls unless sprinting through with full stamina!';
+                    else if (cause === 'chaser') msg = 'Tip: Watch for chaser telegraphs, and sidestep or block its jumps.';
+                    else if (cause === 'seeker') msg = 'Tip: Stay out of the Seeker\'s vision cone—break line of sight behind walls.';
+                    else if (cause === 'pig_projectile') msg = 'Tip: Reflect pink arcs with your shield—aim the shield toward the incoming arc!';
+                    else if (cause === 'generator_fail') msg = 'Tip: Nail those skill checks—missing twice blocks the generator and costs a life.';
+                    tip.textContent = msg;
+                }
+            }
+
+            // Endless progression death handling
+            if (gameState.mode === 'endless-progression') {
+                if (gameState.gameStatus === 'lost') {
+                    // End run and award points accrued so far
+                    if (typeof window.endEndlessRun === 'function') {
+                        window.endEndlessRun(false);
+                    }
+                    // Hide restart button for endless mode
+                    const restartBtn = document.getElementById('loseRestartBtn');
+                    if (restartBtn) restartBtn.style.display = 'none';
+                }
             }
         }
         if (lo) lo.style.display = 'flex';
@@ -1683,6 +2325,12 @@ async function startApp() {
     console.log('Loading game sprites...');
     await loadSprites();
     console.log('Sprites loaded successfully!');
+
+    // Initialize achievements, skins, and notifications systems
+    initAchievements();
+    initSkins();
+    initNotifications();
+    initAchievementsSkinsUI();
 
     // Mobile: Initialize virtual controls if on touch device
     const mobile = await loadMobileControls();

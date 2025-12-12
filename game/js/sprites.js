@@ -4,6 +4,9 @@ const sprites = {
     bazooka: null,
     generator: null,
     ammoCrate: null,
+    greenKey: null,
+    yellowKey: null,
+    flashlight: null,
     loaded: false
 };
 
@@ -11,7 +14,7 @@ const sprites = {
 export function loadSprites() {
     return new Promise((resolve) => {
         let loadedCount = 0;
-        const totalSprites = 3; // Only 3 sprites now
+        const totalSprites = 6; // Updated to 6 sprites
         
         const checkComplete = () => {
             loadedCount++;
@@ -47,6 +50,24 @@ export function loadSprites() {
         sprites.ammoCrate.onload = checkComplete;
         sprites.ammoCrate.onerror = checkComplete;
         sprites.ammoCrate.src = 'assets/ammo_crate.png';
+        
+        // Load green key sprite
+        sprites.greenKey = new Image();
+        sprites.greenKey.onload = checkComplete;
+        sprites.greenKey.onerror = checkComplete;
+        sprites.greenKey.src = 'assets/green_key.png';
+        
+        // Load yellow key sprite
+        sprites.yellowKey = new Image();
+        sprites.yellowKey.onload = checkComplete;
+        sprites.yellowKey.onerror = checkComplete;
+        sprites.yellowKey.src = 'assets/yellow_key.png';
+        
+        // Load flashlight sprite
+        sprites.flashlight = new Image();
+        sprites.flashlight.onload = checkComplete;
+        sprites.flashlight.onerror = checkComplete;
+        sprites.flashlight.src = 'assets/flashlight.png';
     });
 }
 
