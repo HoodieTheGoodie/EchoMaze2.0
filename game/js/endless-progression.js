@@ -18,18 +18,22 @@ export const endlessProgression = {
         roomNumber: 0,
         points: 0,
         activeAbilities: [], // Temporary abilities earned during run
-        livesGained: 0
+        livesGained: 0,
+        difficultyMode: 'easy' // 'easy' or 'hard'
     },
     
     // Permanent upgrades (purchased with points)
     permanentUpgrades: {
-        extraStartingLives: 0,      // +1 life per level (max 3)
-        baseStaminaBoost: 0,        // +20 stamina per level (max 5)
-        generatorSpeedBoost: 0,     // -10% repair time per level (max 5)
-        movementSpeed: 0,           // +5% speed per level (max 4)
-        jumpChargeSpeed: 0,         // -10% charge time per level (max 3)
-        startWithDoubleJump: false, // 100 points
-        startWithShieldBoost: false // 100 points (3 hits before break)
+        extraStartingLives: 0,           // +1 life per level (max 3)
+        generatorSkillReduction: 0,      // Reduce skill checks needed (max 3)
+        staminaRechargeSpeed: 0,         // Faster recharge between jumps (max 3)
+        maxStaminaBoost: 0,              // Increase max stamina (max 4)
+        enemyDamageReduction: 0,         // Take less enemy damage (max 3)
+        generatorFailureProtection: 0,   // Reduce failure penalties (max 2)
+        jumpChargeSpeed: 0,              // Faster jump charging (max 3)
+        startWithExtraLife: false,       // 150 points - start with extra life ability
+        startWithShield: false,          // 120 points - start with shield
+        pointMultiplier: 0               // Earn more points (max 3)
     },
     
     upgradesEnabled: true // Toggle for challenge runs
@@ -37,53 +41,50 @@ export const endlessProgression = {
 
 // Ability definitions (earned during runs)
 export const TEMP_ABILITIES = {
-    doubleJump: {
-        name: 'Double Jump',
-        description: 'Press jump again in mid-air',
-        icon: '⬆️⬆️',
-        earnedAt: 3 // Room number
-    },
-    reducedStamina: {
-        name: 'Efficient Movement',
-        description: '50% stamina drain',
-        icon: '⚡',
-        earnedAt: 5
-    },
-    shieldDurability: {
-        name: 'Reinforced Shield',
-        description: '3 hits before breaking',
-        icon: '🛡️',
-        earnedAt: 7
-    },
-    infiniteShieldProjectiles: {
-        name: 'Infinite Shield Shots',
-        description: 'Unlimited shield projectiles',
-        icon: '∞',
-        earnedAt: 10
-    },
     extraLife: {
         name: 'Extra Life',
-        description: '+1 life',
+        description: 'Take one extra hit before dying',
         icon: '❤️',
-        earnedAt: 12
+        earnedAt: 3,
+        type: 'protection'
     },
-    speedBoost: {
-        name: 'Speed Boost',
-        description: '+30% movement speed',
-        icon: '💨',
-        earnedAt: 15
+    enemySlow: {
+        name: 'Temporal Slow',
+        description: 'Enemies move 50% slower for 30s',
+        icon: '🐢',
+        earnedAt: 5,
+        type: 'timed',
+        duration: 30000
     },
-    fastRepair: {
-        name: 'Rapid Repair',
-        description: '50% faster generators',
-        icon: '⚙️',
-        earnedAt: 18
+    staminaryReduction: {
+        name: 'Efficient Movement',
+        description: 'Jumps cost 50% less stamina',
+        icon: '⚡',
+        earnedAt: 7,
+        type: 'passive'
     },
-    extendedJump: {
-        name: 'Super Jump',
-        description: '+50% jump range',
-        icon: '🚀',
-        earnedAt: 20
+    wallPhase: {
+        name: 'Wall Phase',
+        description: 'Walk through walls for 10s',
+        icon: '👻',
+        earnedAt: 10,
+        type: 'timed',
+        duration: 10000
+    },
+    shieldBoost: {
+        name: 'Reinforced Shield',
+        description: 'Absorb 3 hits before taking damage',
+        icon: '🛡️',
+        earnedAt: 12,
+        type: 'protection'
+    },
+    invincibility: {
+        name: 'Invincibility Burst',
+        description: '5 seconds of complete protection',
+        icon: '✨',
+        earnedAt: 15,
+        type: 'timed',
+        duration: 5000
     }
 };
 
@@ -91,59 +92,104 @@ export const TEMP_ABILITIES = {
 export const UPGRADE_CATALOG = {
     extraStartingLives: {
         name: 'Extra Starting Life',
-        description: '+1 starting life',
+        description: 'Start with +1 additional life',
         maxLevel: 3,
+        costPerLevel: 60,
+        getCost: (level) => 60 + (level * 30)
+    },
+    generatorSkillReduction: {
+        name: 'Generator Expert',
+        description: 'Reduce skill checks needed to complete generators',
+        maxLevel: 3,
+        costPerLevel: 80,
+        getCost: (level) => 80 + (level * 40),
+        effect: {
+            '1': 'Generators need 1 less skill check',
+            '2': 'Generators need 2 less skill checks',
+            '3': 'Generators complete instantly!'
+        }
+    },
+    staminaRechargeSpeed: {
+        name: 'Stamina Recovery',
+        description: 'Stamina recharges faster between jumps',
+        maxLevel: 3,
+        costPerLevel: 70,
+        getCost: (level) => 70 + (level * 35),
+        effect: {
+            '1': '-25% recharge time',
+            '2': '-50% recharge time',
+            '3': '-75% recharge time'
+        }
+    },
+    maxStaminaBoost: {
+        name: 'Stamina Tank',
+        description: 'Increase maximum stamina pool',
+        maxLevel: 4,
         costPerLevel: 50,
         getCost: (level) => 50 + (level * 25)
     },
-    baseStaminaBoost: {
-        name: 'Stamina Boost',
-        description: '+20 max stamina',
-        maxLevel: 5,
-        costPerLevel: 30,
-        getCost: (level) => 30 + (level * 15)
+    enemyDamageReduction: {
+        name: 'Tough Hide',
+        description: 'Take reduced damage from enemies',
+        maxLevel: 3,
+        costPerLevel: 90,
+        getCost: (level) => 90 + (level * 45),
+        effect: {
+            '1': '-25% enemy damage',
+            '2': '-50% enemy damage',
+            '3': '-75% enemy damage'
+        }
     },
-    generatorSpeedBoost: {
-        name: 'Repair Expert',
-        description: '-10% generator repair time',
-        maxLevel: 5,
-        costPerLevel: 40,
-        getCost: (level) => 40 + (level * 20)
-    },
-    movementSpeed: {
-        name: 'Swift Runner',
-        description: '+5% movement speed',
-        maxLevel: 4,
-        costPerLevel: 35,
-        getCost: (level) => 35 + (level * 20)
+    generatorFailureProtection: {
+        name: 'Generator Insurance',
+        description: 'Reduce penalties for generator failures',
+        maxLevel: 2,
+        costPerLevel: 100,
+        getCost: (level) => 100 + (level * 50),
+        effect: {
+            '1': 'Only lose 1 life instead of 2 on second failure',
+            '2': 'Generator stays usable after failure'
+        }
     },
     jumpChargeSpeed: {
         name: 'Quick Charge',
-        description: '-10% jump charge time',
+        description: 'Charge jumps faster',
         maxLevel: 3,
-        costPerLevel: 45,
-        getCost: (level) => 45 + (level * 25)
+        costPerLevel: 65,
+        getCost: (level) => 65 + (level * 30)
     },
-    startWithDoubleJump: {
-        name: 'Start with Double Jump',
-        description: 'Begin runs with double jump unlocked',
+    startWithExtraLife: {
+        name: 'Life Insurance',
+        description: 'Start each run with an extra life ability',
         maxLevel: 1,
-        costPerLevel: 100,
-        getCost: () => 100
+        costPerLevel: 150,
+        getCost: () => 150
     },
-    startWithShieldBoost: {
-        name: 'Start with Reinforced Shield',
-        description: 'Begin with 3-hit shield durability',
+    startWithShield: {
+        name: 'Starter Shield',
+        description: 'Begin runs with 3-hit shield protection',
         maxLevel: 1,
-        costPerLevel: 100,
-        getCost: () => 100
+        costPerLevel: 120,
+        getCost: () => 120
+    },
+    pointMultiplier: {
+        name: 'Wealth Accumulation',
+        description: 'Earn more points per room completed',
+        maxLevel: 3,
+        costPerLevel: 200,
+        getCost: (level) => 200 + (level * 100),
+        effect: {
+            '1': '+25% points per room',
+            '2': '+50% points per room',
+            '3': '+100% points per room'
+        }
     }
 };
 
 /**
  * Calculate difficulty scaling for room number
  */
-export function getRoomDifficulty(roomNumber) {
+export function getRoomDifficulty(roomNumber, mode = 'easy') {
     const difficulty = {
         generatorCount: 3,
         enemies: []
@@ -153,18 +199,35 @@ export function getRoomDifficulty(roomNumber) {
     if (roomNumber >= 30) difficulty.generatorCount = 5;
     else if (roomNumber >= 20) difficulty.generatorCount = 4;
     
-    // Add enemies based on progression
-    if (roomNumber >= 1) difficulty.enemies.push('chaser');
-    if (roomNumber >= 3) difficulty.enemies.push('pig');
-    if (roomNumber >= 5) difficulty.enemies.push('seeker');
-    if (roomNumber >= 8) difficulty.enemies.push('batter');
-    if (roomNumber >= 12) difficulty.enemies.push('mortar');
+    // Base AI pool
+    const baseAI = ['chaser', 'mortar', 'pig', 'seeker', 'batter'];
     
-    // Add duplicates at higher rooms
-    if (roomNumber >= 15) difficulty.enemies.push('chaser'); // 2nd chaser
-    if (roomNumber >= 18) difficulty.enemies.push('pig'); // 2nd pig
-    if (roomNumber >= 22) difficulty.enemies.push('seeker'); // 2nd seeker
-    if (roomNumber >= 25) difficulty.enemies.push('batter'); // 2nd batter
+    if (mode === 'easy') {
+        // EASY MODE: Progressive AI spawns (1→5 unique)
+        // Early rooms: random subset that grows to 5 unique
+        if (roomNumber <= 5) {
+            const count = Math.max(1, Math.min(roomNumber, baseAI.length));
+            const pool = [...baseAI];
+            for (let i = 0; i < count; i++) {
+                const idx = Math.floor(Math.random() * pool.length);
+                difficulty.enemies.push(pool.splice(idx, 1)[0]);
+            }
+        } else {
+            // Rooms 6+: all five base AIs, no duplicates
+            difficulty.enemies.push(...baseAI);
+        }
+    } else {
+        // HARD MODE: Immediately hard - all 5 AIs from room 1 with duplicates
+        // Always spawn all five base AIs
+        difficulty.enemies.push(...baseAI);
+        
+        // Add duplicates scaling with room number
+        const extraCount = Math.min(2 + Math.floor(roomNumber / 2), 10);
+        for (let i = 0; i < extraCount; i++) {
+            const pick = baseAI[Math.floor(Math.random() * baseAI.length)];
+            difficulty.enemies.push(pick);
+        }
+    }
     
     // Randomize enemy order
     difficulty.enemies.sort(() => Math.random() - 0.5);
@@ -175,14 +238,18 @@ export function getRoomDifficulty(roomNumber) {
 /**
  * Calculate points earned for completing a room
  */
-export function calculateRoomPoints(roomNumber) {
-    return Math.floor(10 + (roomNumber * 2));
+export function calculateRoomPoints(roomNumber, mode = 'easy') {
+    const basePoints = Math.floor(10 + (roomNumber * 2));
+    const hardAdjusted = mode === 'hard' ? basePoints * 2 : basePoints;
+    // Apply permanent point multiplier upgrade
+    const multiplier = 1 + ((endlessProgression.permanentUpgrades?.pointMultiplier || 0) * 0.25);
+    return Math.floor(hardAdjusted * multiplier);
 }
 
 /**
  * Start a new endless run
  */
-export function startEndlessRun() {
+export function startEndlessRun(difficultyMode = 'easy') {
     const gs = (typeof window !== 'undefined' && window.gameState) ? window.gameState : null;
     if (gs) {
         gs.mode = 'endless-progression';
@@ -193,16 +260,21 @@ export function startEndlessRun() {
         roomNumber: 0,
         points: 0,
         activeAbilities: [],
+        difficultyMode: difficultyMode,
         livesGained: 0
     };
     
     // Apply starting upgrades if enabled
     if (endlessProgression.upgradesEnabled) {
-        if (endlessProgression.permanentUpgrades.startWithDoubleJump) {
-            endlessProgression.currentRun.activeAbilities.push('doubleJump');
+        if (endlessProgression.permanentUpgrades.startWithExtraLife) {
+            if (!endlessProgression.currentRun.activeAbilities.includes('extraLife')) {
+                endlessProgression.currentRun.activeAbilities.push('extraLife');
+            }
         }
-        if (endlessProgression.permanentUpgrades.startWithShieldBoost) {
-            endlessProgression.currentRun.activeAbilities.push('shieldDurability');
+        if (endlessProgression.permanentUpgrades.startWithShield) {
+            if (!endlessProgression.currentRun.activeAbilities.includes('shieldBoost')) {
+                endlessProgression.currentRun.activeAbilities.push('shieldBoost');
+            }
         }
     }
     
@@ -217,9 +289,10 @@ export function completeEndlessRoom() {
     
     endlessProgression.currentRun.roomNumber++;
     const roomNum = endlessProgression.currentRun.roomNumber;
+    const mode = endlessProgression.currentRun.difficultyMode || 'easy';
     
-    // Award points
-    const points = calculateRoomPoints(roomNum);
+    // Award points (2x for hard mode)
+    const points = calculateRoomPoints(roomNum, mode);
     endlessProgression.currentRun.points += points;
     
     // Check for new abilities earned
@@ -300,8 +373,9 @@ export function resetUpgrades() {
     let totalSpent = 0;
     for (const [key, level] of Object.entries(endlessProgression.permanentUpgrades)) {
         const upgrade = UPGRADE_CATALOG[key];
-        if (typeof level === 'boolean' && level) {
-            totalSpent += upgrade.getCost();
+        if (!upgrade) continue;
+        if (typeof level === 'boolean') {
+            if (level) totalSpent += upgrade.getCost();
         } else if (typeof level === 'number' && level > 0) {
             for (let i = 0; i < level; i++) {
                 totalSpent += upgrade.getCost(i);
@@ -309,15 +383,18 @@ export function resetUpgrades() {
         }
     }
     
-    // Reset upgrades
+    // Reset upgrades to default schema
     endlessProgression.permanentUpgrades = {
         extraStartingLives: 0,
-        baseStaminaBoost: 0,
-        generatorSpeedBoost: 0,
-        movementSpeed: 0,
+        generatorSkillReduction: 0,
+        staminaRechargeSpeed: 0,
+        maxStaminaBoost: 0,
+        enemyDamageReduction: 0,
+        generatorFailureProtection: 0,
         jumpChargeSpeed: 0,
-        startWithDoubleJump: false,
-        startWithShieldBoost: false
+        startWithExtraLife: false,
+        startWithShield: false,
+        pointMultiplier: 0
     };
     
     // Refund points
@@ -335,20 +412,27 @@ export function applyPermanentUpgrades() {
     
     const upgrades = endlessProgression.permanentUpgrades;
     
-    // Extra starting lives
     const gs = (typeof window !== 'undefined' && window.gameState) ? window.gameState : null;
     if (!gs) return;
+    
+    // Extra starting lives
     gs.lives += upgrades.extraStartingLives;
     
-    // Base stamina boost
-    gs.stamina = 100 + (upgrades.baseStaminaBoost * 20);
-    gs.maxStamina = gs.stamina;
+    // Max stamina boost (base 100, +25 per level)
+    const boostedMaxStamina = 100 + (upgrades.maxStaminaBoost * 25);
+    gs.maxStamina = boostedMaxStamina;
+    gs.stamina = Math.min(gs.stamina || boostedMaxStamina, boostedMaxStamina);
     
     // Store upgrade levels in gameState for other systems to use
     gs.endlessUpgrades = {
-        generatorSpeedMultiplier: 1 - (upgrades.generatorSpeedBoost * 0.1),
-        movementSpeedMultiplier: 1 + (upgrades.movementSpeed * 0.05),
-        jumpChargeMultiplier: 1 - (upgrades.jumpChargeSpeed * 0.1)
+        generatorSkillReduction: upgrades.generatorSkillReduction,
+        staminaRegenMultiplier: 1 + (upgrades.staminaRechargeSpeed * 0.25),
+        enemyDamageReduction: upgrades.enemyDamageReduction * 0.25, // 25/50/75% mitigation chance
+        generatorFailureProtection: upgrades.generatorFailureProtection,
+        jumpChargeMultiplier: 1 - (upgrades.jumpChargeSpeed * 0.15),
+        pointMultiplier: 1 + (upgrades.pointMultiplier * 0.25),
+        startWithExtraLife: upgrades.startWithExtraLife,
+        startWithShield: upgrades.startWithShield
     };
 }
 
@@ -401,12 +485,29 @@ export function loadEndlessProgress() {
             if (!parsed.permanentUpgrades) {
                 parsed.permanentUpgrades = {
                     extraStartingLives: 0,
-                    baseStaminaBoost: 0,
-                    generatorSpeedBoost: 0,
-                    movementSpeed: 0,
+                    generatorSkillReduction: 0,
+                    staminaRechargeSpeed: 0,
+                    maxStaminaBoost: 0,
+                    enemyDamageReduction: 0,
+                    generatorFailureProtection: 0,
                     jumpChargeSpeed: 0,
-                    startWithDoubleJump: false,
-                    startWithShieldBoost: false
+                    startWithExtraLife: false,
+                    startWithShield: false,
+                    pointMultiplier: 0
+                };
+            } else {
+                // Normalize missing keys if migrating from an older schema
+                parsed.permanentUpgrades = {
+                    extraStartingLives: parsed.permanentUpgrades.extraStartingLives || 0,
+                    generatorSkillReduction: parsed.permanentUpgrades.generatorSkillReduction || 0,
+                    staminaRechargeSpeed: parsed.permanentUpgrades.staminaRechargeSpeed || 0,
+                    maxStaminaBoost: parsed.permanentUpgrades.maxStaminaBoost || 0,
+                    enemyDamageReduction: parsed.permanentUpgrades.enemyDamageReduction || 0,
+                    generatorFailureProtection: parsed.permanentUpgrades.generatorFailureProtection || 0,
+                    jumpChargeSpeed: parsed.permanentUpgrades.jumpChargeSpeed || 0,
+                    startWithExtraLife: !!parsed.permanentUpgrades.startWithExtraLife,
+                    startWithShield: !!parsed.permanentUpgrades.startWithShield,
+                    pointMultiplier: parsed.permanentUpgrades.pointMultiplier || 0
                 };
             }
             if (typeof parsed.upgradesEnabled !== 'boolean') parsed.upgradesEnabled = true;

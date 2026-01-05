@@ -1,6 +1,6 @@
 // input.js - Keyboard input handling (+ Mobile integration)
 
-import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap, attemptTerminalInteraction, toggleLevel11Flashlight } from './state.js';
+import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap, attemptTerminalInteraction, toggleLevel11Flashlight, activatePhoenixShieldAbility } from './state.js';
 import { initGame } from './main.js';
 import { isBazookaMode } from './config.js';
 
@@ -194,6 +194,17 @@ function handleKeyDown(e) {
         return;
     }
 
+    // T key: Toggle 100%MAN double-movement mode (1 tile vs 2 tiles)
+    if (e.code === 'KeyT' || key === 't') {
+        import('./skins.js').then(m => {
+            if (m.hasSkinAbility && m.hasSkinAbility('god_mode')) {
+                gameState.hundred_percentDoubleMove = !gameState.hundred_percentDoubleMove;
+                console.log('100%MAN movement mode: ' + (gameState.hundred_percentDoubleMove ? '2 tiles' : '1 tile') + ' per step');
+            }
+        }).catch(() => {});
+        return;
+    }
+
     // Toggle Seeker debug overlay (H) / Skip dialog in prep room
     if (e.code === 'KeyH' || key === 'h') {
         // Skip dialog in prep room
@@ -205,6 +216,14 @@ function handleKeyDown(e) {
         // Toggle debug overlay
         if (!gameState.isGeneratorUIOpen) {
             gameState.debugSeeker = !gameState.debugSeeker;
+        }
+        return;
+    }
+
+    // Y key: Manually activate Phoenix shield (one-time)
+    if (e.code === 'KeyY' || key === 'y') {
+        if (gameState.gameStatus === 'playing' && !gameState.isPaused && !gameState.isGeneratorUIOpen) {
+            activatePhoenixShieldAbility(performance.now());
         }
         return;
     }

@@ -1,6 +1,6 @@
 // boss.js - Level 10 Boss Controller (The Core)
 
-import { gameState, MAZE_WIDTH, MAZE_HEIGHT, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake } from './state.js';
+import { gameState, MAZE_WIDTH, MAZE_HEIGHT, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake, applyPlayerDamage } from './state.js';
 import { startPreBossMusic, stopPreBossMusic, playExplosion } from './audio.js';
 
 // Dialog bar helper (DOM)
@@ -849,11 +849,11 @@ export function bossExplosion(cx, cy, radius, currentTime) {
   // Damage player (like Mortar)
   const pd = Math.max(Math.abs(gameState.player.x - cx), Math.abs(gameState.player.y - cy));
   if (pd <= radius) {
-    if (!gameState.godMode) {
-      gameState.lives = Math.max(0, (gameState.lives || 0) - 1);
+    const damageApplied = applyPlayerDamage(src, currentTime);
+    if (damageApplied) {
       gameState.playerStunned = true;
       // Bazooka mode: shorter self-damage stun (2s), normal mode: 4s
-      const stunDuration = (src === 'rocket' && isBazookaMode()) ? 2000 : 4000;
+      const stunDuration = (src === 'rocket') ? 2000 : 4000;
       gameState.playerStunUntil = currentTime + stunDuration;
       gameState.playerStunStart = currentTime;
       // Check for death

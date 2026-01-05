@@ -88,9 +88,14 @@ function buildMazeBase() {
     const bctx = mazeBaseCanvas.getContext('2d');
     
     // Get level color for neon walls
-    const level = gameState.currentLevel || 1;
-    const color = getLevelColor(level);
-    const neonColor = color.css;
+    let neonColor;
+    if (gameState.currentLevel === 100 || gameState.endlessMode) {
+        neonColor = '#b300ff'; // Purple for endless mode
+    } else {
+        const level = gameState.currentLevel || 1;
+        const color = getLevelColor(level);
+        neonColor = color.css;
+    }
     
     // Draw static walls/floor only (no exit/generators)
     for (let y = 0; y < MAZE_HEIGHT; y++) {
@@ -276,28 +281,31 @@ function drawLevel11Items() {
             const ex = enemy.fx * CELL_SIZE;
             const ey = enemy.fy * CELL_SIZE;
             
-            // Determine if enemy is currently exposed to flashlight
-            const exposureTime = enemy.exposureTime || 0;
-            const isExposed = enemy.exposedAt > 0;
-            const exposurePercent = isExposed ? Math.min(1, (currentTime - enemy.exposedAt) / 500) : 0; // 0 to 1 over 0.5 seconds
-            
             ctx.save();
             
-            // Bat body (GRAY normally, increasingly red when exposed)
-            if (isExposed) {
-                // Glow effect when exposed (red) - intensity increases with exposure time
-                const glowGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, CELL_SIZE * 1.5);
-                glowGrad.addColorStop(0, `rgba(255, 50, 50, ${0.9 * exposurePercent})`);
-                glowGrad.addColorStop(0.4, `rgba(255, 50, 50, ${0.5 * exposurePercent})`);
-                glowGrad.addColorStop(1, 'rgba(255, 50, 50, 0)');
-                ctx.fillStyle = glowGrad;
+            // NEW: Draw light glow around AGGROED bats only
+            // Aggroed bats are visible in darkness with a bright yellow/white light aura
+            if (enemy.aggro) {
+                // Large light glow for aggroed bats - visible in complete darkness
+                const lightGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, CELL_SIZE * 2);
+                lightGrad.addColorStop(0, 'rgba(255, 255, 150, 0.8)');  // Bright yellow core
+                lightGrad.addColorStop(0.4, 'rgba(255, 200, 0, 0.4)');  // Orange middle
+                lightGrad.addColorStop(1, 'rgba(255, 150, 0, 0)');       // Fade out
+                ctx.fillStyle = lightGrad;
                 ctx.beginPath();
-                ctx.arc(ex, ey, CELL_SIZE * 1.5, 0, Math.PI * 2);
+                ctx.arc(ex, ey, CELL_SIZE * 2, 0, Math.PI * 2);
                 ctx.fill();
-                
-                // Bat turns red based on exposure time
-                const redAmount = Math.floor(255 * exposurePercent);
-                ctx.fillStyle = `rgb(${100 + redAmount * 0.6}, ${70 - exposurePercent * 50}, ${70 - exposurePercent * 50})`;
+            }
+            
+            // Determine bat color: GRAY normally, RED when exposed to flashlight
+            const exposureTime = enemy.exposureTime || 0;
+            const isExposed = exposureTime > 0;
+            
+            if (isExposed) {
+                // Red bat when exposed to flashlight
+                const exposurePercent = Math.min(1, exposureTime / 3000); // 0-1 as exposure goes from 0-3000ms
+                const redAmount = Math.floor(200 * exposurePercent);
+                ctx.fillStyle = `rgb(${150 + redAmount}, 70, 70)`;
             } else {
                 // Gray bat (barely visible in darkness without flashlight)
                 ctx.fillStyle = '#606060';
@@ -320,13 +328,12 @@ function drawLevel11Items() {
             ctx.arc(ex + CELL_SIZE * 0.1, ey - CELL_SIZE * 0.05, CELL_SIZE * 0.05, 0, Math.PI * 2);
             ctx.fill();
             
-            // Warning indicator when close to death threshold (80%+ exposure)
-            if (exposurePercent >= 0.8) {
+            // Red outline when in RAGE MODE (aggroed)
+            if (enemy.aggro) {
                 ctx.strokeStyle = '#ff0000';
                 ctx.lineWidth = 3;
-                ctx.setLineDash([5, 5]);
                 ctx.beginPath();
-                ctx.arc(ex, ey, CELL_SIZE * 0.8, 0, Math.PI * 2);
+                ctx.arc(ex, ey, CELL_SIZE * 0.6, 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.setLineDash([]);
             }
@@ -409,6 +416,13 @@ function drawLevel11Darkness() {
     
     // Only apply darkness to dark room (0% brightness)
     if (gameState.level11.currentRoom !== 'dark') return;
+    
+    // If night vision mode is enabled (dev mode), don't draw darkness at all
+    // Check both gameState.settings and ensure nightVisionMode is true
+    if (gameState.settings && gameState.settings.nightVisionMode === true) {
+        console.log('[renderer] Night vision mode enabled - skipping darkness overlay');
+        return; // Full visibility in night vision mode
+    }
     
     // Create darkness overlay layer
     const darkCanvas = document.createElement('canvas');
@@ -498,6 +512,54 @@ function drawLevel11Darkness() {
 
     // Draw the darkness layer on top of the main canvas
     ctx.drawImage(darkCanvas, 0, 0);
+}
+
+/**
+ * Draw difficulty-based border for endless mode
+ * Colors change based on current room difficulty
+ */
+function drawEndlessDifficultyBorder() {
+    if (!canvas || !ctx) return;
+    
+    const ep = window.endlessProgression;
+    if (!ep || !ep.currentRun) return;
+    
+    const roomNumber = ep.currentRun.roomNumber || 1;
+    
+    // Calculate difficulty based on room number
+    let borderColor = '#00ccff'; // Easy (cyan) - rooms 1-5
+    let borderWidth = 4;
+    
+    if (roomNumber >= 15) {
+        borderColor = '#ff0088'; // Insane (magenta) - room 15+
+        borderWidth = 6;
+    } else if (roomNumber >= 10) {
+        borderColor = '#ff4400'; // Hard (red-orange) - rooms 10-14
+        borderWidth = 5;
+    } else if (roomNumber >= 6) {
+        borderColor = '#ffaa00'; // Medium (orange) - rooms 6-9
+        borderWidth = 4;
+    }
+    
+    // Draw glowing border
+    ctx.save();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = borderWidth;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = borderColor;
+    
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw room number indicator in top-right
+    ctx.fillStyle = borderColor;
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = borderColor;
+    ctx.fillText(`Room ${roomNumber}`, canvas.width - 8, 8);
+    
+    ctx.restore();
 }
 
 export function render(currentTime) {
@@ -621,6 +683,12 @@ export function render(currentTime) {
         ctx.save(); ctx.fillStyle = `rgba(0,0,0,${Math.max(0, Math.min(1, alpha))})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore();
         if (t >= 1) gameState.screenFade = null;
     }
+    
+    // Draw difficulty-based border for endless mode
+    if (gameState.currentLevel === 100 && gameState.endlessMode) {
+        drawEndlessDifficultyBorder();
+    }
+    
     if (shaking) ctx.restore();
 }
 
@@ -1855,17 +1923,65 @@ function drawBossArena(currentTime) {
         for (const s of b.ammoStations) {
             const sx = (s.x + 0.5) * CELL_SIZE;
             const sy = (s.y + 0.5) * CELL_SIZE;
+            
             ctx.save();
-            // Base station tile
-            ctx.fillStyle = '#ffaa00';
-            ctx.fillRect(sx - 7, sy - 7, 14, 14);
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(sx - 9, sy - 9, 18, 18);
-
+            
+            // Ammo crate base (wooden/metallic box look) - SAME AS PRE-BOSS
+            // Main crate body - brown/tan color
+            ctx.fillStyle = '#8b6f47';
+            ctx.fillRect(sx - 8, sy - 8, 16, 16);
+            
+            // Top panel (lighter, like a lid)
+            ctx.fillStyle = '#a0875f';
+            ctx.fillRect(sx - 8, sy - 8, 16, 4);
+            
+            // Side panel highlighting
+            ctx.fillStyle = '#6b5436';
+            ctx.fillRect(sx - 8, sy - 4, 3, 12);
+            
+            // Metal straps/bands (industrial look)
+            ctx.strokeStyle = '#444';
+            ctx.lineWidth = 1.5;
+            // Horizontal straps
+            ctx.beginPath();
+            ctx.moveTo(sx - 8, sy - 3);
+            ctx.lineTo(sx + 8, sy - 3);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(sx - 8, sy + 3);
+            ctx.lineTo(sx + 8, sy + 3);
+            ctx.stroke();
+            
+            // Vertical strap
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - 8);
+            ctx.lineTo(sx, sy + 8);
+            ctx.stroke();
+            
+            // Ammo symbol - bullet/rocket icon in center
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            // Simple rocket/bullet shape
+            ctx.moveTo(sx - 2, sy + 2);
+            ctx.lineTo(sx - 2, sy - 4);
+            ctx.lineTo(sx, sy - 6);
+            ctx.lineTo(sx + 2, sy - 4);
+            ctx.lineTo(sx + 2, sy + 2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Add small "AMMO" text or bullets indicator
+            ctx.fillStyle = '#ffcc00';
+            ctx.font = 'bold 6px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('AMMO', sx, sy + 5);
+            
             // Cooldown ring overlay
             const now = performance.now();
             const remain = Math.max(0, (s.cooldownUntil || 0) - now);
             if (remain > 0) {
-                // Draw a pie showing cooldown progress
+                // Draw a pie showing cooldown progress (darker overlay)
                 const r = 12;
                 const total = Math.max(1, (s.cooldownTotal || 30000));
                 const pct = Math.min(1, remain / total);
@@ -1876,12 +1992,14 @@ function drawBossArena(currentTime) {
                 ctx.closePath();
                 ctx.fill();
             } else {
-                // Ready pulse
-                const pulse = (Math.sin(now / 180) * 0.5 + 0.5) * 0.4 + 0.2;
-                ctx.strokeStyle = `rgba(255,255,255,${pulse.toFixed(2)})`;
-                ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.stroke();
-                // Tooltip removed - players know to walk over ammo stations
+                // Ready pulse (glow around crate when available)
+                const pulse = Math.sin(currentTime / 400) * 0.3 + 0.7;
+                ctx.globalAlpha = pulse * 0.4;
+                ctx.strokeStyle = '#ffcc00';
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = '#ffcc00';
+                ctx.strokeRect(sx - 10, sy - 10, 20, 20);
             }
             ctx.restore();
         }
@@ -2646,7 +2764,16 @@ function drawPlayer() {
         }
     } else {
         // Normal player rendering
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        
+        // Check if rainbow skin - shift the entire player through rainbow colors
+        if (skinEffects && (skinEffects.rainbowEffect || skinEffects.rainbow)) {
+            const now = performance.now();
+            const hue = (now / 30) % 360; // Cycle through hue over time (faster rainbow)
+            ctx.fillStyle = `hsl(${hue}, 100%, 45%)`;
+        } else {
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+        }
+        
         ctx.beginPath();
         ctx.arc(centerX, centerY + jumpOffset, radius, 0, Math.PI * 2);
         ctx.fill();
@@ -2666,50 +2793,192 @@ function drawPlayer() {
                 ctx.restore();
             }
             
-            // Particle effect (various types)
-            if (skinEffects.particles) {
-                if (Math.random() < 0.3) {
+            // Pulse effect (breathing glow)
+            if (skinEffects.pulseEffect) {
+                ctx.save();
+                const pulse = 0.3 + 0.7 * Math.sin(now / 400);
+                ctx.strokeStyle = `rgba(${r},${g},${b},${pulse * 0.5})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY + jumpOffset, radius + 6 + pulse * 3, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+            
+            // Metallic effect (shiny reflection)
+            if (skinEffects.metallicEffect) {
+                ctx.save();
+                const shimmer = 0.4 + 0.6 * Math.sin(now / 600 + Math.PI / 2);
+                const gradient = ctx.createLinearGradient(centerX - radius, centerY + jumpOffset, centerX + radius, centerY + jumpOffset);
+                gradient.addColorStop(0, `rgba(255, 255, 255, 0)`);
+                gradient.addColorStop(0.5, `rgba(255, 255, 255, ${shimmer * 0.4})`);
+                gradient.addColorStop(1, `rgba(255, 255, 255, 0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY + jumpOffset, radius * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+            
+            // Void effect (dark aura consuming light)
+            if (skinEffects.voidEffect) {
+                ctx.save();
+                const voidPulse = 0.5 + 0.5 * Math.sin(now / 300);
+                const voidGradient = ctx.createRadialGradient(centerX, centerY + jumpOffset, radius, centerX, centerY + jumpOffset, radius + 15);
+                voidGradient.addColorStop(0, `rgba(0, 0, 0, 0.2)`);
+                voidGradient.addColorStop(1, `rgba(0, 0, 0, 0)`);
+                ctx.fillStyle = voidGradient;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY + jumpOffset, radius + 15 * voidPulse, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Dark wisps around void
+                for (let i = 0; i < 3; i++) {
+                    const angle = (now / 500) + (i * Math.PI * 2 / 3);
+                    const x = centerX + Math.cos(angle) * (radius + 8);
+                    const y = centerY + jumpOffset + Math.sin(angle) * (radius + 8);
+                    ctx.strokeStyle = `rgba(20, 0, 40, ${0.5 * voidPulse})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY + jumpOffset);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+            
+            // Sprint/Dash Particle Effects - ONLY when sprinting and stamina is available
+            if (gameState.isSprinting && gameState.stamina === 100) {
+                const skinId = gameState.equippedSkin || 'default';
+                
+                if (Math.random() < 0.4) {
                     let particleType = 'move';
                     let particleColor = `rgba(${r},${g},${b},0.7)`;
+                    let spawnCount = 1;
                     
-                    if (skinEffects.particles === 'glitch') {
-                        particleType = 'wallHit';
-                        particleColor = '#00ff00';
-                    } else if (skinEffects.particles === 'rainbow') {
-                        const hue = (now / 20) % 360;
-                        particleColor = `hsl(${hue}, 100%, 50%)`;
-                        particleType = 'generator';
-                    } else if (skinEffects.particles === 'void') {
-                        particleType = 'damage';
-                        particleColor = '#1a0033';
-                    } else if (skinEffects.particles === 'fire') {
-                        particleColor = '#ff6600';
-                        particleType = 'explosion';
+                    // Custom sprint effects per skin
+                    switch(skinId) {
+                        case 'default':
+                            // Blue energy trails
+                            particleType = 'move';
+                            particleColor = 'rgba(0, 150, 255, 0.8)';
+                            break;
+                        case 'rookie':
+                            // Green training sparks
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(50, 205, 50, 0.9)';
+                            spawnCount = 2;
+                            break;
+                        case 'veteran':
+                            // Red combat aura
+                            particleType = 'explosion';
+                            particleColor = 'rgba(255, 0, 0, 0.8)';
+                            break;
+                        case 'engineer':
+                            // Golden tool sparks
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(255, 215, 0, 0.9)';
+                            spawnCount = 2;
+                            break;
+                        case 'guardian':
+                            // Holy light particles
+                            particleType = 'generator';
+                            particleColor = 'rgba(255, 250, 205, 0.9)';
+                            spawnCount = 2;
+                            break;
+                        case 'shadow':
+                            // Dark purple smoke
+                            particleType = 'damage';
+                            particleColor = 'rgba(138, 43, 226, 0.7)';
+                            break;
+                        case 'corrupted':
+                            // Red/black corruption wisps
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(0, 255, 0, 0.8)';
+                            spawnCount = 2;
+                            break;
+                        case 'blitz':
+                            // White lightning bolts
+                            particleType = 'explosion';
+                            particleColor = 'rgba(255, 255, 255, 0.95)';
+                            spawnCount = 2;
+                            break;
+                        case 'chrono':
+                            // Time warp distortion (cyan trails)
+                            particleType = 'generator';
+                            particleColor = 'rgba(64, 224, 208, 0.85)';
+                            break;
+                        case 'minimal':
+                            // Simple geometric traces (gray)
+                            particleType = 'move';
+                            particleColor = 'rgba(169, 169, 169, 0.7)';
+                            break;
+                        case 'ghost':
+                            // Transparent afterimages (white trails)
+                            particleType = 'generator';
+                            particleColor = 'rgba(240, 255, 255, 0.6)';
+                            spawnCount = 2;
+                            break;
+                        case 'defender':
+                            // Shield barrier particles (silver)
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(211, 211, 211, 0.85)';
+                            break;
+                        case 'marksman':
+                            // Focused trajectory lines (orange fire)
+                            particleType = 'explosion';
+                            particleColor = 'rgba(255, 165, 0, 0.9)';
+                            spawnCount = 2;
+                            break;
+                        case 'infinite':
+                            // Rainbow spiral vortex
+                            const hue = (now / 20) % 360;
+                            particleColor = `hsl(${hue}, 100%, 50%)`;
+                            particleType = 'generator';
+                            spawnCount = 2;
+                            break;
+                        case 'technician':
+                            // Technical circuit particles (bright blue)
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(0, 191, 255, 0.9)';
+                            spawnCount = 2;
+                            break;
+                        case 'glitch':
+                            // Glitch displacement particles (magenta)
+                            particleType = 'wallHit';
+                            particleColor = 'rgba(255, 0, 127, 0.8)';
+                            spawnCount = 2;
+                            break;
+                        case 'void':
+                            // Void particle absorption (deep black)
+                            particleType = 'damage';
+                            particleColor = 'rgba(10, 0, 20, 0.9)';
+                            break;
                     }
                     
-                    const angle = Math.random() * Math.PI * 2;
-                    const dist = radius + 3;
-                    const px = centerX + Math.cos(angle) * dist;
-                    const py = centerY + jumpOffset + Math.sin(angle) * dist;
-                    
-                    particles.spawn(particleType, px, py, 1, { color: particleColor });
+                    // Spawn particles in circular pattern around player
+                    for (let i = 0; i < spawnCount; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = radius + 5;
+                        const px = centerX + Math.cos(angle) * dist;
+                        const py = centerY + jumpOffset + Math.sin(angle) * dist;
+                        
+                        particles.spawn(particleType, px, py, 1, { color: particleColor });
+                    }
                 }
             }
             
-            // Rainbow effect (cycling hue)
-            if (skinEffects.rainbow) {
+            // Glow effect for rainbow skin
+            if (skinEffects && (skinEffects.rainbowEffect || skinEffects.rainbow) && skinEffects.glow) {
                 ctx.save();
-                const hue = (now / 20) % 360;
-                
-                for (let i = 0; i < 3; i++) {
-                    const ringHue = (hue + (i * 120)) % 360;
-                    ctx.strokeStyle = `hsl(${ringHue}, 100%, 50%)`;
-                    ctx.lineWidth = 1;
-                    ctx.globalAlpha = 0.4 - (i * 0.1);
-                    ctx.beginPath();
-                    ctx.arc(centerX, centerY + jumpOffset, radius + 2 + (i * 3), 0, Math.PI * 2);
-                    ctx.stroke();
-                }
+                const now = performance.now();
+                const hue = (now / 50) % 360;
+                ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY + jumpOffset, radius + 4, 0, Math.PI * 2);
+                ctx.stroke();
                 ctx.restore();
             }
         }
@@ -2809,6 +3078,103 @@ function drawPlayer() {
         ctx.restore();
     }
     
+    // === GLITCH EFFECT (for Glitch skin) ===
+    if (skinEffects && skinEffects.glitchEffect) {
+        const glitchCenterY = centerY + jumpOffset;
+        ctx.save();
+        const now = performance.now();
+        
+        // Random glitch offset (creates the "broken" look)
+        const glitchIntensity = 0.3 + 0.2 * Math.sin(now / 100);
+        
+        // Draw a second displaced copy with offset (cyan/green tint)
+        ctx.globalAlpha = glitchIntensity * 0.6;
+        const offsetX = (Math.random() - 0.5) * radius * 0.3;
+        const offsetY = (Math.random() - 0.5) * radius * 0.3;
+        
+        ctx.fillStyle = 'rgba(0, 255, 100, 0.5)'; // Cyan-green glitch color
+        ctx.beginPath();
+        ctx.arc(centerX + offsetX, glitchCenterY + offsetY, radius * 0.95, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw a third copy with red offset
+        ctx.fillStyle = 'rgba(255, 0, 100, 0.4)'; // Magenta-red glitch color
+        const offsetX2 = (Math.random() - 0.5) * radius * 0.2;
+        const offsetY2 = (Math.random() - 0.5) * radius * 0.2;
+        ctx.beginPath();
+        ctx.arc(centerX + offsetX2, glitchCenterY + offsetY2, radius * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Scanline effect overlay (horizontal lines)
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.15)';
+        ctx.lineWidth = 1;
+        for (let i = -radius; i < radius; i += 3) {
+            ctx.beginPath();
+            ctx.moveTo(centerX - radius, glitchCenterY + i);
+            ctx.lineTo(centerX + radius, glitchCenterY + i);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    }
+    
+    // === DASH ABILITY INDICATOR (Electric aura around player) ===
+    // Show when speedBoost ability is equipped and active
+    if (hasAbility && hasAbility('speedBoost')) {
+        const dashCenterY = centerY + jumpOffset;
+        const now = performance.now();
+        
+        // Pulsing electric aura
+        const pulse = 0.5 + 0.5 * Math.sin(now / 150);
+        
+        ctx.save();
+        
+        // Outer electric ring (animated and glowing)
+        ctx.strokeStyle = `rgba(0, 200, 255, ${0.6 * pulse})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, dashCenterY, radius + 6 + pulse * 3, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Electric bolts/branches around the player
+        const boltCount = 6;
+        for (let i = 0; i < boltCount; i++) {
+            const angle = (i / boltCount) * Math.PI * 2 + (now / 300);
+            const boltLength = radius + 10 + pulse * 4;
+            
+            // Draw jagged bolt
+            ctx.strokeStyle = `rgba(100, 200, 255, ${0.7 * pulse})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            const startX = centerX + Math.cos(angle) * (radius + 2);
+            const startY = dashCenterY + Math.sin(angle) * (radius + 2);
+            ctx.moveTo(startX, startY);
+            
+            // Create jagged effect
+            const segments = 3;
+            for (let s = 0; s < segments; s++) {
+                const t = (s + 1) / segments;
+                const x = centerX + Math.cos(angle) * (radius + 2 + (boltLength - radius - 2) * t);
+                const y = dashCenterY + Math.sin(angle) * (radius + 2 + (boltLength - radius - 2) * t);
+                const jag = (Math.random() - 0.5) * 3;
+                ctx.lineTo(x + jag, y + jag);
+            }
+            ctx.stroke();
+        }
+        
+        // Inner glow core
+        const glowGrad = ctx.createRadialGradient(centerX, dashCenterY, radius * 0.3, centerX, dashCenterY, radius);
+        glowGrad.addColorStop(0, `rgba(100, 200, 255, ${0.4 * pulse})`);
+        glowGrad.addColorStop(1, 'rgba(100, 200, 255, 0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(centerX, dashCenterY, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+    }
+    
+
     if (gameState.isJumpCharging) {
         const chargeCenterY = centerY + jumpOffset;
         ctx.strokeStyle = '#FFD700';
@@ -2824,6 +3190,18 @@ function drawPlayer() {
         const shieldCenterY = centerY + jumpOffset;
         const r = Math.max(CELL_SIZE, radius + 10);
         
+        // Get skin color for shield
+        let blockShieldColor = 'rgba(255, 213, 0, 0.95)'; // Default yellow
+        let blockShieldFill = 'rgba(255, 213, 0, 0.28)'; // Default yellow fill
+        let blockShieldAura = 'rgba(255, 240, 120, 0.25)'; // Default yellow aura
+        
+        if (skinVisuals && skinVisuals.color) {
+            const { r: sr, g: sg, b: sb } = skinVisuals.color;
+            blockShieldColor = `rgba(${sr}, ${sg}, ${sb}, 0.95)`;
+            blockShieldFill = `rgba(${sr}, ${sg}, ${sb}, 0.28)`;
+            blockShieldAura = `rgba(${sr}, ${sg}, ${sb}, 0.25)`;
+        }
+        
         // Pull-out animation (300ms)
         const pullOutDuration = 300;
         const timeSinceStart = now - (gameState.blockStartTime || now);
@@ -2834,10 +3212,10 @@ function drawPlayer() {
         const shieldScale = easeOut;
         const shieldAlpha = easeOut;
         
-        // Aura
+        // Aura (subtle glow around the wedge)
         ctx.save();
-        ctx.globalAlpha = 0.25 * shieldAlpha;
-        ctx.fillStyle = 'rgba(255, 240, 120, 0.25)';
+        ctx.globalAlpha = 0.15 * shieldAlpha;
+        ctx.fillStyle = blockShieldAura;
         ctx.beginPath(); ctx.arc(centerX, shieldCenterY, (r + 6) * shieldScale, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
         
@@ -2846,8 +3224,8 @@ function drawPlayer() {
         ctx.globalAlpha = shieldAlpha;
         ctx.translate(centerX, shieldCenterY);
         ctx.rotate(gameState.blockAngle);
-        ctx.fillStyle = 'rgba(255, 213, 0, 0.28)';
-        ctx.strokeStyle = 'rgba(255, 213, 0, 0.95)';
+        ctx.fillStyle = blockShieldFill;
+        ctx.strokeStyle = blockShieldColor;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -2860,24 +3238,50 @@ function drawPlayer() {
         ctx.restore();
     }
 
-    // Collision Shield visuals
-    const collisionCenterY = centerY + jumpOffset;
-    // Get shield color from skin if available, otherwise use default pink
-    let shieldColor = '#ff77aa';
-    let shieldColorRGB = { r: 255, g: 119, b: 170 };
-    if (skinVisuals && skinVisuals.color) {
-        // Use skin color for shield
-        shieldColorRGB = skinVisuals.color;
-        shieldColor = `rgb(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b})`;
-    }
-    
-    if (gameState.collisionShieldState === 'active') {
-        // Enhanced active shield with fixed particle positions (not spinning off)
-        const pulse = Math.sin(now / 180) * 0.25 + 0.75;
+    // Collision Shield visuals (don't show when blocking shield is active)
+    if (!gameState.blockActive) {
+        const collisionCenterY = centerY + jumpOffset;
+
+        // Phoenix one-time shield ring (orange)
+        if (gameState.phoenixShieldActive) {
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = 'rgba(255, 140, 0, 0.95)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(centerX, collisionCenterY, radius + 10, 0, Math.PI * 2);
+            ctx.stroke();
+            // Soft aura
+            ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = 'rgba(255, 140, 0, 0.35)';
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.arc(centerX, collisionCenterY, radius + 12, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // Get shield color from skin if available, otherwise use default pink
+        let shieldColor = '#ff77aa';
+        let shieldColorRGB = { r: 255, g: 119, b: 170 };
+        if (skinVisuals && skinVisuals.color) {
+            // Use skin color for shield
+            shieldColorRGB = skinVisuals.color;
+            shieldColor = `rgb(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b})`;
+        }
+        
+        if (gameState.collisionShieldState === 'active') {
+            // Enhanced active shield with fixed particle positions (not spinning off)
+            const pulse = Math.sin(now / 180) * 0.25 + 0.75;
+            
+            // Apply pulse effect to shield if skin has it
+            let shieldPulse = pulse;
+        if (skinEffects && skinEffects.pulseEffect) {
+            shieldPulse = 0.3 + 0.7 * Math.sin(now / 400);
+        }
         
         // Outer glow aura
         ctx.save();
-        ctx.globalAlpha = 0.15 * pulse;
+        ctx.globalAlpha = 0.15 * shieldPulse;
         const gradient = ctx.createRadialGradient(centerX, collisionCenterY, radius, centerX, collisionCenterY, radius + 12);
         gradient.addColorStop(0, `rgba(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b}, 0.4)`);
         gradient.addColorStop(1, `rgba(${shieldColorRGB.r}, ${shieldColorRGB.g}, ${shieldColorRGB.b}, 0)`);
@@ -2886,6 +3290,79 @@ function drawPlayer() {
         ctx.arc(centerX, collisionCenterY, radius + 12, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        
+        // === GLITCH EFFECT ON SHIELD ===
+        if (skinEffects && skinEffects.glitchEffect) {
+            ctx.save();
+            const glitchIntensity = 0.4 + 0.2 * Math.sin(now / 80);
+            ctx.globalAlpha = glitchIntensity * 0.5;
+            
+            // Cyan displaced ring
+            ctx.strokeStyle = 'rgba(0, 255, 100, 0.6)';
+            ctx.lineWidth = 2;
+            const offsetX = (Math.random() - 0.5) * 2;
+            const offsetY = (Math.random() - 0.5) * 2;
+            ctx.beginPath();
+            ctx.arc(centerX + offsetX, collisionCenterY + offsetY, radius + 6, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Magenta displaced ring
+            ctx.strokeStyle = 'rgba(255, 0, 100, 0.5)';
+            const offsetX2 = (Math.random() - 0.5) * 1.5;
+            const offsetY2 = (Math.random() - 0.5) * 1.5;
+            ctx.beginPath();
+            ctx.arc(centerX + offsetX2, collisionCenterY + offsetY2, radius + 4, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+        
+        // === RAINBOW EFFECT ON SHIELD ===
+        if (skinEffects && skinEffects.rainbowEffect) {
+            ctx.save();
+            const hue = (now / 30) % 360;
+            const rainbowPulse = 0.5 + 0.5 * Math.sin(now / 200);
+            
+            for (let i = 0; i < 2; i++) {
+                const ringHue = (hue + (i * 180)) % 360;
+                ctx.strokeStyle = `hsl(${ringHue}, 100%, ${50 + 10 * rainbowPulse}%)`;
+                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.4 - (i * 0.15);
+                ctx.beginPath();
+                ctx.arc(centerX, collisionCenterY, (radius + 4 + (i * 3)) * rainbowPulse, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+        
+        // === METALLIC EFFECT ON SHIELD ===
+        if (skinEffects && skinEffects.metallicEffect) {
+            ctx.save();
+            const shimmer = 0.4 + 0.6 * Math.sin(now / 600 + Math.PI / 2);
+            const shieldGradient = ctx.createLinearGradient(centerX - radius, collisionCenterY, centerX + radius, collisionCenterY);
+            shieldGradient.addColorStop(0, `rgba(255, 255, 255, 0)`);
+            shieldGradient.addColorStop(0.5, `rgba(255, 255, 255, ${shimmer * 0.3})`);
+            shieldGradient.addColorStop(1, `rgba(255, 255, 255, 0)`);
+            ctx.fillStyle = shieldGradient;
+            ctx.beginPath();
+            ctx.arc(centerX, collisionCenterY, radius + 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // === VOID EFFECT ON SHIELD ===
+        if (skinEffects && skinEffects.voidEffect) {
+            ctx.save();
+            const voidPulse = 0.5 + 0.5 * Math.sin(now / 300);
+            const voidGradient = ctx.createRadialGradient(centerX, collisionCenterY, radius, centerX, collisionCenterY, radius + 15);
+            voidGradient.addColorStop(0, `rgba(0, 0, 0, 0.2)`);
+            voidGradient.addColorStop(1, `rgba(0, 0, 0, 0)`);
+            ctx.fillStyle = voidGradient;
+            ctx.beginPath();
+            ctx.arc(centerX, collisionCenterY, radius + 15 * voidPulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
         
         // Fixed energy particles on shield perimeter (not spinning off)
         const particleCount = 8;
@@ -2932,19 +3409,26 @@ function drawPlayer() {
         const remain = Math.max(0, gameState.collisionShieldRechargeEnd - now);
         const t = 1 - Math.min(1, remain / COLLISION_SHIELD_RECHARGE_TIME);
         
+        // Use skin color for recharge animation (match active shield color)
+        let rechargeColorRGB = { r: 255, g: 119, b: 170 }; // default pink
+        if (skinVisuals && skinVisuals.color) {
+            rechargeColorRGB = skinVisuals.color;
+        }
+        const rechargeColor = `rgb(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b})`;
+        
         ctx.save();
         // Base faint ring
-        ctx.strokeStyle = 'rgba(255, 119, 170, 0.2)';
+        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.2)`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2);
         ctx.stroke();
         
         // Progress arc with glow
-        ctx.strokeStyle = `rgba(255, 119, 170, ${0.6 + 0.2 * t})`;
+        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, ${0.6 + 0.2 * t})`;
         ctx.lineWidth = 3;
         ctx.shadowBlur = 8 * t;
-        ctx.shadowColor = '#ff77aa';
+        ctx.shadowColor = rechargeColor;
         const start = -Math.PI / 2;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 4, start, start + t * Math.PI * 2);
@@ -2958,14 +3442,14 @@ function drawPlayer() {
                 const sx = centerX + Math.cos(angle) * (radius + 4);
                 const sy = collisionCenterY + Math.sin(angle) * (radius + 4);
                 ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 100 + i);
-                ctx.fillStyle = '#ffaad5';
-                ctx.beginPath();
+                ctx.fillStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.9)`;
                 ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
         ctx.restore();
     }
+    } // End collision shield section (don't show when blocking)
 
     // Brief break flash when shield pops
     if (gameState.collisionShieldBrokenUntil && now < gameState.collisionShieldBrokenUntil) {

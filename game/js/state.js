@@ -8,6 +8,8 @@ import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, play
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
 import { checkAchievements } from './achievements.js';
+import { hasSkinAbility, getSkinAbility, getEquippedSkin } from './skins.js';
+import { isAbilityActive, canPhaseWalls, checkDamageProtection, consumeExtraLife, getStaminaMultiplier, updateStatusEffects, initializeRunAbilities, activateTimedAbility } from './abilities.js';
 
 // Level 11 puzzle patterns (3 presets the paper can show)
 const LEVEL11_PATTERNS = [
@@ -38,6 +40,101 @@ export const TERMINAL_ROOM_COMPUTER = { x: 3, y: 1 };
 
 export const MAZE_WIDTH = 30;
 export const MAZE_HEIGHT = 30;
+
+// Convert builder payload into runtime maze data
+function buildCustomMazeData(payload) {
+    if (!payload || !Array.isArray(payload.grid)) return null;
+    const clamp = (v, max) => Math.max(1, Math.min(max - 2, v));
+    const teleCells = [];
+    const enemyCells = [];
+    const grid = Array.from({ length: MAZE_HEIGHT }, (_, y) => Array.from({ length: MAZE_WIDTH }, (_, x) => {
+        const tile = payload.grid?.[y]?.[x];
+        if (tile === 1) return CELL.WALL;
+        if (tile === 3) return CELL.EXIT;
+        if (tile === 4) return CELL.GENERATOR;
+        if (tile === 5) { teleCells.push({ x, y }); return CELL.TELEPAD; }
+        if (tile === 10 || tile === 11 || tile === 12 || tile === 13 || tile === 14) {
+            enemyCells.push({ x, y, tile });
+            return CELL.EMPTY;
+        }
+        return CELL.EMPTY;
+    }));
+
+    // Ensure borders remain walls
+    for (let x = 0; x < MAZE_WIDTH; x++) {
+        grid[0][x] = CELL.WALL;
+        grid[MAZE_HEIGHT - 1][x] = CELL.WALL;
+    }
+    for (let y = 0; y < MAZE_HEIGHT; y++) {
+        grid[y][0] = CELL.WALL;
+        grid[y][MAZE_WIDTH - 1] = CELL.WALL;
+    }
+
+    const start = payload.start ? { x: clamp(payload.start.x, MAZE_WIDTH), y: clamp(payload.start.y, MAZE_HEIGHT) } : { x: 1, y: 1 };
+    const exit = payload.exit ? { x: clamp(payload.exit.x, MAZE_WIDTH), y: clamp(payload.exit.y, MAZE_HEIGHT) } : { x: MAZE_WIDTH - 2, y: MAZE_HEIGHT - 2 };
+    grid[exit.y][exit.x] = CELL.EXIT;
+
+    const generators = Array.isArray(payload.generators) ? payload.generators.map(g => ({
+        x: clamp(g.x, MAZE_WIDTH),
+        y: clamp(g.y, MAZE_HEIGHT),
+        completed: false,
+        progress: 0,
+        failCount: 0,
+        blockedUntil: 0
+    })) : [];
+    generators.forEach(g => { grid[g.y][g.x] = CELL.GENERATOR; });
+
+    const telepads = [];
+    const pairs = Array.isArray(payload.telepads) ? payload.telepads : [];
+    if (pairs.length) {
+        pairs.forEach(pair => {
+            if (!Array.isArray(pair) || pair.length < 2) return;
+            const a = pair[0];
+            const b = pair[1];
+            if (!a || !b) return;
+            const ax = clamp(a.x, MAZE_WIDTH);
+            const ay = clamp(a.y, MAZE_HEIGHT);
+            const bx = clamp(b.x, MAZE_WIDTH);
+            const by = clamp(b.y, MAZE_HEIGHT);
+            const aIndex = telepads.length;
+            const bIndex = telepads.length + 1;
+            telepads.push({ x: ax, y: ay, cooldownUntil: 0, chargeStartAt: 0, pair: bIndex });
+            telepads.push({ x: bx, y: by, cooldownUntil: 0, chargeStartAt: 0, pair: aIndex });
+            grid[ay][ax] = CELL.TELEPAD;
+            grid[by][bx] = CELL.TELEPAD;
+        });
+    } else if (teleCells.length >= 2) {
+        for (let i = 0; i + 1 < teleCells.length; i += 2) {
+            const a = teleCells[i];
+            const b = teleCells[i + 1];
+            const ax = clamp(a.x, MAZE_WIDTH);
+            const ay = clamp(a.y, MAZE_HEIGHT);
+            const bx = clamp(b.x, MAZE_WIDTH);
+            const by = clamp(b.y, MAZE_HEIGHT);
+            const aIndex = telepads.length;
+            const bIndex = telepads.length + 1;
+            telepads.push({ x: ax, y: ay, cooldownUntil: 0, chargeStartAt: 0, pair: bIndex });
+            telepads.push({ x: bx, y: by, cooldownUntil: 0, chargeStartAt: 0, pair: aIndex });
+            grid[ay][ax] = CELL.TELEPAD;
+            grid[by][bx] = CELL.TELEPAD;
+        }
+    }
+
+    const enemies = [];
+    const tileToType = { 10: 'chaser', 11: 'seeker', 12: 'batter', 13: 'flying_pig', 14: 'mortar' };
+    enemyCells.forEach(e => {
+        const type = tileToType[e.tile];
+        if (type) enemies.push({ x: clamp(e.x, MAZE_WIDTH), y: clamp(e.y, MAZE_HEIGHT), type });
+    });
+    if (Array.isArray(payload.enemies)) {
+        payload.enemies.forEach(e => {
+            if (!e || !e.type) return;
+            enemies.push({ x: clamp(e.x, MAZE_WIDTH), y: clamp(e.y, MAZE_HEIGHT), type: e.type });
+        });
+    }
+
+    return { grid, generators, telepads, start, exit, enemies };
+}
 
 function canSeePlayerFromEntity(e) {
     // Determine facing direction: prefer current target direction, then roamDir, otherwise none
@@ -86,7 +183,10 @@ export const gameState = {
     glitchTile: null,
     savedLevelState: null,
     mazeDirty: false,
-    terminalRoomOrigin: null
+    terminalRoomOrigin: null,
+    settings: {
+        nightVisionMode: false  // Dev-only setting: see in darkness with full visibility
+    }
 };
 
 // Screen fade helper used for transitions (fade overlay alpha ramp)
@@ -723,6 +823,9 @@ export function initGame() {
     gameState.level11ShieldDisabled = gameState.isLevel11;
     if (!gameState.isLevel11) closeLevel11Paper();
     
+    const isCustomMode = (gameState.mode === 'custom' && !!gameState.customLevel);
+    const customMazeData = isCustomMode ? buildCustomMazeData(gameState.customLevel) : null;
+
     let seed = 1;
     let genCount = 3;
     if (gameState.mode === 'endless' || gameState.mode === 'endless-progression') {
@@ -733,11 +836,18 @@ export function initGame() {
         seed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
     gameState.levelConfig = { generatorCount: genCount, enemyEnabled: !!cfg.chaser, flyingPig: !!cfg.pig, seeker: !!cfg.seeker, batter: !!cfg.batter, mortar: !!cfg.mortar, seed };
     } else {
-        if (!gameState.currentLevel) gameState.currentLevel = 1;
-        gameState.levelConfig = getDefaultLevelConfig(gameState.currentLevel);
-        seed = gameState.levelConfig.seed || 1;
-        genCount = gameState.levelConfig.generatorCount || 3;
-        gameState.difficulty = 'normal';
+        if (isCustomMode && customMazeData) {
+            gameState.levelConfig = { generatorCount: (customMazeData.generators || []).length, enemyEnabled: false, flyingPig: false, seeker: false, batter: false, mortar: false, seed: 1 };
+            seed = 1;
+            genCount = gameState.levelConfig.generatorCount;
+            gameState.difficulty = 'custom';
+        } else {
+            if (!gameState.currentLevel) gameState.currentLevel = 1;
+            gameState.levelConfig = getDefaultLevelConfig(gameState.currentLevel);
+            seed = gameState.levelConfig.seed || 1;
+            genCount = gameState.levelConfig.generatorCount || 3;
+            gameState.difficulty = 'normal';
+        }
     }
 
     // Level 11 uses a bespoke layout and no standard enemies/generators
@@ -751,7 +861,9 @@ export function initGame() {
     
     // Use legacy Level 11 maze when applicable
     let mazeData;
-    if (gameState.isLevel11) {
+    if (customMazeData) {
+        mazeData = { grid: customMazeData.grid, generators: customMazeData.generators, telepads: customMazeData.telepads, customStart: customMazeData.start, customExit: customMazeData.exit };
+    } else if (gameState.isLevel11) {
         mazeData = generateLevel11Maze();
     } else {
         mazeData = generateMaze(seed, genCount, includeTelepads);
@@ -759,18 +871,39 @@ export function initGame() {
     
     gameState.maze = mazeData.grid;
     gameState.generators = mazeData.generators;
-    gameState.teleportPads = (mazeData.telepads || []).map((p, idx) => ({ ...p, id: idx, pair: idx === 0 ? 1 : 0 }));
+    gameState.teleportPads = (mazeData.telepads || []).map((p, idx) => ({ ...p, id: idx, pair: Number.isInteger(p.pair) ? p.pair : ((idx % 2 === 0 && idx + 1 < (mazeData.telepads || []).length) ? idx + 1 : Math.max(0, idx - 1)), cooldownUntil: p.cooldownUntil || 0, chargeStartAt: p.chargeStartAt || 0 }));
     gameState.glitchTile = null;
     gameState.inTerminalRoom = false;
     gameState.currentTerminalId = null;
     gameState.savedLevelState = null;
-    gameState.mazeDirty = false;
+    // Force maze rebuild for endless mode (cyan neon walls)
+    gameState.mazeDirty = (gameState.mode === 'endless' || gameState.mode === 'endless-progression');
     gameState.terminalRoomOrigin = null;
     // Zap traps reset
     gameState.zapTraps = 0;
     gameState.traps = [];
     gameState.player = { x: 1, y: 1 };
+    if (customMazeData && mazeData.customStart) {
+        gameState.player = { x: mazeData.customStart.x, y: mazeData.customStart.y };
+    }
     gameState.lives = 3;
+    gameState.equippedSkin = getEquippedSkin();
+    gameState.hundred_percentDoubleMove = false; // 100%MAN: default 1-tile; toggle to 2-tiles with T
+    gameState.phoenixUsedThisLevel = false; // (legacy flag, unused for new shield ability)
+    gameState.phoenixShieldActive = false;
+    gameState.phoenixShieldUsed = false;
+    gameState.phoenixShieldActivatedAt = 0;
+    gameState.glitchTeleportUsedAt = 0; // Track when Glitch teleport was last used (30s cooldown)
+    gameState.wallStunInsuranceUsed = false; // Reset last chance stun on each level
+    
+    // Apply skin abilities - Extra lives (using synchronous check)
+    if (hasSkinAbility('extra_life')) {
+        gameState.lives = 4; // Infinite skin + Phoenix: +1 life
+    }
+    if (hasSkinAbility('god_mode')) {
+        gameState.lives = 6; // 100%MAN: 3 extra lives
+    }
+    
     gameState.stamina = 100;
     gameState.gameStatus = 'playing';
     gameState.isSprinting = false;
@@ -809,6 +942,17 @@ export function initGame() {
 
     if (gameState.isLevel11) {
         initLevel11State(mazeData.level11 || {});
+    } else if (customMazeData && Array.isArray(customMazeData.enemies) && customMazeData.enemies.length) {
+        customMazeData.enemies.forEach(e => {
+            switch (e.type) {
+                case 'chaser': spawnInitialEnemy({ x: e.x, y: e.y }); break;
+                case 'seeker': spawnSeeker({ x: e.x, y: e.y }); break;
+                case 'batter': spawnBatter({ x: e.x, y: e.y }); break;
+                case 'flying_pig': spawnFlyingPig({ x: e.x, y: e.y }); break;
+                case 'mortar': spawnMortar({ x: e.x, y: e.y }); break;
+                default: break;
+            }
+        });
     } else {
         if (gameState.levelConfig.enemyEnabled) {
             spawnInitialEnemy();
@@ -865,8 +1009,14 @@ export function placeZapTrap(currentTime) {
         return false;
     }
     if (gameState.gameStatus !== 'playing' || gameState.isPaused || gameState.isGeneratorUIOpen) return false;
-    if (!gameState.zapTraps || gameState.zapTraps <= 0) {
+    const maxTraps = getMaxTraps();
+    const activeTraps = (gameState.traps || []).filter(t => !t.triggered).length;
+    if (maxTraps <= 0) {
         setStatusMessage('No Zap Traps available. Complete generators to earn more.');
+        return false;
+    }
+    if (activeTraps >= maxTraps) {
+        setStatusMessage('Trap limit reached. Complete generators to earn more.');
         return false;
     }
     const x = gameState.player.x;
@@ -885,7 +1035,9 @@ export function placeZapTrap(currentTime) {
     // Place trap
     const trap = { x, y, placedAt: currentTime, expiresAt: currentTime + 10000, triggered: false, flashUntil: 0 };
     gameState.traps.push(trap);
-    gameState.zapTraps -= 1;
+    if (gameState.zapTraps > 0) {
+        gameState.zapTraps -= 1;
+    }
     try { playZapPlace(); } catch {}
     setStatusMessage('Zap Trap placed (10s).');
     return true;
@@ -1003,6 +1155,12 @@ export function movePlayer(dx, dy, currentTime) {
     if (gameState.gameStatus !== 'playing' || gameState.isGeneratorUIOpen) {
         return false;
     }
+    
+    // Safety check: if lives are at 0, force game over
+    if (gameState.lives <= 0) {
+        gameState.gameStatus = 'lost';
+        return false;
+    }
 
     // While shield is active, player cannot move; movement re-enables when the shield ends or breaks
     if (gameState.blockActive) return false;
@@ -1025,7 +1183,18 @@ export function movePlayer(dx, dy, currentTime) {
         gameState.boss.collapseRateMs = 2000; // 2s per ring per request
     }
     const mountedActive = !!(gameState.mountedPigUntil && currentTime < gameState.mountedPigUntil);
-    const steps = sprintActive ? 2 : 1;
+    // Apply speedBoost ability if active (+30% speed = more steps per move)
+    const hasSpeedBoost = (typeof window.hasAbility === 'function' && window.hasAbility('speedBoost'));
+    const playerSpeedMult = getPlayerSpeedMultiplier ? getPlayerSpeedMultiplier() : 1;
+    
+    // Calculate base steps: 100%MAN always moves 1 tile at a time
+    let baseSteps = sprintActive ? 2 : 1;
+    if (hasSkinAbility('god_mode')) {
+        baseSteps = 1; // 100%MAN always moves exactly 1 tile per move
+    }
+    
+    let steps = hasSpeedBoost ? Math.ceil(baseSteps * 1.3) : baseSteps;
+    steps = Math.max(1, Math.ceil(steps * playerSpeedMult));
     
     let targetX = gameState.player.x;
     let targetY = gameState.player.y;
@@ -1050,8 +1219,8 @@ export function movePlayer(dx, dy, currentTime) {
                 // Block movement and apply brief damage throttle similar to wall
                 if (currentTime - (gameState.lastLavaHitTime || 0) > 600) {
                     gameState.lastLavaHitTime = currentTime;
-                    if (!gameState.godMode) {
-                        gameState.lives--;
+                    const damageApplied = applyPlayerDamage('lava', currentTime);
+                    if (damageApplied) {
                         gameState.playerInvincibleUntil = currentTime + 1200;
                         setStatusMessage('LAVA! Stay away from the outer ring!', 1000);
                         if (gameState.lives <= 0) { gameState.deathCause = 'lava'; gameState.gameStatus = 'lost'; }
@@ -1070,8 +1239,8 @@ export function movePlayer(dx, dy, currentTime) {
                 if (ring <= ringsCovered) {
                     if (currentTime - (gameState.lastLavaHitTime || 0) > 600) {
                         gameState.lastLavaHitTime = currentTime;
-                        if (!gameState.godMode) {
-                            gameState.lives--;
+                        const damageApplied = applyPlayerDamage('lava', currentTime);
+                        if (damageApplied) {
                             gameState.playerInvincibleUntil = currentTime + 1200;
                             setStatusMessage('LAVA IS CLOSING IN!', 1000);
                             if (gameState.lives <= 0) { gameState.deathCause = 'lava'; gameState.gameStatus = 'lost'; }
@@ -1089,16 +1258,35 @@ export function movePlayer(dx, dy, currentTime) {
         }
         
         // While mounted, ignore walls entirely
-        if (cellType === CELL.WALL && !sprintActive && !mountedActive) {
-            collision = true;
-            break;
-        }
-        if (cellType === CELL.WALL && (sprintActive && !mountedActive)) {
+        // Wall Phase ability allows walking through walls
+        if (cellType === CELL.WALL && !sprintActive && !mountedActive && !canPhaseWalls()) {
+            // Ghost (phase_through) - 50% chance to jump to the other side of a wall (never onto the wall or outside)
+            // 100%MAN inherits this ability
+            if ((hasSkinAbility('phase_through') || hasSkinAbility('god_mode')) && Math.random() < 0.5) {
+                const jumpX = gameState.player.x + dx * 2;
+                const jumpY = gameState.player.y + dy * 2;
+                const insideBounds = (jumpX > 0 && jumpX < MAZE_WIDTH - 1 && jumpY > 0 && jumpY < MAZE_HEIGHT - 1);
+                if (insideBounds && gameState.maze[jumpY][jumpX] !== CELL.WALL) {
+                    const cx = gameState.player.x + 0.5;
+                    const cy = gameState.player.y + 0.5;
+                    particles.spawn('generator', cx * CELL_SIZE, cy * CELL_SIZE, 10, { color: 'rgba(240, 255, 255, 0.8)' });
+                    targetX = jumpX;
+                    targetY = jumpY;
+                } else {
+                    // Can't phase outer walls or onto walls
+                    collision = true;
+                    break;
+                }
+            } else {
+                collision = true;
+                break;
+            }
+        } else if (cellType === CELL.WALL && (sprintActive && !mountedActive)) {
             continue;
+        } else {
+            targetX = nextX;
+            targetY = nextY;
         }
-        
-        targetX = nextX;
-        targetY = nextY;
         
         if (cellType === CELL.EXIT) {
             const incomplete = gameState.generators.some(g => !g.completed);
@@ -1191,26 +1379,61 @@ export function movePlayer(dx, dy, currentTime) {
                 // Life penalty unless in god mode, throttle by 500ms
                 if (currentTime - (gameState.lastCollisionTime || 0) > 500) {
                     gameState.lastCollisionTime = currentTime;
-                    if (!gameState.godMode) {
-                        if (gameState.lives > 1) {
-                            // More than 1 life: normal wall collision damage
-                            gameState.lives--;
-                        } else if (gameState.lives === 1) {
-                            // At 1 life: First wall hit stuns for 3s (insurance)
-                            if (!gameState.wallStunInsuranceUsed) {
-                                gameState.playerStunned = true;
-                                gameState.playerStunUntil = currentTime + 3000;
-                                gameState.playerStunStart = currentTime;
-                                gameState.wallStunInsuranceUsed = true;
-                                setStatusMessage('STUNNED for 3s! Last chance!', 3000);
-                            } else {
-                                // Insurance already used: die on next wall hit
-                                gameState.lives = 0;
-                                gameState.deathCause = 'wall';
-                                gameState.gameStatus = 'lost';
+                    
+                    // Check if player is invincible (from Phoenix shield break or other source)
+                    if (currentTime < (gameState.playerInvincibleUntil || 0)) {
+                        setStatusMessage('Invincible!', 1000);
+                        return false;
+                    }
+
+                    const currentSkinId = gameState.equippedSkin || 'default';
+
+                    // If at 1 life, handle saves BEFORE damage
+                    if (gameState.lives === 1) {
+                        // If Phoenix shield is armed, let it absorb this wall hit
+                        if (currentSkinId === 'phoenix' && gameState.phoenixShieldActive) {
+                            if (breakPhoenixShield(currentTime, 'wall')) {
+                                try { playWallHit(); } catch {}
+                                const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                                const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                                particles.spawn('wallHit', px, py, 8);
+                                return false;
                             }
                         }
+
+                        // Universal last chance stun (once per level)
+                        if (!gameState.wallStunInsuranceUsed) {
+                            gameState.wallStunInsuranceUsed = true;
+                            gameState.playerStunned = true;
+                            gameState.playerStunUntil = currentTime + 3000;
+                            gameState.playerStunStart = currentTime;
+                            setStatusMessage('STUNNED for 3s! Last chance!', 3000);
+                            try { playWallHit(); } catch {}
+                            const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                            const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                            particles.spawn('wallHit', px, py, 8);
+                            return false;
+                        }
+
+                        // No saves left → death
+                        gameState.lives = 0;
+                        gameState.deathCause = 'wall';
+                        gameState.gameStatus = 'lost';
+                        try { playWallHit(); } catch {}
+                        const px = (gameState.player.x + 0.5) * CELL_SIZE;
+                        const py = (gameState.player.y + 0.5) * CELL_SIZE;
+                        particles.spawn('wallHit', px, py, 8);
+                        return false;
                     }
+
+                    // Not at 1 life - apply normal damage
+                    const damageApplied = applyPlayerDamage('wall', currentTime);
+
+                    if (damageApplied && gameState.lives <= 0) {
+                        gameState.deathCause = 'wall';
+                        gameState.gameStatus = 'lost';
+                    }
+                    
                     // Play wall hit sound and spawn dust particles
                     try { playWallHit(); } catch {}
                     const px = (gameState.player.x + 0.5) * CELL_SIZE;
@@ -1389,7 +1612,10 @@ export function startJumpCharge(currentTime) {
     }
     
     gameState.isJumpCharging = true;
-    gameState.jumpCountdown = 2;
+    const chargeMultiplier = (gameState.mode === 'endless-progression' && gameState.endlessUpgrades)
+        ? (gameState.endlessUpgrades.jumpChargeMultiplier || 1)
+        : 1;
+    gameState.jumpCountdown = 2 * chargeMultiplier;
     gameState.jumpChargeStartTime = currentTime;
     gameState.isSprinting = false;
 }
@@ -1454,9 +1680,21 @@ export function updateJumpCharge(currentTime) {
 }
 
 export function triggerStaminaCooldown(currentTime) {
-    gameState.stamina = 0;
+    // Apply stamina reduction ability multiplier (50% stamina consumed if active)
+    const baseStaminaDrain = 100;
+    const staminaMultiplier = getStaminaMultiplier();
+    const staminaDrain = baseStaminaDrain * staminaMultiplier;
+    
+    const startStamina = gameState.stamina; // Track starting stamina before drain
+    gameState.stamina = gameState.stamina - staminaDrain;
+    if (gameState.stamina < 0) gameState.stamina = 0;
+    
+    gameState.staminaCooldownStartTime = currentTime;
+    gameState.staminaCooldownDuration = 2000; // 2 second recovery
     gameState.isStaminaCoolingDown = true;
     gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
+    gameState.staminaCooldownStartStamina = startStamina; // Track where we started
+    gameState.staminaCooldownStartTime = currentTime; // Track when cooldown started
     // Open a brief dodge window for special attacks
     gameState.dodgeWindowUntil = Math.max(gameState.dodgeWindowUntil, currentTime + 400);
 }
@@ -1465,6 +1703,17 @@ export function triggerStaminaCooldown(currentTime) {
 // --- Shield (Blocking) rework ---
 export const BLOCK_MAX_DURATION_MS = 2000; // full stamina lasts 2s
 export const BLOCK_DURABILITY = 1.0; // simple durability threshold
+
+// Helper: Get shield durability based on endless abilities
+function getShieldDurability() {
+    const hasShieldDurability = (typeof window.hasAbility === 'function' && window.hasAbility('shieldDurability'));
+    return hasShieldDurability ? 3.0 : 1.0;
+}
+
+// Helper: Check if infinite shield projectiles active
+function hasInfiniteShieldProjectiles() {
+    return (typeof window.hasAbility === 'function' && window.hasAbility('infiniteShieldProjectiles'));
+}
 
 export function startBlock(currentTime) {
     // Level 11: Shield is disabled
@@ -1478,6 +1727,8 @@ export function startBlock(currentTime) {
     gameState.blockActive = true;
     gameState.blockStartTime = currentTime; // For pull-out animation
     gameState.blockUntil = currentTime + dur;
+    // Reset shield health to dynamic durability value
+    gameState.shieldHealth = getShieldDurability();
     // Movement lock is based on shield activity; no timer needed
     // consume all current stamina and trigger cooldown
     gameState.stamina = 0;
@@ -1570,33 +1821,44 @@ function onShieldBreak(currentTime) {
     }
     // End block state, lock until full stamina
     stopBlock();
-    gameState.shieldBrokenLock = true;
-    // Movement resumes because shield ends on break
-    // Ensure stamina remains at 0 and cooldown is running
-    gameState.stamina = 0;
-    gameState.isStaminaCoolingDown = true;
-    gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
+    
+    // 100%MAN instantly recharges shield
+    if (hasSkinAbility('god_mode')) {
+        gameState.shieldBrokenLock = false;
+        gameState.stamina = 100;
+        gameState.isStaminaCoolingDown = false;
+    } else {
+        gameState.shieldBrokenLock = true;
+        // Movement resumes because shield ends on break
+        // Ensure stamina remains at 0 and cooldown is running
+        gameState.stamina = 0;
+        gameState.isStaminaCoolingDown = true;
+        gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
+    }
 }
 
 export function updateStaminaCooldown(currentTime) {
     if (gameState.isStaminaCoolingDown) {
-        // Calculate regen speed multiplier for endless mode
-        let regenMultiplier = 1.0;
+        // Calculate regen speed multiplier (skin + endless streak)
+        let regenMultiplier = getStaminaRegenMultiplier();
         if (gameState.mode === 'endless' && gameState.endlessConfig) {
             const streak = gameState.endlessConfig.streak || 0;
             // Faster stamina regen at higher streaks (up to 2x speed at 20+ streak)
-            if (streak >= 20) regenMultiplier = 2.0;
-            else if (streak >= 15) regenMultiplier = 1.75;
-            else if (streak >= 10) regenMultiplier = 1.5;
-            else if (streak >= 5) regenMultiplier = 1.25;
+            if (streak >= 20) regenMultiplier *= 2.0;
+            else if (streak >= 15) regenMultiplier *= 1.75;
+            else if (streak >= 10) regenMultiplier *= 1.5;
+            else if (streak >= 5) regenMultiplier *= 1.25;
         }
         
-        // Show progressive regen over the 15s cooldown (adjusted by multiplier)
-        const total = STAMINA_COOLDOWN_TIME / regenMultiplier;
-        const remaining = Math.max(0, gameState.staminaCooldownEnd - currentTime);
-        const elapsed = Math.max(0, Math.min(total, total - remaining));
-        const ratio = total > 0 ? (elapsed / total) : 1;
-        gameState.stamina = Math.floor(100 * ratio);
+        // Linear regen: progress from start stamina to 100 over cooldown time
+        const startStamina = gameState.staminaCooldownStartStamina || 0;
+        const cooldownDuration = STAMINA_COOLDOWN_TIME / Math.max(0.001, regenMultiplier);
+        const elapsedTime = currentTime - (gameState.staminaCooldownStartTime || currentTime);
+        const progress = Math.min(1, elapsedTime / cooldownDuration);
+        
+        // Linearly interpolate from startStamina to 100
+        gameState.stamina = Math.floor(startStamina + (100 - startStamina) * progress);
+        
         if (currentTime >= gameState.staminaCooldownEnd) {
             gameState.stamina = 100;
             gameState.isStaminaCoolingDown = false;
@@ -1604,8 +1866,9 @@ export function updateStaminaCooldown(currentTime) {
             if (gameState.shieldBrokenLock) gameState.shieldBrokenLock = false;
         }
     } else if (!gameState.isSprinting && gameState.stamina < 100 && gameState.gameStatus === 'playing') {
-        // Small trickle regen when not on cooldown (safety)
-        gameState.stamina = Math.min(100, gameState.stamina + 0.5);
+        // Small trickle regen when not on cooldown (apply skin multiplier)
+        const regenRate = 0.5 * getStaminaRegenMultiplier();
+        gameState.stamina = Math.min(100, gameState.stamina + regenRate);
         if (gameState.stamina >= 100 && gameState.shieldBrokenLock) gameState.shieldBrokenLock = false;
     }
 }
@@ -1669,6 +1932,22 @@ function finishRun(currentTime) {
 function isPassableForEnemy(cell) {
     // Enemy can walk on EMPTY, EXIT, and TELEPAD; treats GENERATOR and WALL as blocked
     return cell === CELL.EMPTY || cell === CELL.EXIT || cell === CELL.TELEPAD;
+}
+
+function findNearestPassable(targetX, targetY, maxRadius = 12) {
+    const clamp = (v, max) => Math.max(1, Math.min(max - 2, v));
+    const tx = clamp(targetX, MAZE_WIDTH);
+    const ty = clamp(targetY, MAZE_HEIGHT);
+    for (let r = 0; r <= maxRadius; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                const x = clamp(tx + dx, MAZE_WIDTH);
+                const y = clamp(ty + dy, MAZE_HEIGHT);
+                if (isPassableForEnemy(gameState.maze[y]?.[x])) return { x, y };
+            }
+        }
+    }
+    return null;
 }
 
 export function bfsDistancesFrom(maze, startX, startY) {
@@ -1751,21 +2030,9 @@ class MinHeap {
 }
 
 // Spawn the primary ground chaser enemy at a far, valid location
-export function spawnInitialEnemy() {
-    // Spawn Chaser near bottom-right corner; find nearest passable tile
-    const target = { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 };
-    let spawn = null;
-    for (let r = 0; r < Math.max(MAZE_WIDTH, MAZE_HEIGHT); r++) {
-        for (let dy = -r; dy <= r; dy++) {
-            for (let dx = -r; dx <= r; dx++) {
-                const x = Math.max(1, Math.min(MAZE_WIDTH - 2, target.x + dx));
-                const y = Math.max(1, Math.min(MAZE_HEIGHT - 2, target.y + dy));
-                if (isPassableForEnemy(gameState.maze[y][x])) { spawn = { x, y }; break; }
-            }
-            if (spawn) break;
-        }
-        if (spawn) break;
-    }
+export function spawnInitialEnemy(pos) {
+    const target = pos || { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 };
+    const spawn = findNearestPassable(target.x, target.y) || findNearestPassable(MAZE_WIDTH - 3, MAZE_HEIGHT - 3, 20);
     if (!spawn) return;
     const e = {
         type: 'chaser',
@@ -1797,15 +2064,14 @@ export function spawnInitialEnemy() {
 }
 
 // --- Flying_Pig enemy ---
-export function spawnFlyingPig() {
-    // Spawn in one of 3 corners (not top-left): bottom-right, top-right, bottom-left
+export function spawnFlyingPig(pos) {
     const corners = [
-        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 }, // bottom-right
-        { x: MAZE_WIDTH - 3, y: 2 },               // top-right
-        { x: 2, y: MAZE_HEIGHT - 3 }               // bottom-left
+        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 },
+        { x: MAZE_WIDTH - 3, y: 2 },
+        { x: 2, y: MAZE_HEIGHT - 3 }
     ];
-    const pick = corners[Math.floor(Math.random() * corners.length)];
-    const start = { x: pick.x, y: pick.y };
+    const target = pos || corners[Math.floor(Math.random() * corners.length)];
+    const start = findNearestPassable(target.x, target.y) || target;
     const pig = {
         type: 'flying_pig',
         mobility: 'air',
@@ -1840,22 +2106,12 @@ export function spawnFlyingPig() {
     gameState.enemies.push(pig);
 }
 
-export function spawnSeeker() {
+export function spawnSeeker(pos) {
     if (!gameState.maze) return;
     const midX = Math.floor(MAZE_WIDTH / 2);
     const midY = Math.floor(MAZE_HEIGHT / 2);
-    let found = null;
-    for (let r = 0; r < Math.max(MAZE_WIDTH, MAZE_HEIGHT); r++) {
-        for (let y = Math.max(1, midY - r); y <= Math.min(MAZE_HEIGHT - 2, midY + r); y++) {
-            for (let x = Math.max(1, midX - r); x <= Math.min(MAZE_WIDTH - 2, midX + r); x++) {
-                if (isPassableForEnemy(gameState.maze[y][x])) {
-                    found = { x, y }; break;
-                }
-            }
-            if (found) break;
-        }
-        if (found) break;
-    }
+    const target = pos || { x: midX, y: midY };
+    const found = findNearestPassable(target.x, target.y, 20);
     if (!found) return;
     const s = {
         type: 'seeker',
@@ -1896,29 +2152,15 @@ export function spawnSeeker() {
     gameState.enemies.push(s);
 }
 
-export function spawnBatter() {
+export function spawnBatter(pos) {
     if (!gameState.maze) return;
-    // Spawn Batter in a different corner from player (not top-left)
     const corners = [
-        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 }, // bottom-right
-        { x: MAZE_WIDTH - 3, y: 2 },               // top-right
-        { x: 2, y: MAZE_HEIGHT - 3 }               // bottom-left
+        { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 },
+        { x: MAZE_WIDTH - 3, y: 2 },
+        { x: 2, y: MAZE_HEIGHT - 3 }
     ];
-    const pick = corners[Math.floor(Math.random() * corners.length)];
-    let found = null;
-    for (let r = 0; r < 10; r++) {
-        for (let dy = -r; dy <= r; dy++) {
-            for (let dx = -r; dx <= r; dx++) {
-                const x = Math.max(1, Math.min(MAZE_WIDTH - 2, pick.x + dx));
-                const y = Math.max(1, Math.min(MAZE_HEIGHT - 2, pick.y + dy));
-                if (isPassableForEnemy(gameState.maze[y][x])) {
-                    found = { x, y }; break;
-                }
-            }
-            if (found) break;
-        }
-        if (found) break;
-    }
+    const pick = pos || corners[Math.floor(Math.random() * corners.length)];
+    const found = findNearestPassable(pick.x, pick.y, 15);
     if (!found) return;
 
     const b = {
@@ -1957,27 +2199,15 @@ export function spawnBatter() {
 }
 
 // --- Mortar AI ---
-export function spawnMortar() {
+export function spawnMortar(pos) {
     if (!gameState.maze) return;
-    // Spawn away from player: pick far corner
     const corners = [
         { x: MAZE_WIDTH - 3, y: MAZE_HEIGHT - 3 },
         { x: MAZE_WIDTH - 3, y: 2 },
         { x: 2, y: MAZE_HEIGHT - 3 }
     ];
-    const pick = corners[Math.floor(Math.random() * corners.length)];
-    let found = null;
-    for (let r = 0; r < 14; r++) {
-        for (let dy = -r; dy <= r; dy++) {
-            for (let dx = -r; dx <= r; dx++) {
-                const x = Math.max(1, Math.min(MAZE_WIDTH - 2, pick.x + dx));
-                const y = Math.max(1, Math.min(MAZE_HEIGHT - 2, pick.y + dy));
-                if (isPassableForEnemy(gameState.maze[y][x])) { found = { x, y }; break; }
-            }
-            if (found) break;
-        }
-        if (found) break;
-    }
+    const pick = pos || corners[Math.floor(Math.random() * corners.length)];
+    const found = findNearestPassable(pick.x, pick.y, 18);
     if (!found) return;
     const m = {
         type: 'mortar',
@@ -2114,7 +2344,7 @@ function updateLevel11Enemies(currentTime) {
     gameState.level11.bats = bats.filter(b => b.alive);
 }
 
-function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
+function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0, enemySpeedMult = 1.0) {
     // Handle timers for weakened/knocked states
     if (e.state !== 'flying' && currentTime >= e.stateUntil) {
         if (e.state === 'knocked_out' && e._bossSummoned) {
@@ -2188,7 +2418,7 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0) {
                 const remain = Math.max(0, gameState.enemiesThawUntil - currentTime);
                 thawMult = 1 - Math.min(1, remain / ENEMY_THAW_TIME);
             }
-            const step = e.circleSpeed * dt * thawMult * bazookaSpeedMult;
+            const step = e.circleSpeed * dt * thawMult * bazookaSpeedMult * enemySpeedMult;
             if (cdist > 0.001) {
                 const m = Math.min(step, cdist);
                 e.fx += (cdx / cdist) * m;
@@ -2352,6 +2582,7 @@ export function updateEnemies(currentTime) {
 
     // BAZOOKA MODE: Speed multiplier for all enemies (makes them faster and more aggressive)
     const bazookaSpeedMult = isBazookaMode() ? 1.4 : 1.0; // 40% faster in bazooka mode
+    const enemySpeedMult = getEnemySpeedMultiplier ? getEnemySpeedMultiplier() : 1.0;
 
     // Handle mount state transitions and safe landing
     const wasMounted = !!(gameState._mountedWasActive);
@@ -2536,7 +2767,7 @@ export function updateEnemies(currentTime) {
                 }
             }
 
-            // Collision with player (legacy pig projectile support)
+            // Collision with player (pig projectile)
             const pvx = (gameState.player.x + 0.5) - p.x;
             const pvy = (gameState.player.y + 0.5) - p.y;
             const pd = Math.hypot(pvx, pvy);
@@ -2575,18 +2806,30 @@ export function updateEnemies(currentTime) {
                             }
                         }
                     }
-                    if (!p.reflected && gameState.gameStatus === 'playing' && !gameState.godMode) {
-                        gameState.lives = 0;
-                        gameState.deathCause = 'pig_projectile';
-                        gameState.gameStatus = 'lost';
-                        setStatusMessage('You were hit by a projectile!');
-                        // Play hit sound and spawn damage particles at player position
-                        try { playEnemyHit(); } catch {}
-                        const px = (gameState.player.x + 0.5) * CELL_SIZE;
-                        const py = (gameState.player.y + 0.5) * CELL_SIZE;
-                        particles.spawn('damage', px, py, 20);
-                        p.resolved = true;
-                        continue;
+                    if (!p.reflected && gameState.gameStatus === 'playing') {
+                        // Apply centralized damage logic with 3 damage for pig projectiles
+                        const applied = applyPlayerDamage('pig_projectile', now, 3);
+                        if (!applied) {
+                            // No damage taken (Void absorb or God mode) -> despawn projectile and show effect
+                            try { playEnemyHit(); } catch {}
+                            const px2 = (gameState.player.x + 0.5) * CELL_SIZE;
+                            const py2 = (gameState.player.y + 0.5) * CELL_SIZE;
+                            particles.spawn('magic', px2, py2, 18, { color: '#66ffcc' });
+                            p.resolved = true;
+                            continue;
+                        } else {
+                            // Damage applied: check death and feedback
+                            if (gameState.lives <= 0) {
+                                gameState.deathCause = 'pig_projectile';
+                                gameState.gameStatus = 'lost';
+                            }
+                            try { playEnemyHit(); } catch {}
+                            const px2 = (gameState.player.x + 0.5) * CELL_SIZE;
+                            const py2 = (gameState.player.y + 0.5) * CELL_SIZE;
+                            particles.spawn('damage', px2, py2, 20);
+                            p.resolved = true;
+                            continue;
+                        }
                     }
                 }
             }
@@ -2870,6 +3113,7 @@ export function updateEnemies(currentTime) {
         trap.triggered = true;
         trap.flashUntil = currentTime + 200;
         try { playZapTrigger(); } catch {}
+        checkAchievements('trap_catch');
         // Non-stacking: only set timers if not already within an active stun window
         if (!(e._zapStunUntil && currentTime < e._zapStunUntil)) {
             e._zapStunUntil = currentTime + 2000;
@@ -2897,7 +3141,7 @@ export function updateEnemies(currentTime) {
             continue;
         }
         if (e.type === 'flying_pig') {
-            updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult);
+            updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult, enemySpeedMult);
             if (e._despawn) continue; // will be removed in cleanup below
             continue;
         }
@@ -2984,7 +3228,7 @@ export function updateEnemies(currentTime) {
                     const tx = e.target.x + 0.5, ty = e.target.y + 0.5;
                     const dx = tx - e.fx, dy = ty - e.fy;
                     const dist = Math.hypot(dx, dy);
-                    const step = e.speedRage * dt * localThaw * bazookaSpeedMult * genSlowMult; // flee as fast as possible
+                    const step = e.speedRage * dt * localThaw * bazookaSpeedMult * enemySpeedMult * genSlowMult; // flee as fast as possible
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -3118,7 +3362,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
-                    const step = speedRoam * dt * localThaw * bazookaSpeedMult * genSlowMult;
+                    const step = speedRoam * dt * localThaw * bazookaSpeedMult * enemySpeedMult * genSlowMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -3208,7 +3452,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedFlee = e.speedRage; // Use rage speed for fleeing
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedFlee *= 0.5;
-                    const step = speedFlee * dt * localThaw * bazookaSpeedMult * genSlowMult;
+                    const step = speedFlee * dt * localThaw * bazookaSpeedMult * enemySpeedMult * genSlowMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         e._lastMoveAt = currentTime;
@@ -3265,7 +3509,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRage = e.speedRage;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
-                    const step = speedRage * dt * localThaw * bazookaSpeedMult;
+                    const step = speedRage * dt * localThaw * bazookaSpeedMult * enemySpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     } else {
@@ -3396,19 +3640,25 @@ export function updateEnemies(currentTime) {
 
                     // Player damage and stun (5s)
                     if (Math.max(Math.abs(center.x - px), Math.abs(center.y - py)) <= radius) {
-                        if (!gameState.godMode && gameState.gameStatus === 'playing') {
-                            gameState.lives = Math.max(0, (gameState.lives || 0) - 1);
-                            gameState.playerStunned = true;
-                            gameState.playerStunUntil = currentTime + 5000;
-                            setStatusMessage('Mortar blast! STUNNED for 5s.');
-                            // Play hit sound and spawn damage particles at player position
-                            try { playEnemyHit(); } catch {}
-                            const playerX = (gameState.player.x + 0.5) * CELL_SIZE;
-                            const playerY = (gameState.player.y + 0.5) * CELL_SIZE;
-                            particles.spawn('damage', playerX, playerY, 20);
-                            if (gameState.lives <= 0) {
-                                gameState.deathCause = 'mortar_explosion';
-                                gameState.gameStatus = 'lost';
+                        if (gameState.gameStatus === 'playing') {
+                            const applied = applyPlayerDamage('mortar', currentTime);
+                            if (applied) {
+                                gameState.playerStunned = true;
+                                gameState.playerStunUntil = currentTime + 5000;
+                                setStatusMessage('Mortar blast! STUNNED for 5s.');
+                                try { playEnemyHit(); } catch {}
+                                const playerX = (gameState.player.x + 0.5) * CELL_SIZE;
+                                const playerY = (gameState.player.y + 0.5) * CELL_SIZE;
+                                particles.spawn('damage', playerX, playerY, 20);
+                                if (gameState.lives <= 0) {
+                                    gameState.deathCause = 'mortar_explosion';
+                                    gameState.gameStatus = 'lost';
+                                }
+                            } else {
+                                // Absorbed (Void or God mode)
+                                const playerX = (gameState.player.x + 0.5) * CELL_SIZE;
+                                const playerY = (gameState.player.y + 0.5) * CELL_SIZE;
+                                particles.spawn('magic', playerX, playerY, 18, { color: '#66ffcc' });
                             }
                         }
                     }
@@ -3627,7 +3877,7 @@ export function updateEnemies(currentTime) {
                 const dx = gx - e.fx, dy = gy - e.fy;
                 const dist = Math.hypot(dx, dy);
                 const speed = (e.state === 'flee') ? e.speedFlee : e.speedRoam;
-                const step = speed * dt * thawMult * bazookaSpeedMult;
+                const step = speed * dt * thawMult * bazookaSpeedMult * enemySpeedMult;
                 if (dist <= step || dist < 0.0001) {
                     e.fx = gx; e.fy = gy; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     e._lastMoveAt = currentTime;
@@ -3777,7 +4027,7 @@ export function updateEnemies(currentTime) {
                     // Apply slow if active (BATTER)
                     let speedRoam = e.speedRoam;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRoam *= 0.5;
-                    const step = speedRoam * dt * localThaw * bazookaSpeedMult;
+                    const step = speedRoam * dt * localThaw * bazookaSpeedMult * enemySpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                         if (e.roamStepsLeft > 0) e.roamStepsLeft--;
@@ -3865,7 +4115,7 @@ export function updateEnemies(currentTime) {
                     const dist = Math.hypot(dx, dy);
                     let speedRage = e.speedRage;
                     if (e._zapSlowUntil && currentTime < e._zapSlowUntil) speedRage *= 0.5;
-                    const step = speedRage * dt * localThaw * bazookaSpeedMult;
+                    const step = speedRage * dt * localThaw * bazookaSpeedMult * enemySpeedMult;
                     if (dist <= step || dist < 0.0001) {
                         e.fx = tx; e.fy = ty; e.x = e.target.x; e.y = e.target.y; e.target = null;
                     } else {
@@ -3993,7 +4243,7 @@ export function updateEnemies(currentTime) {
             // Apply slow if active
             let sMul = 1;
             if (e._zapSlowUntil && currentTime < e._zapSlowUntil) sMul = 0.5;
-            const step = speed * dt * thawMult * sMul * bazookaSpeedMult;
+            const step = speed * dt * thawMult * sMul * bazookaSpeedMult * enemySpeedMult;
             if (dist <= step || dist < 0.0001) {
                 e.fx = tx; e.fy = ty;
                 e.x = e.target.x; e.y = e.target.y;
@@ -4045,6 +4295,14 @@ export function updateEnemies(currentTime) {
 function handleEnemyHit(currentTime) {
     if (currentTime < gameState.playerInvincibleUntil) return;
     if (gameState.godMode) return;
+    
+    const currentSkinId = gameState.equippedSkin || 'default';
+    
+    // Check if Phoenix shield should block this enemy hit
+    if (currentSkinId === 'phoenix' && gameState.phoenixShieldActive) {
+        if (breakPhoenixShield(currentTime, 'enemy_melee')) return; // Shield breaks, no damage
+    }
+    
     // Check if player is stunned - any enemy contact while stunned is instakill
     if (gameState.playerStunned) {
         gameState.lives = 0;
@@ -4053,6 +4311,60 @@ function handleEnemyHit(currentTime) {
         setStatusMessage('Instakill! You were hit while stunned!');
         return;
     }
+    
+    // Check endless mode damage protection abilities
+    if (gameState.currentLevel === 100 && gameState.endlessMode) {
+        const damageProtection = checkDamageProtection();
+        
+        if (!damageProtection.shouldTakeDamage) {
+            // Protected by invincibility
+            setStatusMessage('Invincible! No damage!');
+            try { playShieldReflect(); } catch {}
+            
+            // Spawn shield particles at player position
+            const px = (gameState.player.x + 0.5) * CELL_SIZE;
+            const py = (gameState.player.y + 0.5) * CELL_SIZE;
+            import('./particles.js').then(m => {
+                if (m.addShieldParticles) m.addShieldParticles(px, py, '#00ff00');
+            });
+            
+            gameState.playerInvincibleUntil = currentTime + 500; // Brief invincibility flash
+            return;
+        }
+        
+        // Check if extra life can absorb the damage
+        if (damageProtection.shielded) {
+            setStatusMessage(damageProtection.reason === 'shield' 
+                ? `Shield Blocked! ${damageProtection.remainingHits} hits left` 
+                : 'Extra Life Consumed!');
+            try { playShieldBreak(); } catch {}
+            
+            // Spawn shield particles
+            const px = (gameState.player.x + 0.5) * CELL_SIZE;
+            const py = (gameState.player.y + 0.5) * CELL_SIZE;
+            import('./particles.js').then(m => {
+                if (m.addShieldParticles) m.addShieldParticles(px, py, '#ff6600');
+            });
+            
+            gameState.playerInvincibleUntil = currentTime + 1000;
+            if (!(gameState.boss && gameState.boss.active)) {
+                gameState.enemiesFrozenUntil = currentTime + 1000;
+            }
+            return;
+        }
+    }
+    
+    // Endless upgrade: chance-based damage mitigation
+    if (gameState.mode === 'endless-progression' && gameState.endlessUpgrades && gameState.endlessUpgrades.enemyDamageReduction) {
+        const negateChance = Math.min(0.75, gameState.endlessUpgrades.enemyDamageReduction);
+        if (Math.random() < negateChance) {
+            setStatusMessage('Armor absorbed the hit!');
+            gameState.playerInvincibleUntil = currentTime + 800;
+            return;
+        }
+    }
+
+    // Normal damage: reduce lives
     gameState.lives--;
     setStatusMessage('Hit! You are invincible for 2s');
     // During the boss fight, do not apply the grayscale freeze/pause effect
@@ -4377,7 +4689,8 @@ export function attemptSkillCheck() {
         }
         // Start next check immediately (with slight delay to show flash) or complete generator
         const nextIndex = gameState.completedSkillChecks.length;
-        if (nextIndex >= SKILL_CHECKS.length) {
+        const requiredChecks = getRequiredSkillChecks();
+        if (nextIndex >= requiredChecks) {
             // Fill bar to 100 and complete
             gameState.generatorProgress = 100;
             setTimeout(() => completeGenerator(), 180);
@@ -4586,7 +4899,7 @@ export function completeGenerator() {
     const completedCount = gameState.generators.filter(g => g.completed).length;
     setStatusMessage(`Generator repaired (${completedCount}/${gameState.generators.length})`);
 
-    // Reward: grant one Zap Trap from Level 2 onward (and in Endless)
+    // Reward: grant Zap Traps from Level 2 onward (and in Endless)
     if (gameState.mode === 'endless' || (gameState.currentLevel && gameState.currentLevel >= 2)) {
         let zapReward = 1;
         // Bonus zap traps in endless mode at higher streaks
@@ -4594,6 +4907,10 @@ export function completeGenerator() {
             const streak = gameState.endlessConfig.streak || 0;
             if (streak >= 20) zapReward = 3; // 3 traps at 20+ streak
             else if (streak >= 10) zapReward = 2; // 2 traps at 10+ streak
+        }
+        // Defender ability: ensure at least +2 per generator (and 100%MAN inherits)
+        if (hasSkinAbility('bonus_trap') || hasSkinAbility('god_mode')) {
+            zapReward = Math.max(zapReward, 2);
         }
         gameState.zapTraps = (gameState.zapTraps || 0) + zapReward;
         setStatusMessage(`Zap Trap +${zapReward}`);
@@ -4619,19 +4936,24 @@ export function failGenerator(message) {
         addSeekerAlert(gen.x, gen.y, performance.now(), 6000);
 
         if (gen.failCount >= 2) {
-            // Penalize player and block generator for 10s
+            // Penalize player and optionally block generator
             gen.failCount = 0; // reset after penalty
-            gen.blockedUntil = performance.now() + 10000;
+            const protectionLevel = (gameState.mode === 'endless-progression' && gameState.endlessUpgrades) ? (gameState.endlessUpgrades.generatorFailureProtection || 0) : 0;
+            const blockDuration = protectionLevel >= 2 ? 0 : 10000;
+            const lifePenalty = protectionLevel >= 1 ? 0 : 1;
+            if (blockDuration > 0) {
+                gen.blockedUntil = performance.now() + blockDuration;
+            }
             // Only on the second fail, enrage the Batter
             addBatterNoiseRage(performance.now(), 3500);
-            if (!gameState.godMode) {
-                gameState.lives--;
+            if (!gameState.godMode && lifePenalty > 0) {
+                gameState.lives -= lifePenalty;
             }
             if (gameState.lives <= 0) {
                 gameState.deathCause = 'generator_fail';
                 gameState.gameStatus = 'lost';
             }
-            setStatusMessage('You botched it twice! -1 life. Generator blocked 10s.');
+            setStatusMessage(lifePenalty > 0 ? 'You botched it twice! -1 life. Generator blocked 10s.' : (blockDuration > 0 ? 'You botched it twice! Generator blocked 10s.' : 'You botched it twice! No penalty thanks to insurance.'));
         } else {
             setStatusMessage(message);
         }
@@ -4665,4 +4987,213 @@ export function closeGeneratorInterface() {
     
     // On closing the generator UI, ease enemies back in over 2s
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
+}
+
+// ===== SKIN ABILITY SYSTEM =====
+
+// Glitch helper: teleport to random empty tile
+function teleportGlitchRandomly(currentTime) {
+    let validTiles = [];
+    for (let y = 1; y < MAZE_HEIGHT - 1; y++) {
+        for (let x = 1; x < MAZE_WIDTH - 1; x++) {
+            const cell = gameState.maze[y]?.[x];
+            if (cell === CELL.EMPTY || cell === CELL.GENERATOR || cell === CELL.TELEPORT) {
+                validTiles.push({ x, y });
+            }
+        }
+    }
+    if (validTiles.length > 0) {
+        const newPos = validTiles[Math.floor(Math.random() * validTiles.length)];
+        gameState.player.x = newPos.x;
+        gameState.player.y = newPos.y;
+        const cx = newPos.x + 0.5;
+        const cy = newPos.y + 0.5;
+        particles.spawn('wallHit', cx * CELL_SIZE, cy * CELL_SIZE, 20, { color: 'rgba(255, 0, 127, 0.8)' });
+        setStatusMessage('Glitch teleported away!', 1000);
+        return true;
+    }
+    return false;
+}
+
+// Phoenix helper: arm the one-time shield when dropping to 1 life
+function activatePhoenixShield(currentTime) {
+    if (gameState.phoenixShieldUsed || gameState.phoenixShieldActive) return false;
+    gameState.phoenixShieldActive = true;
+    gameState.phoenixShieldActivatedAt = currentTime;
+    setStatusMessage('Phoenix shield armed (one-time)', 1000);
+    return true;
+}
+
+// Phoenix helper: consume shield, heal +1 life, grant 7s invincibility
+function breakPhoenixShield(currentTime, source) {
+    if (!gameState.phoenixShieldActive) return false;
+    gameState.phoenixShieldActive = false;
+    gameState.phoenixShieldUsed = true;
+
+    // Restore to full health (3 lives)
+    gameState.lives = 3;
+
+    // Grant invincibility for 7 seconds
+    const invEnd = currentTime + 7000;
+    gameState.playerInvincibleUntil = Math.max(gameState.playerInvincibleUntil || 0, invEnd);
+
+    // Visual/audio feedback
+    const cx = gameState.player.x + 0.5;
+    const cy = gameState.player.y + 0.5;
+    particles.spawn('explosion', cx * CELL_SIZE, cy * CELL_SIZE, 24, { color: 'rgba(255, 140, 0, 0.9)' });
+    setStatusMessage('Phoenix shield broke! Restored to 3 HP, 7s invincible', 1500);
+    return true;
+}
+
+// Manual activation entrypoint (used by input Y key)
+export function activatePhoenixShieldAbility(currentTime = performance.now()) {
+    const currentSkinId = gameState.equippedSkin || 'default';
+    if (currentSkinId !== 'phoenix') {
+        setStatusMessage('Phoenix shield unavailable (not Phoenix)', 800);
+        return false;
+    }
+    if (gameState.gameStatus !== 'playing' || gameState.isPaused) return false;
+    if (gameState.isGeneratorUIOpen) return false;
+    if (gameState.lives !== 1) {
+        setStatusMessage('Phoenix shield requires 1 HP', 800);
+        return false;
+    }
+    if (gameState.phoenixShieldUsed) {
+        setStatusMessage('Phoenix shield already used', 800);
+        return false;
+    }
+    if (gameState.phoenixShieldActive) {
+        setStatusMessage('Phoenix shield already active', 800);
+        return false;
+    }
+    const armed = activatePhoenixShield(currentTime);
+    if (armed) {
+        // Subtle feedback handled in activatePhoenixShield
+        return true;
+    }
+    return false;
+}
+
+// Centralized damage handler with skin ability checks
+export function applyPlayerDamage(source = 'unknown', currentTime = performance.now(), damageAmount = 1) {
+    // Check invincibility FIRST - if invincible, no damage at all
+    if (currentTime < (gameState.playerInvincibleUntil || 0)) {
+        return false; // Protected from all damage
+    }
+    
+    // 100%MAN - Immunity to all damage types
+    if (hasSkinAbility('god_mode')) {
+        return false;
+    }
+
+    // 100%MAN inherited abilities: check all other abilities for god_mode
+    const isGodMode = hasSkinAbility('god_mode');
+
+    // Void - Absorb projectiles (heal instead of damage)
+    if ((hasSkinAbility('projectile_absorb') || isGodMode) && (source === 'projectile' || source === 'pig_projectile' || source === 'mortar')) {
+        gameState.lives = Math.min(gameState.lives + 1, 6);
+        return false; // No damage taken
+    }
+
+    // Glitch - Teleport on first hit of any damage type (30s cooldown)
+    if (hasSkinAbility('glitch_teleport') && !hasSkinAbility('god_mode')) {
+        if (!gameState.glitchTeleportUsedAt || (currentTime - gameState.glitchTeleportUsedAt) >= 30000) {
+            // First hit triggers teleport - blocks all damage
+            gameState.glitchTeleportUsedAt = currentTime;
+            if (teleportGlitchRandomly(currentTime)) {
+                // Gain 2s invincibility after teleport
+                gameState.playerInvincibleUntil = Math.max(gameState.playerInvincibleUntil || 0, currentTime + 2000);
+                return false; // No damage taken
+            }
+        }
+    }
+
+    // Ghost - 50% chance to phase through wall (when walking into wall)
+    // This is handled in movePlayer, not here - just phase damage avoidance
+    if ((hasSkinAbility('phase_through') || isGodMode) && Math.random() < 0.5) {
+        const cx = gameState.player.x + 0.5;
+        const cy = gameState.player.y + 0.5;
+        particles.spawn('generator', cx * CELL_SIZE, cy * CELL_SIZE, 10, { color: 'rgba(240, 255, 255, 0.8)' });
+        return false; // Phased through!
+    }
+
+    const currentSkinId = gameState.equippedSkin || 'default';
+
+    // Phoenix shield: if active, it absorbs this hit and heals
+    if (currentSkinId === 'phoenix' && gameState.phoenixShieldActive) {
+        if (breakPhoenixShield(currentTime, source)) return false;
+    }
+
+    // Apply damage (default 1, but can be higher for pig projectiles = 3)
+    // The wall collision system handles the "last chance stun" separately
+    gameState.lives = Math.max(0, gameState.lives - damageAmount);
+
+    // Check if player is now dead (0 lives)
+    if (gameState.lives <= 0) {
+        gameState.lives = 0;
+        gameState.gameStatus = 'lost';
+    }
+    
+    checkAchievements('death');
+    return true;
+}
+
+// Get trap capacity based on skin ability
+export function getMaxTraps() {
+    let baseTraps = gameState.zapTraps || 0;
+
+    // Defender - +2 traps per completed generator
+    // 100%MAN inherits this ability
+    if (hasSkinAbility('bonus_trap') || hasSkinAbility('god_mode')) {
+        const completedGens = gameState.generators.filter(g => g.completed).length;
+        baseTraps += completedGens * 2;
+    }
+
+    return baseTraps;
+}
+
+// Get required skill checks for generator (2 for Technician, 3 normally)
+export function getRequiredSkillChecks() {
+    if (hasSkinAbility('fast_repair') || hasSkinAbility('god_mode')) {
+        return 2; // Technician or 100%MAN
+    }
+    let required = 3; // Normal
+    if (gameState.mode === 'endless-progression' && gameState.endlessUpgrades) {
+        const reduction = gameState.endlessUpgrades.generatorSkillReduction || 0;
+        required = Math.max(1, required - reduction);
+    }
+    return required;
+}
+
+// Get stamina regen multiplier
+export function getStaminaRegenMultiplier() {
+    if (hasSkinAbility('god_mode')) {
+        return 999; // 100%MAN - Instant regen
+    }
+    let mult = 1.0;
+    if (hasSkinAbility('stamina_regen')) {
+        mult = 2.0; // Chrono - 100% faster (effectively doubles speed, so ~5s to full)
+    }
+    if (gameState.mode === 'endless-progression' && gameState.endlessUpgrades) {
+        mult *= gameState.endlessUpgrades.staminaRegenMultiplier || 1;
+    }
+    return mult;
+}
+
+// Get enemy speed multiplier
+export function getEnemySpeedMultiplier() {
+    // Endless mode ability: enemy slow (50% speed)
+    if (isAbilityActive('enemySlow')) {
+        return 0.5;
+    }
+    if (hasSkinAbility('time_slow') || hasSkinAbility('god_mode')) {
+        return 0.75; // Time Lord or 100%MAN - 25% slower enemies
+    }
+    return 1.0; // Normal
+}
+
+// Get player speed multiplier
+export function getPlayerSpeedMultiplier() {
+    // 100%MAN moves at normal speed (1 tile per move, not double)
+    return 1.0;
 }

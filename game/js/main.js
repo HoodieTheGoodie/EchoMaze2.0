@@ -3,7 +3,7 @@
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom, updateLevel11EndingDialog } from './state.js';
 import { completeGenerator } from './state.js';
 import { playLose, playExplosion } from './audio.js';
-import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBossDamage10x, setBossDamage10x, getLevelColor, isLevel11Unlocked, setLevel11Unlocked, getUnlockedTerminals, unlockTerminal, isTerminalUnlocked, hasTerminalAccess, unlockTerminalAccess } from './config.js';
+import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, resetLevelsOnly, isGodMode, setGodMode, isDevUnlocked, setDevUnlocked, getEndlessDefaults, setEndlessDefaults, getSettings, setSettings, isSkipPreBossEnabled, setSkipPreBossEnabled, isSecretUnlocked, setSecretUnlocked, isBazookaMode, setBazookaMode, isBazookaModeUnlocked, setBazookaModeUnlocked, isBossDamage10x, setBossDamage10x, getLevelColor, isLevel11Unlocked, setLevel11Unlocked, getUnlockedTerminals, unlockTerminal, isTerminalUnlocked, hasTerminalAccess, unlockTerminalAccess, resetRGBAchievements } from './config.js';
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 import { loadSprites } from './sprites.js';
@@ -14,10 +14,12 @@ import { initAchievementsSkinsUI } from './ui-panels.js';
 import { updateLevel11, initLevel11 } from './level11.js';
 import { loadEndlessProgress, saveEndlessProgress, getEndlessProgression, startEndlessRun as startProgressionRun, completeEndlessRoom, endEndlessRun, purchaseUpgrade, resetUpgrades, hasAbility, applyPermanentUpgrades } from './endless-progression.js';
 import { generateMaze, GENERATOR_COUNT } from './maze.js';
+import { initDevTools } from './dev-tools.js';
 
 // Make endless functions available globally for endless-ui.js
 window.loadEndlessProgression = loadEndlessProgress;
 window.saveEndlessProgression = saveEndlessProgress;
+window.saveEndlessProgress = saveEndlessProgress; // legacy alias for dev tools
 window.getEndlessProgression = getEndlessProgression;
 window.startProgressionRun = startProgressionRun;
 window.completeEndlessRoom = completeEndlessRoom;
@@ -891,6 +893,8 @@ function showMenu() {
     if (loseOverlay) loseOverlay.style.display = 'none';
     if (creditsOverlay) creditsOverlay.style.display = 'none';
     if (bossHealthBar) bossHealthBar.style.display = 'none';
+    const levelDevPanel = document.getElementById('levelDevPanel');
+    if (levelDevPanel) levelDevPanel.style.display = 'none';
     
     // Reset win message to default
     const winMsg = document.getElementById('winMsg');
@@ -937,7 +941,7 @@ window.showMainMenu = showMenu;
 window.showClassicEndless = showClassicEndless;
 
 // Continue endless progression run - regenerate maze for next room
-function continueEndlessRoom() {
+async function continueEndlessRoom() {
     if (!gameState || gameState.mode !== 'endless-progression') {
         console.warn('continueEndlessRoom called but not in endless-progression mode');
         return;
@@ -954,21 +958,41 @@ function continueEndlessRoom() {
         return;
     }
 
+    if (typeof applyPermanentUpgrades === 'function') {
+        applyPermanentUpgrades();
+    }
+
     const roomNum = progression.currentRun.roomNumber || 1;
-    console.log('Continuing endless room, current room number:', roomNum);
+    const difficultyMode = progression.currentRun.difficultyMode || 'easy';
+    console.log('Continuing endless room, current room number:', roomNum, 'difficulty:', difficultyMode);
     
     // Save current health and stamina
     const savedHealth = gameState.health || 3;
     const savedStamina = gameState.stamina || 100;
     
-    // Configure difficulty scaling - add more enemies each room
+    // Use getRoomDifficulty to properly scale enemies based on mode
+    const { getRoomDifficulty } = await import('./endless-progression.js');
+    const difficulty = getRoomDifficulty(roomNum, difficultyMode);
+    
+    // Build enemy config from difficulty calculation
     const enemyConfig = {
-        chaser: roomNum >= 1,           // Room 1+
-        pig: roomNum >= 2,              // Room 2+
-        seeker: roomNum >= 3,           // Room 3+
-        batter: roomNum >= 4,           // Room 4+
-        mortar: roomNum >= 5            // Room 5+
+        chaser: difficulty.enemies.includes('chaser'),
+        pig: difficulty.enemies.includes('pig'),
+        seeker: difficulty.enemies.includes('seeker'),
+        batter: difficulty.enemies.includes('batter'),
+        mortar: difficulty.enemies.includes('mortar')
     };
+    
+    // Count duplicates for spawning
+    const enemyCounts = {
+        chaser: difficulty.enemies.filter(e => e === 'chaser').length,
+        pig: difficulty.enemies.filter(e => e === 'pig').length,
+        seeker: difficulty.enemies.filter(e => e === 'seeker').length,
+        batter: difficulty.enemies.filter(e => e === 'batter').length,
+        mortar: difficulty.enemies.filter(e => e === 'mortar').length
+    };
+    
+    console.log('Enemy counts for room', roomNum, ':', enemyCounts);
     
     // Set the difficulty config BEFORE calling initGame
     gameState.endlessConfig = {
@@ -976,6 +1000,12 @@ function continueEndlessRoom() {
         difficulty: roomNum > 10 ? 'super' : 'normal',
         generatorCount: 3
     };
+    
+    // Set endless mode flags
+    gameState.mode = 'endless-progression';
+    gameState.endlessMode = true;
+    gameState.currentLevel = 100;
+    gameState.mazeDirty = true; // Force maze rebuild with purple neon walls
     
     // Reinitialize the game with new room (will use endlessConfig)
     gameState._useCustomLevel11 = false;
@@ -989,6 +1019,33 @@ function continueEndlessRoom() {
     const mazeData = generateMaze(Math.floor(Math.random() * 0xFFFFFFFF), GENERATOR_COUNT, false);
     gameState.maze = mazeData.grid;
     gameState.generators = mazeData.generators || [];
+    gameState.mazeDirty = true; // Force rebuild again after maze generation
+        // Spawn enemies based on difficulty counts (for duplicates in hard mode)
+        // Import spawn functions
+        const { spawnInitialEnemy, spawnFlyingPig, spawnSeeker, spawnBatter, spawnMortar } = await import('./state.js');
+    
+        // Clear any existing enemies first
+        gameState.enemies = [];
+    
+        // Spawn enemies according to counts
+        for (let i = 0; i < enemyCounts.chaser; i++) {
+            spawnInitialEnemy();
+        }
+        for (let i = 0; i < enemyCounts.pig; i++) {
+            spawnFlyingPig();
+        }
+        for (let i = 0; i < enemyCounts.seeker; i++) {
+            spawnSeeker();
+        }
+        for (let i = 0; i < enemyCounts.batter; i++) {
+            spawnBatter();
+        }
+        for (let i = 0; i < enemyCounts.mortar; i++) {
+            spawnMortar();
+        }
+    
+        console.log('Spawned', gameState.enemies.length, 'total enemies for hard mode');
+    
     
     // Reset room-level game state but keep run state
     gameState.gameStatus = 'playing';
@@ -1021,6 +1078,48 @@ function continueEndlessRoom() {
 function startLevel(level) {
     if (level === 11 && !isLevel11Unlocked()) {
         alert('Level 11 is locked. Enter the password in Settings to unlock.');
+        return;
+    }
+
+    // Custom level (builder) entry point
+    if (level === 'custom') {
+        let customLevel = gameState.customLevel;
+        if (!customLevel) {
+            try {
+                const stored = localStorage.getItem('customLevel');
+                if (stored) customLevel = JSON.parse(stored);
+            } catch (e) {
+                console.error('Failed to parse stored custom level:', e);
+            }
+        }
+        if (!customLevel) {
+            alert('No custom level loaded. Build or import a level first.');
+            return;
+        }
+
+        gameState.customLevel = customLevel;
+        gameState.customLevelActive = true;
+        gameState.currentLevel = 1; // Use level 1 palette by default
+        gameState.mode = 'custom';
+
+        const menu = document.getElementById('mainMenu');
+        const gameContainer = document.getElementById('game-container');
+        if (menu) menu.style.display = 'none';
+        if (gameContainer) gameContainer.style.display = 'flex';
+
+        const winOverlay = document.getElementById('winOverlay');
+        const loseOverlay = document.getElementById('loseOverlay');
+        const creditsOverlay = document.getElementById('creditsOverlay');
+        if (winOverlay) winOverlay.style.display = 'none';
+        if (loseOverlay) loseOverlay.style.display = 'none';
+        if (creditsOverlay) creditsOverlay.style.display = 'none';
+
+        loadMobileControls().then(m => m.showMobileControls());
+
+        gameState._useCustomLevel11 = false;
+        initGame();
+        applyUIStyle();
+        updateCanvasBorderColor();
         return;
     }
     
@@ -1064,8 +1163,19 @@ function startLevel(level) {
                 generatorCount: 3
             };
             
+            // Set endless mode flags for purple walls
+            gameState.mode = 'endless-progression';
+            gameState.endlessMode = true;
+            gameState.currentLevel = 100;
+            gameState.mazeDirty = true;
+            
             gameState._useCustomLevel11 = false;
             initGame();
+        }
+        
+        // Apply permanent upgrades to current game state
+        if (typeof applyPermanentUpgrades === 'function') {
+            applyPermanentUpgrades();
         }
         
         // Apply UI style based on settings
@@ -1099,6 +1209,9 @@ function startLevel(level) {
     // Run core init only; legacy Level 11 flow handles its own rooms
     gameState._useCustomLevel11 = false;
     initGame();
+
+    // If level 2 and dev tools unlocked, surface a lightweight in-game dev panel
+    maybeShowLevel2DevPanel();
     
     // Apply UI style based on settings
     applyUIStyle();
@@ -1110,6 +1223,109 @@ function startLevel(level) {
     if (level === 10 && isSkipPreBossEnabled()) {
         try { startBossTransition(performance.now()); } catch {}
     }
+}
+
+// Simple in-level dev panel (level 2 only) gated by dev tools unlock
+function maybeShowLevel2DevPanel() {
+    const unlocked = localStorage.getItem('devToolsUnlocked') === 'true';
+    if (!unlocked || gameState.currentLevel !== 2) {
+        const existing = document.getElementById('levelDevPanel');
+        if (existing) existing.style.display = 'none';
+        return;
+    }
+    let panel = document.getElementById('levelDevPanel');
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'levelDevPanel';
+        panel.style.cssText = 'position:fixed; top:12px; right:12px; width:240px; background:rgba(0,0,0,0.8); border:2px solid #ff0; border-radius:8px; padding:10px; z-index:9999; color:#fff; font-family:"Courier New", monospace; font-size:12px; box-shadow:0 0 16px rgba(255,255,0,0.4)';
+        panel.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-weight:bold; color:#ff0;">Level Dev Panel</span>
+                <button id="lvlDevClose" style="background:#444; color:#fff; border:none; border-radius:4px; padding:2px 6px; cursor:pointer;">✕</button>
+            </div>
+            <div style="margin-bottom:8px;">
+                <div>Lives: <span id="lvlDevLives">3</span></div>
+                <div style="display:flex; gap:4px; margin-top:4px;">
+                    <button id="lvlDevAddLife" style="flex:1; background:#0f0; color:#000; border:none; border-radius:4px; padding:4px; cursor:pointer;">+1</button>
+                    <button id="lvlDevSubLife" style="flex:1; background:#f33; color:#fff; border:none; border-radius:4px; padding:4px; cursor:pointer;">-1</button>
+                </div>
+                <div style="display:flex; gap:4px; margin-top:4px;">
+                    <input id="lvlDevLifeInput" type="number" value="3" style="flex:1; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #ff0; border-radius:4px; padding:3px;">
+                    <button id="lvlDevSetLives" style="background:#00affa; color:#000; border:none; border-radius:4px; padding:4px; cursor:pointer;">Set</button>
+                </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+                <button id="lvlDevSkipRoom" style="background:#ffaa00; color:#000; border:none; border-radius:4px; padding:6px; cursor:pointer; font-weight:bold;">Skip to Next Level</button>
+                <button id="lvlDevRefill" style="background:#88ff88; color:#000; border:none; border-radius:4px; padding:6px; cursor:pointer;">Refill Stamina</button>
+            </div>
+        `;
+        document.body.appendChild(panel);
+        wireLevelDevPanel();
+    }
+    refreshLevelDevPanel();
+    panel.style.display = 'block';
+}
+
+function wireLevelDevPanel() {
+    const closeBtn = document.getElementById('lvlDevClose');
+    if (closeBtn && !closeBtn._wired) {
+        closeBtn.addEventListener('click', () => {
+            const panel = document.getElementById('levelDevPanel');
+            if (panel) panel.style.display = 'none';
+        });
+        closeBtn._wired = true;
+    }
+    const addBtn = document.getElementById('lvlDevAddLife');
+    if (addBtn && !addBtn._wired) {
+        addBtn.addEventListener('click', () => {
+            gameState.lives = (gameState.lives || 3) + 1;
+            refreshLevelDevPanel();
+        });
+        addBtn._wired = true;
+    }
+    const subBtn = document.getElementById('lvlDevSubLife');
+    if (subBtn && !subBtn._wired) {
+        subBtn.addEventListener('click', () => {
+            gameState.lives = Math.max(1, (gameState.lives || 3) - 1);
+            refreshLevelDevPanel();
+        });
+        subBtn._wired = true;
+    }
+    const setBtn = document.getElementById('lvlDevSetLives');
+    if (setBtn && !setBtn._wired) {
+        setBtn.addEventListener('click', () => {
+            const val = parseInt(document.getElementById('lvlDevLifeInput')?.value || gameState.lives || 3);
+            gameState.lives = Math.max(1, val);
+            refreshLevelDevPanel();
+        });
+        setBtn._wired = true;
+    }
+    const skipBtn = document.getElementById('lvlDevSkipRoom');
+    if (skipBtn && !skipBtn._wired) {
+        skipBtn.addEventListener('click', () => {
+            const next = Math.min(LEVEL_COUNT, (gameState.currentLevel || 2) + 1);
+            startLevel(next);
+        });
+        skipBtn._wired = true;
+    }
+    const refillBtn = document.getElementById('lvlDevRefill');
+    if (refillBtn && !refillBtn._wired) {
+        refillBtn.addEventListener('click', () => {
+            const maxSta = gameState.maxStamina || 100;
+            gameState.stamina = maxSta;
+            gameState.isStaminaCoolingDown = false;
+            gameState.shieldBrokenLock = false;
+            refreshLevelDevPanel();
+        });
+        refillBtn._wired = true;
+    }
+}
+
+function refreshLevelDevPanel() {
+    const livesEl = document.getElementById('lvlDevLives');
+    if (livesEl) livesEl.textContent = gameState.lives || 3;
+    const lifeInput = document.getElementById('lvlDevLifeInput');
+    if (lifeInput && gameState.lives) lifeInput.value = gameState.lives;
 }
 
 function wireMenuUi() {
@@ -1129,44 +1345,83 @@ function wireMenuUi() {
 
     const devBtn = document.getElementById('devToggleBtn');
     const trophyBtn = document.getElementById('trophyBtn');
+        const devUnlockSection = document.getElementById('devUnlockSection');
+        const devUnlockBtn = document.getElementById('devUnlockBtn');
+        const devPasswordInput = document.getElementById('devPasswordInput');
+        const devUnlockStatus = document.getElementById('devUnlockStatus');
+    
     const devPanel = document.getElementById('devPanel');
     if (devBtn && !devBtn._wired) {
         devBtn.addEventListener('click', () => {
             if (isDevUnlocked()) {
                 if (devPanel) devPanel.style.display = devPanel.style.display === 'none' ? 'block' : 'none';
             } else {
-                const pwd = prompt('Enter dev password:');
-                if (pwd === '271000skib') {
-                    setDevUnlocked(true);
-                    if (devPanel) devPanel.style.display = 'block';
-                    const godChk = document.getElementById('godModeChk');
-                    if (godChk) godChk.checked = isGodMode();
-                } else if (pwd === '8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M') {
-                    // Secret bazooka mode unlocked
-                    setSecretUnlocked(true);
-                    
-                    // Update UI to show bazooka mode section immediately
-                    const bazookaModeSection = document.getElementById('bazookaModeSection');
-                    const bazookaModeChk = document.getElementById('bazookaModeChk');
-                    const secretButtonContainer = document.getElementById('secretButtonContainer');
-                    
-                    if (bazookaModeSection) bazookaModeSection.style.display = 'flex';
-                    if (bazookaModeChk) bazookaModeChk.checked = isBazookaMode();
-                    if (secretButtonContainer) secretButtonContainer.style.display = 'none';
-                    
-                    showBottomAlert('🚀 SECRET UNLOCKED: Bazooka Mode is now available in Settings!', 5000);
-                    
-                    // Also open settings to show the newly unlocked feature
-                    const settingsOverlay = document.getElementById('settingsOverlay');
-                    if (settingsOverlay) {
-                        setTimeout(() => {
-                            settingsOverlay.style.display = 'flex';
-                        }, 1000);
-                    }
+                // Show password input section
+                if (devUnlockSection) {
+                    devUnlockSection.style.display = devUnlockSection.style.display === 'none' ? 'block' : 'none';
                 }
             }
         });
         devBtn._wired = true;
+    
+        // Wire dev unlock button
+        if (devUnlockBtn && !devUnlockBtn._wired) {
+            devUnlockBtn.addEventListener('click', () => {
+                const pwd = devPasswordInput?.value || '';
+                const devPassword = String.fromCharCode(50,55,49,48,48,48,115,107,105,98); // "271000skib"
+            
+                if (pwd === devPassword) {
+                    setDevUnlocked(true);
+                    // Also unlock for endless mode dev tools
+                    localStorage.setItem('devToolsUnlocked', 'true');
+                
+                    if (devUnlockStatus) {
+                        devUnlockStatus.textContent = '✓ Dev tools unlocked!';
+                        devUnlockStatus.style.color = '#00ff00';
+                    }
+                    if (devUnlockSection) devUnlockSection.style.display = 'none';
+                    if (devPanel) devPanel.style.display = 'block';
+                
+                    const godChk = document.getElementById('godModeChk');
+                    if (godChk) godChk.checked = isGodMode();
+                } else {
+                    if (devUnlockStatus) {
+                        devUnlockStatus.textContent = '✗ Incorrect password';
+                        devUnlockStatus.style.color = '#ff4444';
+                    }
+                }
+            });
+            devUnlockBtn._wired = true;
+        }
+    
+        // Allow Enter key to submit password
+        if (devPasswordInput && !devPasswordInput._wired) {
+            devPasswordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && devUnlockBtn) {
+                    devUnlockBtn.click();
+                }
+            });
+            devPasswordInput._wired = true;
+        }
+    }
+    
+    // Wire reset RGB achievements button (dev only)
+    const resetRGBBtn = document.getElementById('resetRGBAchievementsBtn');
+    if (resetRGBBtn && !resetRGBBtn._wired) {
+        resetRGBBtn.addEventListener('click', () => {
+            const confirmed = confirm('⚠️ WARNING: This will permanently remove all RGB achievements (100%, The First 10, World Record). This action cannot be undone! Are you sure?');
+            if (confirmed) {
+                const finalConfirm = confirm('This is your final warning. Type "DELETE RGB" in the next prompt to confirm.');
+                const userInput = finalConfirm ? prompt('Type "DELETE RGB" to confirm:') : null;
+                if (userInput === 'DELETE RGB') {
+                    resetRGBAchievements();
+                    alert('✅ RGB achievements have been reset!');
+                } else {
+                    alert('Cancelled.');
+                }
+            }
+        });
+        resetRGBBtn._wired = true;
     }
 
     const devClose = document.getElementById('devCloseBtn');
@@ -1207,6 +1462,46 @@ function wireMenuUi() {
         instaGenChk._wired = true;
     }
 
+    // Night Vision Mode checkbox
+    const nightVisionChk = document.getElementById('nightVisionModeChk');
+    if (nightVisionChk && !nightVisionChk._wired) {
+        nightVisionChk.addEventListener('change', () => {
+            if (gameState && gameState.settings) {
+                gameState.settings.nightVisionMode = !!nightVisionChk.checked;
+                console.log('[dev] Night Vision Mode:', gameState.settings.nightVisionMode);
+            }
+        });
+        // Initialize checkbox from gameState
+        if (gameState && gameState.settings) {
+            nightVisionChk.checked = !!gameState.settings.nightVisionMode;
+        }
+        nightVisionChk._wired = true;
+    }
+
+    // Show Skin Abilities checkbox
+    const showSkinAbilitiesChk = document.getElementById('showSkinAbilitiesChk');
+    if (showSkinAbilitiesChk && !showSkinAbilitiesChk._wired) {
+        showSkinAbilitiesChk.addEventListener('change', () => {
+            window.__showSkinAbilities = !!showSkinAbilitiesChk.checked;
+            if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+            console.log('[dev] Show Skin Abilities:', window.__showSkinAbilities);
+        });
+        window.__showSkinAbilities = !!showSkinAbilitiesChk.checked;
+        showSkinAbilitiesChk._wired = true;
+    }
+
+    // Show Achievement Info checkbox
+    const showAchievementInfoChk = document.getElementById('showAchievementInfoChk');
+    if (showAchievementInfoChk && !showAchievementInfoChk._wired) {
+        showAchievementInfoChk.addEventListener('change', () => {
+            window.__showAchievementInfo = !!showAchievementInfoChk.checked;
+            if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+            console.log('[dev] Show Achievement Info:', window.__showAchievementInfo);
+        });
+        window.__showAchievementInfo = !!showAchievementInfoChk.checked;
+        showAchievementInfoChk._wired = true;
+    }
+
     // Dev menu unlock toggles with save/restore functionality
     const unlockAllSkinsBtn = document.getElementById('unlockAllSkinsBtn');
     const unlockAllAchievementsBtn = document.getElementById('unlockAllAchievementsBtn');
@@ -1216,20 +1511,14 @@ function wireMenuUi() {
     
     // Unlock All Skins button
     if (unlockAllSkinsBtn && !unlockAllSkinsBtn._wired) {
-        unlockAllSkinsBtn.addEventListener('click', () => {
+        unlockAllSkinsBtn.addEventListener('click', async () => {
             try {
-                // Directly unlock all skins in localStorage
-                const skinsData = localStorage.getItem('smg_skins');
-                let skins = skinsData ? JSON.parse(skinsData) : [];
-                skins.forEach(s => s.unlocked = true);
-                localStorage.setItem('smg_skins', JSON.stringify(skins));
-                
-                // Trigger all necessary events and UI updates
+                const mod = await import('./skins.js');
+                if (mod.unlockAllSkins) mod.unlockAllSkins();
                 if (typeof initSkins === 'function') initSkins();
                 if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
                 if (typeof buildMenu === 'function') buildMenu();
                 if (typeof showMenu === 'function') showMenu();
-                
                 showBottomAlert('✨ All skins unlocked!', 2000);
             } catch (e) {
                 console.log('Could not unlock skins', e);
@@ -1243,33 +1532,31 @@ function wireMenuUi() {
     if (unlockAllAchievementsBtn && !unlockAllAchievementsBtn._wired) {
         unlockAllAchievementsBtn.addEventListener('click', () => {
             try {
-                // Get all achievement IDs from ACHIEVEMENTS array
-                const allAchievementIds = [
-                    'level1_clear', 'level5_clear', 'level10_clear', 'game_complete',
-                    'ending_good', 'ending_bad', 'ending_virus',
-                    'speedrun_level_60s', 'speedrun_level3_30s', 'speedrun_game_25m',
-                    'no_abilities_level', 'no_abilities_3_consecutive', 'deathless_3_levels', 'deathless_game', 'perfect_shield_10',
-                    'boss_mount_3_pigs', 'boss_no_reload',
-                    'endless_wave_10', 'endless_wave_20', 'endless_wave_30', 'endless_perfect_wave',
-                    'generator_perfect_3', 'generator_perfect_10',
-                    'secret_note', 'secret_level11_power', 'secret_code_alpha', 'pet_pig', 'hub_dance'
-                ];
-                
-                // Directly set achievements in localStorage
-                const now = Date.now();
-                const unlockedAchievements = allAchievementIds.map(id => ({
-                    id: id,
-                    unlockedAt: now
-                }));
-                localStorage.setItem('smg_achievements', JSON.stringify(unlockedAchievements));
-                
-                // Trigger all necessary events and UI updates
-                if (typeof initAchievements === 'function') initAchievements();
-                if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
-                if (typeof buildMenu === 'function') buildMenu();
-                if (typeof showMenu === 'function') showMenu();
-                
-                showBottomAlert('🏆 All achievements unlocked!', 2000);
+                import('./achievements.js').then(mod => {
+                    const list = Array.isArray(mod.ACHIEVEMENTS) ? mod.ACHIEVEMENTS : [];
+                    const allAchievementIds = list.length ? list.map(a => a.id) : [];
+                    const now = Date.now();
+                    const unlockedAchievements = (allAchievementIds.length ? allAchievementIds : []).map(id => ({ id, unlockedAt: now }));
+                    localStorage.setItem('smg_achievements', JSON.stringify(unlockedAchievements));
+
+                    // Auto-unlock any skins tied to achievements (including new ones)
+                    import('./skins.js').then(skinsMod => {
+                        if (skinsMod.unlockSkin && list.length) {
+                            list.forEach(a => {
+                                if (a.unlockSkin) skinsMod.unlockSkin(a.unlockSkin, 'Dev unlock');
+                            });
+                        }
+                    }).catch(() => {});
+
+                    if (typeof initAchievements === 'function') initAchievements();
+                    if (typeof initAchievementsSkinsUI === 'function') initAchievementsSkinsUI();
+                    if (typeof buildMenu === 'function') buildMenu();
+                    if (typeof showMenu === 'function') showMenu();
+                    showBottomAlert('🏆 All achievements unlocked!', 2000);
+                }).catch(e => {
+                    console.log('Could not unlock achievements', e);
+                    showBottomAlert('❌ Error unlocking achievements', 2000);
+                });
             } catch (e) {
                 console.log('Could not unlock achievements', e);
                 showBottomAlert('❌ Error unlocking achievements', 2000);
@@ -1354,24 +1641,13 @@ function wireMenuUi() {
     
     // Builder Mode button
     const builderBtn = document.querySelector("button[data-level='builder']");
-    const builderMenu = document.getElementById('builderMenu');
     if (builderBtn && !builderBtn._wired) {
         builderBtn.addEventListener('click', () => {
-            showBottomAlert('🏗️ Builder Mode coming soon!', 3000);
+            window.location.href = 'level-builder.html';
         });
         builderBtn._wired = true;
     }
     
-    // Builder Mode menu handler
-    const builderBackBtn = document.getElementById('builderBackBtn');
-    if (builderBackBtn && !builderBackBtn._wired) {
-        builderBackBtn.addEventListener('click', () => {
-            if (builderMenu) builderMenu.style.display = 'none';
-            showMenu();
-        });
-        builderBackBtn._wired = true;
-    }
-
     // Endless overlay controls
     const endlessStart = document.getElementById('endlessStartBtn');
     const endlessCancel = document.getElementById('endlessCancelBtn');
@@ -1452,9 +1728,9 @@ function wireMenuUi() {
             // Reveal credits button if unlocked (after beating the game)
             const creditsBtn = document.getElementById('viewCreditsBtn');
             if (creditsBtn) creditsBtn.style.display = isSecretUnlocked() ? 'inline-block' : 'none';
-            // Reveal bazooka mode if secret unlocked
+            // Reveal bazooka mode if unlocked via ECHOMAZE code
             const secretButtonContainer = document.getElementById('secretButtonContainer');
-            if (isSecretUnlocked()) {
+            if (isBazookaModeUnlocked()) {
                 if (bazookaModeSection) bazookaModeSection.style.display = 'block';
                 if (bazookaModeChk) bazookaModeChk.checked = isBazookaMode();
                 if (secretButtonContainer) secretButtonContainer.style.display = 'none';
@@ -1581,14 +1857,14 @@ function wireMenuUi() {
             const currentState = isBazookaMode();
             
             if (newState !== currentState) {
-                // Warn that progress reset is required
+                // Warn that level reset is required (not achievements/skins)
                 const action = newState ? 'enable' : 'disable';
-                const confirmed = confirm(`⚠️ To ${action} Bazooka Mode, you must reset your progress. Continue?`);
+                const confirmed = confirm(`⚠️ To ${action} Bazooka Mode, you must reset your level progress (achievements and skins will be kept). Continue?`);
                 
                 if (confirmed) {
                     setBazookaMode(newState);
-                    resetProgress();
-                    alert(`🚀 Bazooka Mode ${newState ? 'enabled' : 'disabled'}! Progress has been reset.`);
+                    resetLevelsOnly(); // Only reset levels, not achievements or skins
+                    alert(`🚀 Bazooka Mode ${newState ? 'enabled' : 'disabled'}! Level progress has been reset (achievements and skins preserved).`);
                     showMenu(); // Refresh menu
                 } else {
                     // Revert checkbox to previous state
@@ -1763,128 +2039,7 @@ function updateEndlessMenuStats() {
     if ($('statTotalRuns')) $('statTotalRuns').textContent = stats.lifetimeStats.totalRuns || 0;
 }
 
-function populateUpgradesList() {
-    const upgradesList = document.getElementById('upgradesList');
-    if (!upgradesList) return;
-    
-    const stats = (typeof window !== 'undefined' && window.getEndlessProgression) ? window.getEndlessProgression() : null;
-    if (!stats) return;
-    upgradesList.innerHTML = '';
-    
-    const upgrades = [
-        { id: 'startingLives', name: 'Extra Lives', description: 'Start with additional lives', icon: '❤️', baseCost: 50, maxLevel: 3, valueFormatter: (level) => `+${level} lives` },
-        { id: 'staminaBoost', name: 'Stamina Boost', description: 'Increase maximum stamina', icon: '⚡', baseCost: 40, maxLevel: 5, valueFormatter: (level) => `+${level * 20}%` },
-        { id: 'generatorSpeedUp', name: 'Fast Generators', description: 'Generators start with progress', icon: '⚙️', baseCost: 60, maxLevel: 4, valueFormatter: (level) => `${level * 25}% start` },
-        { id: 'movementSpeed', name: 'Movement Speed', description: 'Move faster permanently', icon: '🏃', baseCost: 45, maxLevel: 3, valueFormatter: (level) => `+${level * 10}%` },
-        { id: 'jumpChargeSpeed', name: 'Quick Jump', description: 'Charge jumps faster', icon: '🦘', baseCost: 35, maxLevel: 5, valueFormatter: (level) => `+${level * 20}%` },
-        { id: 'startWithDoubleJump', name: 'Start with Double Jump', description: 'Begin runs with double jump ability', icon: '⬆️', baseCost: 100, maxLevel: 1, valueFormatter: () => 'Unlocked' },
-        { id: 'startWithShield', name: 'Start with Shield', description: 'Begin runs with wall shield', icon: '🛡️', baseCost: 80, maxLevel: 1, valueFormatter: () => 'Unlocked' }
-    ];
-    
-    upgrades.forEach(upgrade => {
-        const currentLevel = stats.permanentUpgrades[upgrade.id] || 0;
-        const isMaxed = currentLevel >= upgrade.maxLevel;
-        const nextCost = isMaxed ? 0 : upgrade.baseCost * (currentLevel + 1);
-        const canAfford = stats.availablePoints >= nextCost && !isMaxed;
-        
-        const upgradeDiv = document.createElement('div');
-        upgradeDiv.style.cssText = `
-            background: ${isMaxed ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)'};
-            border: 2px solid ${isMaxed ? '#00ff88' : '#444'};
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        `;
-        
-        upgradeDiv.innerHTML = `
-            <div style="font-size: 32px;">${upgrade.icon}</div>
-            <div style="flex: 1;">
-                <div style="font-size: 18px; font-weight: bold; color: #fff;">
-                    ${upgrade.name}
-                    <span style="color: #00ff88; font-size: 16px;">
-                        ${currentLevel > 0 ? `[${upgrade.valueFormatter(currentLevel)}]` : ''}
-                    </span>
-                </div>
-                <div style="font-size: 14px; color: #aaa; margin-top: 4px;">
-                    ${upgrade.description}
-                </div>
-                <div style="font-size: 14px; color: #88ffaa; margin-top: 8px;">
-                    Level: ${currentLevel} / ${upgrade.maxLevel}
-                    ${!isMaxed ? `• Next: ${nextCost} points` : '• MAX'}
-                </div>
-            </div>
-            <button 
-                id="upgrade_${upgrade.id}" 
-                ${isMaxed ? 'disabled' : ''}
-                style="
-                    padding: 12px 24px;
-                    background: ${canAfford ? '#00ff88' : '#444'};
-                    color: ${canAfford ? '#000' : '#666'};
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    cursor: ${canAfford ? 'pointer' : 'not-allowed'};
-                    font-family: 'Courier New', monospace;
-                    ${isMaxed ? 'display: none;' : ''}
-                "
-            >${canAfford ? 'BUY' : 'LOCKED'}</button>
-        `;
-        
-        const button = upgradeDiv.querySelector(`#upgrade_${upgrade.id}`);
-        if (button && canAfford) {
-            button.addEventListener('click', () => {
-                if (purchaseUpgrade(upgrade.id)) {
-                    updateEndlessMenuStats();
-                    populateUpgradesList();
-                }
-            });
-        }
-        
-        upgradesList.appendChild(upgradeDiv);
-    });
-}
 
-function populateAbilitySchedule() {
-    const schedule = document.getElementById('abilitySchedule');
-    if (!schedule) return;
-    
-    const abilities = [
-        { room: 5, name: 'Double Jump', icon: '⬆️', description: 'Jump twice in mid-air' },
-        { room: 10, name: 'Reduced Stamina', icon: '⚡', description: '50% less stamina usage' },
-        { room: 15, name: 'Shield Durability', icon: '🛡️', description: 'Shield takes 5 hits' },
-        { room: 20, name: 'Infinite Projectiles', icon: '🔫', description: 'Unlimited shield ammo' },
-        { room: 25, name: 'Extra Life', icon: '❤️', description: '+1 life (one time)' },
-        { room: 30, name: 'Speed Boost', icon: '🏃', description: '30% faster movement' },
-        { room: 35, name: 'Fast Repair', icon: '⚙️', description: 'Generators 2x speed' },
-        { room: 40, name: 'Extended Jump', icon: '🦘', description: 'Super jump charge' }
-    ];
-    
-    schedule.innerHTML = abilities.map(ability => `
-        <div style="
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 6px;
-            margin-bottom: 8px;
-        ">
-            <div style="font-size: 24px;">${ability.icon}</div>
-            <div style="flex: 1;">
-                <div style="font-weight: bold; color: #00ff88;">
-                    Room ${ability.room}: ${ability.name}
-                </div>
-                <div style="font-size: 12px; color: #aaa;">
-                    ${ability.description}
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
 
 function showEndlessOverlay() {
     const ov = document.getElementById('endlessOverlay');
@@ -1985,7 +2140,10 @@ function startEndlessRun(cfg) {
     if (menu) menu.style.display = 'none';
     if (gameContainer) gameContainer.style.display = 'flex';
     gameState.mode = 'endless';
+    gameState.endlessMode = true; // Flag for endless mode (used by renderer for cyan walls)
+    gameState.currentLevel = 100; // Endless mode uses level 100 as identifier
     gameState.endlessConfig = { ...cfg, streak: (gameState.endlessConfig && gameState.endlessConfig.streak) || 0 };
+    gameState.mazeDirty = true; // Force maze rebuild with endless colors
 
     // Mobile: Show controls when game starts
     loadMobileControls().then(m => m.showMobileControls());
@@ -2332,12 +2490,34 @@ async function startApp() {
     initNotifications();
     initAchievementsSkinsUI();
 
+    // Initialize dev tools for testing
+    initDevTools();
+
     // Mobile: Initialize virtual controls if on touch device
     const mobile = await loadMobileControls();
     const mobileControls = mobile.initMobileControls();
     if (mobileControls) {
         setupMobileInput(mobileControls);
         console.log('Mobile controls ready');
+    }
+
+    // Builder playtest support: load custom level and jump straight into play
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('custom') === '1') {
+        try {
+            const customLevelJson = localStorage.getItem('customLevel');
+            if (customLevelJson) {
+                const customLevel = JSON.parse(customLevelJson);
+                gameState.customLevel = customLevel;
+                gameState.customLevelActive = true;
+                gameState.currentLevel = 1;
+                wireMenuUi();
+                startLevel('custom');
+                return;
+            }
+        } catch (e) {
+            console.error('Failed to load custom level:', e);
+        }
     }
 
     wireMenuUi();

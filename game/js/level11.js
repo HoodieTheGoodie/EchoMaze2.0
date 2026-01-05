@@ -133,6 +133,8 @@ export function initLevel11() {
     gameState.enemiesFrozenUntil = 0;
     gameState.playerInvincibleUntil = 0;
     gameState.inputLocked = false;
+    // CRITICAL: Clear old level11 bat system to prevent dual bat systems
+    gameState.level11 = null;
     gameState.bossVictory = false;
     
     // Disable abilities for Level 11
@@ -278,6 +280,10 @@ function buildPuzzleRoom() {
  */
 function buildMazeRoom() {
     console.log('[Level 11] Building dark maze room (pitch black, proper maze)');
+    // Ensure flashlight is OFF when entering maze
+    level11State.inventory.flashlightOn = false;
+    level11State.mazeRoomLoadTime = performance.now();
+    level11State.flashlightActivatedInMaze = false;  // Track if flashlight has been used in THIS maze
     const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.WALL));
     
     // Create a medium-sized maze area (16x16 from x:4-19, y:7-22)
@@ -380,13 +386,21 @@ function buildMazeRoom() {
     gameState.maze = grid;
     level11State.rooms.maze.visited = true;
     
-    // Reset bat positions - 4 bats spread around the maze
+    // Find valid spawn positions for player (start) and bats (opposite side)
+    // Player always spawns at (1,1), so bats should spawn near bottom-right
     const batSpawns = [
-        { x: mazeLeft + 2, y: mazeTop + 2 },
-        { x: mazeRight - 2, y: mazeTop + 2 },
-        { x: mazeLeft + 2, y: mazeBottom - 2 },
-        { x: mazeRight - 2, y: mazeBottom - 2 }
+        { x: mazeRight - 3, y: mazeBottom - 3 },
+        { x: mazeRight - 3, y: mazeBottom - 5 }
     ];
+    
+    // ENSURE bats never spawn on player
+    for (const spawn of batSpawns) {
+        if (spawn.x === gameState.player.x && spawn.y === gameState.player.y) {
+            console.warn('[WARNING] Bat spawn position overlaps player! Adjusting...');
+            spawn.x = mazeRight - 5;
+            spawn.y = mazeBottom - 5;
+        }
+    }
     
     // Make sure bat spawns are on empty cells
     for (const spawn of batSpawns) {
@@ -405,10 +419,16 @@ function buildMazeRoom() {
         moving: false,
         nextMoveTime: performance.now() + 1000 + idx * 300,
         exposureTime: 0,
-        id: idx
+        aggro: false,
+        exposureStartTime: null,  // Track when exposure started
+        frozen: true,  // NEW: Bats start FROZEN until flashlight is activated
+        id: idx,
+        shieldHealth: 0
     }));
     
     console.log('[Level 11] Dark maze built with', level11State.rooms.maze.enemies.length, 'bats, key at', level11State.rooms.maze.yellowKeyPos);
+    console.log('[Level 11] Player spawned at:', gameState.player.x, gameState.player.y);
+    console.log('[Level 11] Bat positions:', level11State.rooms.maze.enemies.map(b => ({ x: b.gridX, y: b.gridY })));
 }
 
 /**
@@ -793,8 +813,10 @@ export function updateLevel11(currentTime) {
 
 /**
  * Update maze enemies with flashlight exposure mechanics
- * Bats: STRICTLY grid-locked movement, stalk player aggressively in darkness
- * If flashlight shines on bat for 0.5+ seconds, the bat kills the player
+ * Bats: Grid-locked movement, frozen until flashlight is activated
+ * Then only stalk when aggroed (3s flashlight exposure)
+ * Aggroed bats have light aura around them so you can see them in darkness
+ * Bats must actually catch the player to kill (not instant on exposure)
  */
 function updateMazeEnemies(currentTime) {
     const enemies = level11State.rooms.maze.enemies;
@@ -802,16 +824,36 @@ function updateMazeEnemies(currentTime) {
     
     const px = Math.round(gameState.player.x);
     const py = Math.round(gameState.player.y);
+    // Flashlight must be both ON and player must HAVE the flashlight item
     const flashlightOn = level11State.inventory.flashlightOn && level11State.inventory.flashlight;
     
-    const MOVE_INTERVAL = 600; // ms between moves - faster stalking
+    // DETECT FIRST FLASHLIGHT ACTIVATION IN THIS MAZE
+    if (flashlightOn && !level11State.flashlightActivatedInMaze) {
+        level11State.flashlightActivatedInMaze = true;
+        console.log('[maze] FLASHLIGHT ACTIVATED FOR FIRST TIME - Unfreezing bats!');
+        // Unfreeze all bats
+        for (const enemy of enemies) {
+            enemy.frozen = false;
+        }
+    }
+    
+    // DEBUG: Log if flashlight state seems wrong
+    if (enemies[0] && !enemies[0]._flashlightChecked) {
+        console.log('[maze] Flashlight state - ON:', level11State.inventory.flashlightOn, ', HAS:', level11State.inventory.flashlight, ', Combined:', flashlightOn);
+        console.log('[maze] Bats frozen:', enemies.map(e => ({ id: e.id, frozen: e.frozen, aggro: e.aggro, x: e.gridX, y: e.gridY })));
+        console.log('[maze] Player at:', px, py);
+        enemies[0]._flashlightChecked = true;
+    }
+    
+    const MOVE_INTERVAL = 600; // ms between moves - slower grid-locked movement
     
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
         
         // === Check if enemy is exposed by flashlight beam ===
+        // CRITICAL: Only check beam if flashlight is ON and player HAS flashlight
         let isExposedByBeam = false;
-        if (flashlightOn) {
+        if (flashlightOn && level11State.inventory.flashlight && level11State.inventory.flashlightOn) {
             const beamStartX = gameState.player.x + 0.5;
             const beamStartY = gameState.player.y + 0.5;
             
@@ -854,18 +896,28 @@ function updateMazeEnemies(currentTime) {
         
         // === Update exposure time ===
         if (isExposedByBeam) {
-            enemy.exposureTime = (enemy.exposureTime || 0) + 16.67;
+            // Mark when exposure started if not already tracking
+            if (!enemy.exposureStartTime) {
+                enemy.exposureStartTime = currentTime;
+                console.log('[bat exposure] Bat', enemy.id, 'exposure started');
+            }
+            // Calculate real elapsed time since exposure started
+            enemy.exposureTime = currentTime - enemy.exposureStartTime;
         } else {
             enemy.exposureTime = 0;
+            enemy.exposureStartTime = null;
+            // If flashlight is OFF, de-aggro the bat
+            if (!flashlightOn) {
+                enemy.aggro = false;
+            }
         }
         
-        // === KILL PLAYER if bat exposed for 0.5+ seconds ===
-        if (enemy.exposureTime >= 500) {
-            setStatusMessage('The bat attacked! Light angered it!');
-            setTimeout(() => {
-                transitionToRoom('hub');
-            }, 800);
-            return;
+        // === Aggro bat if exposed for ~3s (3000ms) ===
+        if (enemy.exposureTime >= 3000) {
+            if (!enemy.aggro) {
+                enemy.aggro = true;
+                console.log('[bat aggro] Bat', enemy.id, 'entering RAGE MODE! Exposure time:', enemy.exposureTime);
+            }
         }
         
         // === STRICTLY Grid-based movement (no interpolation) ===
@@ -873,10 +925,12 @@ function updateMazeEnemies(currentTime) {
         enemy.fx = enemy.gridX;
         enemy.fy = enemy.gridY;
         
-        // === Move to new grid position when timer expires ===
-        if (currentTime >= enemy.nextMoveTime) {
-            // 85% chance to stalk player, 15% random
-            const stalkPlayer = Math.random() < 0.85;
+        // === Move to new grid position when timer expires (ONLY IF NOT FROZEN) ===
+        // Frozen bats don't move until flashlight is activated
+        if (!enemy.frozen && currentTime >= enemy.nextMoveTime) {
+            // Only stalk player if aggroed (exposed to flashlight for 3+ seconds)
+            // Non-aggroed bats NEVER stalk, only wander randomly
+            const stalkPlayer = enemy.aggro && Math.random() < 0.95;
             
             let bestDir = null;
             let bestDist = Infinity;
@@ -939,13 +993,44 @@ function updateMazeEnemies(currentTime) {
             enemy.nextMoveTime = currentTime + MOVE_INTERVAL + Math.random() * 200;
         }
         
-        // === Check collision with player ===
-        if (enemy.gridX === px && enemy.gridY === py) {
-            setStatusMessage('A bat caught you in the darkness!');
-            setTimeout(() => {
-                transitionToRoom('hub');
-            }, 800);
-            return;
+        // === Check collision with player (only deadly in rage mode - when aggroed) ===
+        // SAFEGUARD: Don't allow collision in first 5 SECONDS of room load (player setup time)
+        const roomAgeMs = currentTime - level11State.mazeRoomLoadTime;
+        
+        // ONLY check collision if bat is unfrozen AND aggroed
+        // This is a DOUBLE SAFEGUARD
+        if (enemy.gridX === px && enemy.gridY === py && roomAgeMs > 5000) {
+            console.log('===== BAT COLLISION CHECK =====');
+            console.log('[bat collision] Bat', enemy.id, 'at', enemy.gridX, enemy.gridY, 'Hit player at', px, py);
+            console.log('[bat state] frozen:', enemy.frozen, ' aggro:', enemy.aggro, 'exposureTime:', enemy.exposureTime);
+            console.log('roomAgeMs:', roomAgeMs, 'flashlightOn:', flashlightOn);
+            
+            // SAFEGUARD 1: If bat is frozen, NEVER kill
+            if (enemy.frozen) {
+                console.log('[collision] ❌ FROZEN BAT - NO DAMAGE');
+                setStatusMessage('You bumped a frozen bat!');
+                return;
+            }
+            
+            // SAFEGUARD 2: If bat is not aggroed, NEVER kill
+            if (!enemy.aggro) {
+                console.log('[collision] ❌ CALM BAT - NO DAMAGE');
+                setStatusMessage('A calm bat bumped you.');
+                return;
+            }
+            
+            // SAFEGUARD 3: Only kill if BOTH frozen=false AND aggro=true
+            if (enemy.frozen === false && enemy.aggro === true) {
+                console.log('[collision] ✓ AGGROED + UNFROZEN - DEADLY HIT!');
+                setStatusMessage('A raging bat caught you!');
+                setTimeout(() => {
+                    transitionToRoom('hub');
+                }, 800);
+                return;
+            }
+            
+            // FINAL SAFEGUARD: Anything else = safe
+            console.log('[collision] ❌ OTHER STATE - NO DAMAGE (frozen=' + enemy.frozen + ', aggro=' + enemy.aggro + ')');
         }
     }
 }
@@ -982,6 +1067,12 @@ function updateCutscene(currentTime) {
             text: 'Power Supply disabled!\nData Transfer interrupted!',
             visible: true
         };
+        // Trigger good ending achievement
+        import('./achievements.js').then(mod => {
+            if (mod.checkAchievements) {
+                mod.checkAchievements('ending_reached', { ending: 'good' });
+            }
+        }).catch(() => {});
         
         // After showing message, go back to hub with note spawned
         level11State.cutsceneStartTime = currentTime; // Reset timer
@@ -994,6 +1085,12 @@ function updateCutscene(currentTime) {
             text: 'Warning!\nTransfer complete...',
             visible: true
         };
+        // Trigger bad ending achievement
+        import('./achievements.js').then(mod => {
+            if (mod.checkAchievements) {
+                mod.checkAchievements('ending_reached', { ending: 'bad' });
+            }
+        }).catch(() => {});
         
         level11State.cutsceneStartTime = currentTime;
         level11State.cutsceneStep = 6; // Go to bad credits step

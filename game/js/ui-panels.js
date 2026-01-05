@@ -49,19 +49,56 @@ function renderAchievements() {
 // Create achievement card
 function createAchievementCard(achievement, isUnlocked, devMode) {
     const card = document.createElement('div');
+    
+    // Special RGB styling for elite achievements
+    let cardBackground, cardBorder, cardGlow;
+    if (achievement.isRGB && isUnlocked) {
+        // Rainbow gradient background
+        cardBackground = 'linear-gradient(135deg, rgba(255, 0, 0, 0.1), rgba(255, 127, 0, 0.1), rgba(0, 255, 0, 0.1), rgba(0, 0, 255, 0.1), rgba(75, 0, 130, 0.1), rgba(148, 0, 211, 0.1))';
+        cardBorder = '2px solid transparent';
+        cardGlow = '0 0 30px rgba(255, 0, 255, 0.6), 0 0 60px rgba(0, 255, 255, 0.3)';
+    } else {
+        cardBackground = isUnlocked ? 'linear-gradient(135deg, rgba(0, 246, 255, 0.15), rgba(0, 246, 255, 0.05))' : 'rgba(20, 20, 30, 0.5)';
+        cardBorder = `2px solid ${isUnlocked ? getTierColor(achievement.tier) : 'rgba(100, 100, 100, 0.4)'}`;
+        cardGlow = isUnlocked ? `0 0 20px ${getTierGlow(achievement.tier)}` : '0 0 10px rgba(0,0,0,0.3)';
+    }
+    
     card.style.cssText = `
         display: flex;
         align-items: center;
         gap: 16px;
         padding: 14px;
         margin-bottom: 10px;
-        background: ${isUnlocked ? 'linear-gradient(135deg, rgba(0, 246, 255, 0.15), rgba(0, 246, 255, 0.05))' : 'rgba(20, 20, 30, 0.5)'};
-        border: 2px solid ${isUnlocked ? getTierColor(achievement.tier) : 'rgba(100, 100, 100, 0.4)'};
+        background: ${cardBackground};
+        border: ${cardBorder};
         border-radius: 10px;
-        box-shadow: ${isUnlocked ? `0 0 20px ${getTierGlow(achievement.tier)}` : '0 0 10px rgba(0,0,0,0.3)'};
+        box-shadow: ${cardGlow};
         opacity: ${isUnlocked ? '1' : '0.6'};
         position: relative;
     `;
+    
+    // Add rainbow animation style for RGB achievements
+    if (achievement.isRGB && isUnlocked) {
+        const style = document.createElement('style');
+        const keyframes = `
+            @keyframes rgb-shift {
+                0% { border-color: #ff0000; }
+                16% { border-color: #ff7f00; }
+                33% { border-color: #00ff00; }
+                50% { border-color: #0000ff; }
+                66% { border-color: #4b0082; }
+                83% { border-color: #9400d3; }
+                100% { border-color: #ff0000; }
+            }
+        `;
+        if (!document.querySelector('style[data-rgb-anim]')) {
+            style.setAttribute('data-rgb-anim', 'true');
+            style.textContent = keyframes;
+            document.head.appendChild(style);
+        }
+        card.style.animation = 'rgb-shift 3s infinite';
+        card.style.borderColor = '#ff0000';
+    }
     
     // Icon
     const icon = document.createElement('div');
@@ -85,11 +122,18 @@ function createAchievementCard(achievement, isUnlocked, devMode) {
     textContainer.style.cssText = 'flex: 1; color: white;';
     
     const title = document.createElement('div');
+    let titleColor = isUnlocked ? '#fff' : '#aaa';
+    let titleStyle = '';
+    // RGB rainbow text effect for elite achievements
+    if (achievement.isRGB && isUnlocked) {
+        titleStyle = 'background: linear-gradient(90deg, #ff0000, #ff7f00, #00ff00, #0000ff, #4b0082, #9400d3, #ff0000); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;';
+    }
     title.style.cssText = `
         font-size: 1.1rem;
         font-weight: bold;
-        color: ${isUnlocked ? '#fff' : '#aaa'};
+        color: ${titleColor};
         margin-bottom: 4px;
+        ${titleStyle}
     `;
     title.textContent = achievement.name;
     textContainer.appendChild(title);
@@ -102,6 +146,37 @@ function createAchievementCard(achievement, isUnlocked, devMode) {
     `;
     desc.textContent = achievement.desc;
     textContainer.appendChild(desc);
+    
+    // Dev mode: Show achievement info (unlock method and reward)
+    if (window.__showAchievementInfo) {
+        const unlockInfo = document.createElement('div');
+        unlockInfo.style.cssText = `
+            font-size: 0.8rem;
+            color: #00d9ff;
+            margin-top: 6px;
+            padding: 6px;
+            background: rgba(0, 217, 255, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid #00d9ff;
+        `;
+        
+        let infoText = '';
+        if (achievement.secret) {
+            infoText = '🔐 SECRET ACHIEVEMENT';
+        }
+        if (achievement.unlockSkin) {
+            infoText += (infoText ? ' • ' : '') + `🎨 Unlocks: ${achievement.unlockSkin} skin`;
+        }
+        // Show dev description if available
+        if (achievement.devDesc) {
+            infoText += (infoText ? '<br>' : '') + achievement.devDesc;
+        }
+        
+        if (infoText) {
+            unlockInfo.innerHTML = infoText;
+            textContainer.appendChild(unlockInfo);
+        }
+    }
     
     // Progress bar (if applicable)
     const progress = getAchievementProgress(achievement.id);
@@ -152,7 +227,8 @@ function createAchievementCard(achievement, isUnlocked, devMode) {
         font-weight: bold;
         text-transform: uppercase;
     `;
-    tierBadge.textContent = achievement.tier;
+    // Use displayTier if available (for RGB achievements), otherwise use tier
+    tierBadge.textContent = achievement.displayTier || achievement.tier;
     card.appendChild(tierBadge);
     
     card.appendChild(textContainer);
@@ -223,7 +299,8 @@ function getTierColor(tier) {
         bronze: '#CD7F32',
         silver: '#C0C0C0',
         gold: '#FFD700',
-        platinum: '#E5E4E2'
+        platinum: '#E5E4E2',
+        diamond: '#00D9FF'
     };
     return colors[tier] || colors.bronze;
 }
@@ -234,7 +311,8 @@ function getTierGlow(tier) {
         bronze: 'rgba(205, 127, 50, 0.4)',
         silver: 'rgba(192, 192, 192, 0.4)',
         gold: 'rgba(255, 215, 0, 0.5)',
-        platinum: 'rgba(229, 228, 226, 0.5)'
+        platinum: 'rgba(229, 228, 226, 0.5)',
+        diamond: 'rgba(0, 217, 255, 0.8)'
     };
     return glows[tier] || glows.bronze;
 }
@@ -394,6 +472,39 @@ function createSkinCard(skin, isUnlocked, isEquipped) {
         card.appendChild(unlock);
     }
     
+    // Dev mode: Show skin ability info
+    if (window.__showSkinAbilities && skin.ability) {
+        const abilityInfo = document.createElement('div');
+        abilityInfo.style.cssText = `
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(0, 217, 255, 0.15);
+            border-radius: 6px;
+            border: 2px solid rgba(0, 217, 255, 0.4);
+            font-size: 0.7rem;
+            text-align: left;
+        `;
+        
+        const abilityTitle = document.createElement('div');
+        abilityTitle.style.cssText = `
+            color: #00d9ff;
+            font-weight: bold;
+            margin-bottom: 4px;
+        `;
+        abilityTitle.textContent = `⚡ ${skin.ability}`;
+        abilityInfo.appendChild(abilityTitle);
+        
+        const abilityDesc = document.createElement('div');
+        abilityDesc.style.cssText = `
+            color: #aaa;
+            line-height: 1.3;
+        `;
+        abilityDesc.textContent = skin.abilityDesc || 'No description';
+        abilityInfo.appendChild(abilityDesc);
+        
+        card.appendChild(abilityInfo);
+    }
+    
     // Equipped badge
     if (isEquipped) {
         const badge = document.createElement('div');
@@ -418,7 +529,7 @@ function createSkinCard(skin, isUnlocked, isEquipped) {
 }
 
 // Handle code redemption
-export function handleCodeRedemption() {
+export async function handleCodeRedemption() {
     const input = document.getElementById('skinCodeInput');
     const status = document.getElementById('skinCodeStatus');
     
@@ -431,18 +542,38 @@ export function handleCodeRedemption() {
         return;
     }
     
-    const result = redeemCode(code);
+    const result = await redeemCode(code);
     
     if (result.success) {
         status.textContent = result.message;
         status.style.color = '#66ff66';
         input.value = '';
         
-        // Re-render skins to show newly unlocked
-        setTimeout(() => {
-            renderSkins();
-            status.textContent = '';
-        }, 2000);
+        // Special handling for bazooka mode unlock
+        if (result.bazookaModeUnlocked) {
+            // Show alert and redirect to settings
+            setTimeout(() => {
+                alert('🚀 BAZOOKA MODE unlocked! Head to Settings to enable it.');
+                status.textContent = '';
+                // Close skins panel
+                closeSkinPanel();
+            }, 2000);
+        } else if (result.isRGBAchievement) {
+            // Special handling for RGB achievements
+            setTimeout(() => {
+                alert(result.message);
+                status.textContent = '';
+                closeSkinPanel();
+                // Open achievements to show the new RGB achievement
+                openAchievementsPanel();
+            }, 2000);
+        } else {
+            // Re-render skins to show newly unlocked
+            setTimeout(() => {
+                renderSkins();
+                status.textContent = '';
+            }, 2000);
+        }
     } else {
         status.textContent = result.message;
         status.style.color = '#ff6666';

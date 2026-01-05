@@ -4,7 +4,12 @@ export const LEVEL_COUNT = 11;
 
 // Get color for current level (blue at level 1 -> red at level 10)
 export function getLevelColor(level) {
-    // Clamp level to 1-10
+    // Endless mode (level 100) = purple
+    if (level === 100) {
+        return { r: 179, g: 0, b: 255, css: 'rgb(179, 0, 255)', rgba: (alpha) => `rgba(179, 0, 255, ${alpha})` };
+    }
+    
+    // Clamp level to 1-11
     const l = Math.max(1, Math.min(LEVEL_COUNT, level));
     
     // Level 1 = blue (0, 246, 255), Level 10 = red (255, 0, 0)
@@ -125,6 +130,8 @@ const KEY_GODMODE = 'smg_godMode';
 const KEY_DEVUNLOCK = 'smg_devUnlocked';
 const KEY_SKIP_PREBOSS = 'smg_skip_preboss';
 const KEY_BAZOOKA_MODE = 'smg_bazookaMode';
+const KEY_BAZOOKA_MODE_UNLOCKED = 'smg_bazookaModeUnlocked';
+const KEY_FIRST_10_CODES_USED = 'smg_first10_codes_used'; // Track how many "The First 10" codes have been redeemed
 
 export function getUnlockedLevel() {
     const n = parseInt(localStorage.getItem(KEY_UNLOCKED) || '1', 10);
@@ -137,6 +144,20 @@ export function setUnlockedLevel(level) {
 }
 
 export function resetProgress() {
+    localStorage.setItem(KEY_UNLOCKED, '1');
+    localStorage.setItem(KEY_LEVEL11_UNLOCKED, '0');
+    localStorage.setItem(KEY_TERMINALS_UNLOCKED, JSON.stringify([]));
+    localStorage.setItem(KEY_TERMINAL_ACCESS, JSON.stringify([]));
+    // Clear all best times (1-10)
+    for (let i = 1; i <= LEVEL_COUNT; i++) {
+        try {
+            localStorage.removeItem(`smg_bestTime_L${i}`);
+        } catch {}
+    }
+}
+
+// Reset only level progress (not achievements or skins)
+export function resetLevelsOnly() {
     localStorage.setItem(KEY_UNLOCKED, '1');
     localStorage.setItem(KEY_LEVEL11_UNLOCKED, '0');
     localStorage.setItem(KEY_TERMINALS_UNLOCKED, JSON.stringify([]));
@@ -326,4 +347,33 @@ export function isBazookaMode() {
 }
 export function setBazookaMode(enabled) {
     try { localStorage.setItem(KEY_BAZOOKA_MODE, enabled ? '1' : '0'); } catch {}
+}
+export function isBazookaModeUnlocked() {
+    try { return localStorage.getItem(KEY_BAZOOKA_MODE_UNLOCKED) === '1'; } catch { return false; }
+}
+export function setBazookaModeUnlocked(unlocked) {
+    try { localStorage.setItem(KEY_BAZOOKA_MODE_UNLOCKED, unlocked ? '1' : '0'); } catch {}
+}
+
+// RGB Achievement tracking
+export function getFirst10CodesUsed() {
+    try { return parseInt(localStorage.getItem(KEY_FIRST_10_CODES_USED) || '0', 10); } catch { return 0; }
+}
+export function incrementFirst10CodesUsed() {
+    try { 
+        const current = getFirst10CodesUsed();
+        localStorage.setItem(KEY_FIRST_10_CODES_USED, String(current + 1));
+    } catch {}
+}
+export function isFirst10Locked() {
+    return getFirst10CodesUsed() >= 10;
+}
+
+// Reset RGB achievements (dev only)
+export function resetRGBAchievements() {
+    try {
+        // This will trigger achievement unlock system to remove RGB achievements
+        localStorage.removeItem('smg_rgb_achievements_locked');
+        console.log('[config] RGB achievements reset');
+    } catch {}
 }

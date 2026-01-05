@@ -4,8 +4,9 @@ const SKINS_KEY = 'smg_skins';
 const EQUIPPED_SKIN_KEY = 'smg_equippedSkin';
 
 // Skin color palettes and visual effects
+// Ordered by difficulty to unlock - easiest to hardest!
 export const SKINS = [
-    // === Default ===
+    // === TIER 1: START (Always Unlocked) ===
     { 
         id: 'default', 
         name: 'Default', 
@@ -17,180 +18,183 @@ export const SKINS = [
         particle: null
     },
     
-    // === Progression Unlocks ===
+    // === TIER 2: EARLY GAME (Complete Level 5) ===
     { 
         id: 'rookie', 
         name: 'Rookie', 
-        desc: 'Green trainee colors', 
+        desc: 'Green trainee - pulsing with potential', 
         unlocked: false, 
         unlockMethod: 'Complete Level 5',
         color: { r: 34, g: 139, b: 34 }, 
         sprintColor: { r: 50, g: 205, b: 50 },
-        glow: false,
-        particle: null
+        glow: true,
+        particle: 'spark',
+        pulseEffect: true
     },
+    
+    // === TIER 3: MID GAME (Defeat Core) ===
     { 
         id: 'veteran', 
         name: 'Veteran', 
-        desc: 'Battle-hardened crimson', 
+        desc: 'Battle-hardened crimson with aura', 
         unlocked: false, 
         unlockMethod: 'Defeat the Core',
         color: { r: 139, g: 0, b: 0 }, 
         sprintColor: { r: 255, g: 0, b: 0 },
-        glow: false,
-        particle: null
+        glow: true,
+        particle: 'explosion',
+        metallicEffect: true
     },
+    
+    // === TIER 4: SKILLFUL (Reflect 10 Projectiles) ===
+    { 
+        id: 'defender', 
+        name: 'Defender', 
+        desc: 'Shield master - shimmering steel', 
+        unlocked: false, 
+        unlockMethod: 'Reflect 10 projectiles',
+        color: { r: 192, g: 192, b: 192 }, 
+        sprintColor: { r: 211, g: 211, b: 211 },
+        glow: true,
+        particle: 'spark',
+        metallicEffect: true,
+        ability: 'bonus_trap',
+        abilityDesc: '+1 trap capacity for each generator completed'
+    },
+    
+    // === TIER 5: GAME COMPLETION (Complete the Game) ===
     { 
         id: 'engineer', 
         name: 'Engineer', 
-        desc: 'Golden repair specialist', 
+        desc: 'Golden specialist - radiating brilliance', 
         unlocked: false, 
         unlockMethod: 'Complete the game',
         color: { r: 184, g: 134, b: 11 }, 
         sprintColor: { r: 255, g: 215, b: 0 },
         glow: true,
-        particle: null
+        particle: 'spark',
+        metallicEffect: true,
+        pulseEffect: true
     },
     
-    // === Ending Unlocks ===
-    { 
-        id: 'guardian', 
-        name: 'Guardian', 
-        desc: 'Protector of hope - radiant white', 
-        unlocked: false, 
-        unlockMethod: 'Reach the Good Ending',
-        color: { r: 240, g: 248, b: 255 }, 
-        sprintColor: { r: 255, g: 250, b: 205 },
-        glow: true,
-        particle: 'sparkle'
-    },
-    { 
-        id: 'shadow', 
-        name: 'Shadow', 
-        desc: 'Lurker in darkness - deep purple', 
-        unlocked: false, 
-        unlockMethod: 'Reach the Bad Ending',
-        color: { r: 75, g: 0, b: 130 }, 
-        sprintColor: { r: 138, g: 43, b: 226 },
-        glow: false,
-        particle: 'smoke'
-    },
-    { 
-        id: 'corrupted', 
-        name: 'Corrupted', 
-        desc: 'Infected by the virus - glitching green', 
-        unlocked: false, 
-        unlockMethod: 'Reach the Virus Ending',
-        color: { r: 0, g: 100, b: 0 }, 
-        sprintColor: { r: 0, g: 255, b: 0 },
-        glow: true,
-        particle: 'glitch',
-        glitchEffect: true
-    },
-    
-    // === Speed Run Unlocks ===
+    // === TIER 6: SPEED CHALLENGE (Complete Level Under 60s) ===
     { 
         id: 'blitz', 
         name: 'Blitz', 
-        desc: 'Lightning-fast yellow streak', 
+        desc: 'Lightning-fast yellow streak - electrified', 
         unlocked: false, 
         unlockMethod: 'Complete any level under 60s',
         color: { r: 255, g: 255, b: 0 }, 
         sprintColor: { r: 255, g: 215, b: 0 },
-        glow: false,
-        particle: 'lightning'
-    },
-    { 
-        id: 'chrono', 
-        name: 'Chrono', 
-        desc: 'Master of time - cyan pulse', 
-        unlocked: false, 
-        unlockMethod: 'Complete game under 25 minutes',
-        color: { r: 0, g: 191, b: 255 }, 
-        sprintColor: { r: 64, g: 224, b: 208 },
         glow: true,
-        particle: 'clock',
-        pulseEffect: true
+        particle: 'wallHit'
     },
     
-    // === Challenge Unlocks ===
-    { 
-        id: 'minimal', 
-        name: 'Minimal', 
-        desc: 'Stripped down - gray silhouette', 
-        unlocked: false, 
-        unlockMethod: 'Complete 3 levels without abilities',
-        color: { r: 128, g: 128, b: 128 }, 
-        sprintColor: { r: 169, g: 169, b: 169 },
-        glow: false,
-        particle: null
-    },
-    { 
-        id: 'ghost', 
-        name: 'Ghost', 
-        desc: 'Untouchable phantom - translucent white', 
-        unlocked: false, 
-        unlockMethod: 'Complete game without dying',
-        color: { r: 255, g: 255, b: 255 }, 
-        sprintColor: { r: 240, g: 255, b: 255 },
-        glow: true,
-        particle: 'spirit',
-        opacity: 0.7
-    },
-    { 
-        id: 'defender', 
-        name: 'Defender', 
-        desc: 'Shield master - fortified steel', 
-        unlocked: false, 
-        unlockMethod: 'Reflect 10 projectiles',
-        color: { r: 192, g: 192, b: 192 }, 
-        sprintColor: { r: 211, g: 211, b: 211 },
-        glow: false,
-        particle: null,
-        metallicEffect: true
-    },
-    
-    // === Boss Unlocks ===
-    { 
-        id: 'marksman', 
-        name: 'Marksman', 
-        desc: 'One-clip wonder - orange blaze', 
-        unlocked: false, 
-        unlockMethod: 'Secret Achievement',
-        color: { r: 255, g: 140, b: 0 }, 
-        sprintColor: { r: 255, g: 165, b: 0 },
-        glow: false,
-        particle: 'fire'
-    },
-    
-    // === Endless Unlocks ===
-    { 
-        id: 'infinite', 
-        name: 'Infinite', 
-        desc: 'Endless survivor - shifting rainbow', 
-        unlocked: false, 
-        unlockMethod: 'Reach wave 30 in Endless',
-        color: { r: 255, g: 0, b: 255 }, 
-        sprintColor: { r: 0, g: 255, b: 255 },
-        glow: true,
-        particle: 'rainbow',
-        rainbowEffect: true
-    },
-    
-    // === Skill Unlocks ===
+    // === TIER 7: PERFECT SKILLS (10 Perfect Skill Checks) ===
     { 
         id: 'technician', 
         name: 'Technician', 
-        desc: 'Master mechanic - electric blue', 
+        desc: 'Master mechanic - glowing circuits', 
         unlocked: false, 
         unlockMethod: '10 perfect skill checks',
         color: { r: 30, g: 144, b: 255 }, 
         sprintColor: { r: 0, g: 191, b: 255 },
         glow: true,
-        particle: 'spark'
+        particle: 'generator',
+        pulseEffect: true,
+        ability: 'fast_repair',
+        abilityDesc: 'Only need 2 skill checks to complete generators (instead of 3)'
     },
     
-    // === Secret Unlocks ===
+    // === TIER 8: ENDING ROUTES (Reach Good/Bad/Virus Ending) ===
+    { 
+        id: 'shadow', 
+        name: 'Shadow', 
+        desc: 'Lurker in darkness - ethereal mist', 
+        unlocked: false, 
+        unlockMethod: 'Reach the Bad Ending',
+        color: { r: 75, g: 0, b: 130 }, 
+        sprintColor: { r: 138, g: 43, b: 226 },
+        glow: true,
+        particle: 'damage',
+        pulseEffect: true
+    },
+    { 
+        id: 'guardian', 
+        name: 'Guardian', 
+        desc: 'Protector - radiant celestial light', 
+        unlocked: false, 
+        unlockMethod: 'Reach the Good Ending',
+        color: { r: 240, g: 248, b: 255 }, 
+        sprintColor: { r: 255, g: 250, b: 205 },
+        glow: true,
+        particle: 'generator',
+        pulseEffect: true
+    },
+    { 
+        id: 'corrupted', 
+        name: 'Corrupted', 
+        desc: 'Virus-infected - glitching reality', 
+        unlocked: false, 
+        unlockMethod: 'Reach the Virus Ending',
+        color: { r: 0, g: 100, b: 0 }, 
+        sprintColor: { r: 0, g: 255, b: 0 },
+        glow: true,
+        particle: 'wallHit',
+        glitchEffect: true
+    },
+    
+    // === TIER 9: PERFECT RUN (Complete Game Without Dying) ===
+    { 
+        id: 'ghost', 
+        name: 'Ghost', 
+        desc: 'Untouchable phantom - translucent spectral', 
+        unlocked: false, 
+        unlockMethod: 'Complete game without dying',
+        color: { r: 255, g: 255, b: 255 }, 
+        sprintColor: { r: 240, g: 255, b: 255 },
+        glow: true,
+        particle: 'generator',
+        opacity: 0.7,
+        pulseEffect: true,
+        ability: 'phase_through',
+        abilityDesc: '50% chance to phase through enemy damage'
+    },
+    
+    // === TIER 10: SPEED RUN MASTER (Complete Game Under 25 Minutes) ===
+    { 
+        id: 'chrono', 
+        name: 'Chrono', 
+        desc: 'Master of time - warping reality', 
+        unlocked: false, 
+        unlockMethod: 'Complete game under 25 minutes',
+        color: { r: 0, g: 191, b: 255 }, 
+        sprintColor: { r: 64, g: 224, b: 208 },
+        glow: true,
+        particle: 'generator',
+        pulseEffect: true,
+        ability: 'stamina_regen',
+        abilityDesc: 'Stamina regenerates 50% faster'
+    },
+    
+    // === TIER 11: ENDLESS MODE (Wave 30) ===
+    { 
+        id: 'infinite', 
+        name: 'Infinite', 
+        desc: 'Endless survivor - shifting rainbow reality', 
+        unlocked: false, 
+        unlockMethod: 'Reach wave 30 in Endless',
+        color: { r: 255, g: 0, b: 255 }, 
+        sprintColor: { r: 0, g: 255, b: 255 },
+        glow: true,
+        particle: 'generator',
+        rainbowEffect: true,
+        pulseEffect: true,
+        ability: 'extra_life',
+        abilityDesc: 'Start each level with +1 extra life'
+    },
+    
+    // === TIER 12: SECRETS (Secret Achievements) ===
     { 
         id: 'glitch', 
         name: 'Glitch', 
@@ -200,45 +204,136 @@ export const SKINS = [
         color: { r: 255, g: 0, b: 255 }, 
         sprintColor: { r: 255, g: 20, b: 147 },
         glow: true,
-        particle: 'glitch',
-        glitchEffect: true
+        particle: 'wallHit',
+        glitchEffect: true,
+        pulseEffect: true,
+        ability: 'glitch_teleport',
+        abilityDesc: 'Randomly teleport back 2-4 tiles when hit, gain 7s invincibility'
     },
+    { 
+        id: 'phoenix', 
+        name: 'Phoenix', 
+        desc: 'Rise from ashes - rebirth flame', 
+        unlocked: false, 
+        unlockMethod: 'Die 100 times total',
+        color: { r: 255, g: 69, b: 0 }, 
+        sprintColor: { r: 255, g: 140, b: 0 },
+        glow: true,
+        particle: 'explosion',
+        pulseEffect: true,
+        ability: 'phoenix_shield',
+        abilityDesc: 'On reaching 1 HP: gain orange shield. First hit breaks shield, +1 life, 7s invincibility.'
+    },
+    { 
+        id: 'time_lord', 
+        name: 'Time Lord', 
+        desc: 'Master of causality - time manipulation', 
+        unlocked: false, 
+        unlockMethod: 'Complete game in under 20 minutes',
+        color: { r: 138, g: 43, b: 226 }, 
+        sprintColor: { r: 186, g: 85, b: 211 },
+        glow: true,
+        particle: 'generator',
+        pulseEffect: true,
+        ability: 'time_slow',
+        abilityDesc: 'Enemies move 25% slower'
+    },
+    
+    // === TIER 13: ULTIMATE SECRET (Void Code) ===
     { 
         id: 'void', 
         name: 'Void', 
-        desc: 'Emptiness incarnate - pure black', 
+        desc: 'Emptiness incarnate - consuming all light', 
         unlocked: false, 
         unlockMethod: 'Enter secret code',
         color: { r: 0, g: 0, b: 0 }, 
         sprintColor: { r: 25, g: 25, b: 25 },
-        glow: false,
-        particle: 'void',
-        voidEffect: true
+        glow: true,
+        particle: 'damage',
+        voidEffect: true,
+        pulseEffect: true,
+        ability: 'projectile_absorb',
+        abilityDesc: 'Absorb all projectiles - they heal you instead of damaging'
+    },
+    
+    // === TIER 14: 100% COMPLETION - THE ULTIMATE SKIN ===
+    { 
+        id: 'hundred_percent', 
+        name: '100%MAN', 
+        desc: 'PERFECTION ACHIEVED - Reality bends to your will', 
+        unlocked: false, 
+        unlockMethod: 'Unlock all achievements (100% completion)',
+        color: { r: 255, g: 215, b: 0 }, 
+        sprintColor: { r: 255, g: 255, b: 255 },
+        glow: true,
+        particle: 'generator',
+        rainbowEffect: true,
+        pulseEffect: true,
+        metallicEffect: true,
+        voidEffect: false,
+        ability: 'god_mode',
+        abilityDesc: '3 lives + projectile immunity + double speed + instant generators + no stamina cost'
     },
 ];
 
-// Secret codes for skin unlocks
+// Secret codes for skin unlocks and RGB achievements
 const SECRET_CODES = {
     'ECHO': 'void',
     'MAZE': 'glitch',
-    'SYSTEM': 'corrupted'
+    'SYSTEM': 'corrupted',
+    'ECHOMAZE': 'BAZOOKA_MODE',
+    
+    // RGB ACHIEVEMENT CODES - EDIT TO ADD ACTUAL CODES
+    // First 10 codes (100% completion winners) - LIMITED TO 10 TOTAL
+    // Format: 'UNIQUE_CODE_HERE': 'the_first_10'
+    // These must be unique and will be locked after 10 are redeemed
+    // Example:
+    // 'FIRST10_WINNER001': 'the_first_10',
+    // 'FIRST10_WINNER002': 'the_first_10',
+    // ... (up to 10 total)
+    
+    // World Record codes - UNLIMITED
+    // Format: 'WR_CODE_HERE': 'world_record'
+    // Unlimited codes can be generated and distributed
+    // Example:
+    // 'WORLDRECORD_PLAYER001': 'world_record',
+    // 'WORLDRECORD_PLAYER002': 'world_record',
+    // ... (as many as needed)
 };
 
 // Get all skins data
 export function getSkins() {
     try {
         const raw = localStorage.getItem(SKINS_KEY);
+        let data = [];
+        
         if (!raw) {
             // Initialize with default skin unlocked
-            const initial = SKINS.map(s => ({ 
+            data = SKINS.map(s => ({ 
                 id: s.id, 
                 unlocked: s.id === 'default' 
             }));
-            localStorage.setItem(SKINS_KEY, JSON.stringify(initial));
-            return initial;
+        } else {
+            data = JSON.parse(raw);
+            if (!Array.isArray(data)) {
+                data = [];
+            }
         }
-        const data = JSON.parse(raw);
-        return Array.isArray(data) ? data : [];
+        
+        // Ensure all skins from SKINS array are present (handles new additions)
+        const existingIds = new Set(data.map(s => s.id));
+        SKINS.forEach(skinDef => {
+            if (!existingIds.has(skinDef.id)) {
+                data.push({ id: skinDef.id, unlocked: skinDef.id === 'default' });
+            }
+        });
+        
+        // Save updated data if new skins were added
+        if (data.length !== existingIds.size) {
+            localStorage.setItem(SKINS_KEY, JSON.stringify(data));
+        }
+        
+        return data;
     } catch {
         return SKINS.map(s => ({ id: s.id, unlocked: s.id === 'default' }));
     }
@@ -331,32 +426,118 @@ export function getCurrentSkin() {
 }
 
 // Try to redeem a secret code
-export function redeemCode(code) {
+export async function redeemCode(code) {
     const upperCode = code.toUpperCase().trim();
-    const skinId = SECRET_CODES[upperCode];
+    const target = SECRET_CODES[upperCode];
     
-    if (!skinId) {
+    if (!target) {
         return { success: false, message: 'Invalid code' };
     }
     
-    if (isSkinUnlocked(skinId)) {
+    // Special handling for BAZOOKA_MODE unlock
+    if (target === 'BAZOOKA_MODE') {
+        try {
+            const configMod = await import('./config.js');
+            if (configMod.setBazookaModeUnlocked) {
+                configMod.setBazookaModeUnlocked(true);
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to import config for bazooka mode:', e);
+        }
+        
+        try {
+            const achievementsMod = await import('./achievements.js');
+            if (achievementsMod.checkAchievements) {
+                achievementsMod.checkAchievements('secret_found', { secretId: 'bazooka_mode_unlock' });
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to unlock bazooka secret achievement:', e);
+        }
+        
+        return { 
+            success: true, 
+            message: '🚀 BAZOOKA MODE UNLOCKED! Check Settings to enable it.',
+            skinId: null,
+            bazookaModeUnlocked: true
+        };
+    }
+    
+    // Special handling for "The First 10" limited achievement
+    if (target === 'the_first_10') {
+        try {
+            const configMod = await import('./config.js');
+            
+            // Check if already at limit BEFORE unlocking
+            if (configMod.isFirst10Locked && configMod.isFirst10Locked()) {
+                return { success: false, message: 'The First 10 achievement has been locked - all 10 codes have been redeemed!' };
+            }
+            
+            // Increment the counter
+            if (configMod.incrementFirst10CodesUsed) {
+                configMod.incrementFirst10CodesUsed();
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to check first 10 limit:', e);
+            return { success: false, message: 'Error processing code' };
+        }
+        
+        try {
+            const achievementsMod = await import('./achievements.js');
+            if (achievementsMod.unlockAchievement) {
+                achievementsMod.unlockAchievement(target);
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to unlock the_first_10 achievement:', e);
+        }
+        
+        return {
+            success: true,
+            message: '◆ THE FIRST 10 ◆\nCongratulations! You are among the first 10 to achieve 100% completion!',
+            isRGBAchievement: true,
+            achievementId: target
+        };
+    }
+    
+    // Special handling for World Record (unlimited) RGB achievement
+    if (target === 'world_record') {
+        try {
+            const achievementsMod = await import('./achievements.js');
+            if (achievementsMod.unlockAchievement) {
+                achievementsMod.unlockAchievement(target);
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to unlock world_record achievement:', e);
+        }
+        
+        return {
+            success: true,
+            message: '◆ WORLD RECORD ◆\nYou hold a verified world record speedrun!',
+            isRGBAchievement: true,
+            achievementId: target
+        };
+    }
+    
+    // Regular skin unlock
+    if (isSkinUnlocked(target)) {
         return { success: false, message: 'Code already redeemed' };
     }
     
-    unlockSkin(skinId, `Code: ${upperCode}`);
+    unlockSkin(target, `Code: ${upperCode}`);
     
-    // Unlock secret achievement for code redemption
-    import('./achievements.js').then(mod => {
-        if (mod.checkAchievements) {
-            mod.checkAchievements('secret_found', { secretId: 'code_alpha' });
+    try {
+        const achievementsMod = await import('./achievements.js');
+        if (achievementsMod.checkAchievements) {
+            achievementsMod.checkAchievements('secret_found', { secretId: 'code_alpha' });
         }
-    }).catch(() => {});
+    } catch (e) {
+        console.warn('[skins] Failed to unlock code redemption achievement:', e);
+    }
     
-    const skin = getSkinById(skinId);
+    const skin = getSkinById(target);
     return { 
         success: true, 
         message: `Unlocked: ${skin.name}!`,
-        skinId,
+        skinId: target,
         skin
     };
 }
@@ -380,6 +561,17 @@ export function resetSkins() {
     }
 }
 
+// Get current skin's ability
+export function getSkinAbility() {
+    const skin = getCurrentSkin();
+    return skin.ability || null;
+}
+
+// Check if current skin has a specific ability
+export function hasSkinAbility(abilityName) {
+    return getSkinAbility() === abilityName;
+}
+
 // Get player visual properties based on equipped skin
 export function getPlayerVisuals() {
     const skin = getCurrentSkin();
@@ -393,7 +585,9 @@ export function getPlayerVisuals() {
         pulseEffect: skin.pulseEffect || false,
         rainbowEffect: skin.rainbowEffect || false,
         metallicEffect: skin.metallicEffect || false,
-        voidEffect: skin.voidEffect || false
+        voidEffect: skin.voidEffect || false,
+        ability: skin.ability || null,
+        abilityDesc: skin.abilityDesc || null
     };
 }
 

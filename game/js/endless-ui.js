@@ -45,74 +45,109 @@ function populateUpgradesList() {
     // For each upgrade in catalog
     const upgrades = [
         {
-            id: 'startingLives',
-            name: 'Extra Lives',
-            description: 'Start with additional lives',
+            id: 'extraStartingLives',
+            name: 'Extra Starting Life',
+            description: 'Start with +1 additional life',
             icon: '❤️',
-            baseCost: 50,
-            maxLevel: 3,
-            valueFormatter: (level) => `+${level} lives`
-        },
-        {
-            id: 'staminaBoost',
-            name: 'Stamina Boost',
-            description: 'Increase maximum stamina',
-            icon: '⚡',
-            baseCost: 40,
-            maxLevel: 5,
-            valueFormatter: (level) => `+${level * 20}%`
-        },
-        {
-            id: 'generatorSpeedUp',
-            name: 'Fast Generators',
-            description: 'Generators start with progress',
-            icon: '⚙️',
             baseCost: 60,
-            maxLevel: 4,
-            valueFormatter: (level) => `${level * 25}% start`
+            maxLevel: 3,
+            valueFormatter: (level) => `+${level} ${level === 1 ? 'life' : 'lives'}`
         },
         {
-            id: 'movementSpeed',
-            name: 'Movement Speed',
-            description: 'Move faster permanently',
-            icon: '🏃',
-            baseCost: 45,
+            id: 'generatorSkillReduction',
+            name: 'Generator Expert',
+            description: 'Reduce skill checks needed to complete generators',
+            icon: '⚙️',
+            baseCost: 80,
             maxLevel: 3,
-            valueFormatter: (level) => `+${level * 10}%`
+            valueFormatter: (level) => {
+                if (level === 3) return 'Instant complete!';
+                return `-${level} skill check${level > 1 ? 's' : ''}`;
+            }
+        },
+        {
+            id: 'staminaRechargeSpeed',
+            name: 'Stamina Recovery',
+            description: 'Stamina recharges faster between jumps',
+            icon: '⚡',
+            baseCost: 70,
+            maxLevel: 3,
+            valueFormatter: (level) => `-${level * 25}% recharge time`
+        },
+        {
+            id: 'maxStaminaBoost',
+            name: 'Stamina Tank',
+            description: 'Increase maximum stamina pool',
+            icon: '📊',
+            baseCost: 50,
+            maxLevel: 4,
+            valueFormatter: (level) => `+${level * 25}% max stamina`
+        },
+        {
+            id: 'enemyDamageReduction',
+            name: 'Tough Hide',
+            description: 'Take reduced damage from enemies',
+            icon: '🛡️',
+            baseCost: 90,
+            maxLevel: 3,
+            valueFormatter: (level) => `-${level * 25}% damage`
+        },
+        {
+            id: 'generatorFailureProtection',
+            name: 'Generator Insurance',
+            description: 'Reduce penalties for generator failures',
+            icon: '🔧',
+            baseCost: 100,
+            maxLevel: 2,
+            valueFormatter: (level) => level === 1 ? '-1 life penalty' : 'Generator recovers'
         },
         {
             id: 'jumpChargeSpeed',
-            name: 'Quick Jump',
+            name: 'Quick Charge',
             description: 'Charge jumps faster',
-            icon: '🦘',
-            baseCost: 35,
-            maxLevel: 5,
-            valueFormatter: (level) => `+${level * 20}%`
+            icon: '⬆️',
+            baseCost: 65,
+            maxLevel: 3,
+            valueFormatter: (level) => `-${level * 25}% charge time`
         },
         {
-            id: 'startWithDoubleJump',
-            name: 'Start with Double Jump',
-            description: 'Begin runs with double jump ability',
-            icon: '⬆️',
-            baseCost: 100,
+            id: 'startWithExtraLife',
+            name: 'Life Insurance',
+            description: 'Start with extra life ability',
+            icon: '💚',
+            baseCost: 150,
             maxLevel: 1,
             valueFormatter: () => 'Unlocked'
         },
         {
             id: 'startWithShield',
-            name: 'Start with Shield',
-            description: 'Begin runs with wall shield',
-            icon: '🛡️',
-            baseCost: 80,
+            name: 'Starter Shield',
+            description: 'Begin with 3-hit shield protection',
+            icon: '🔰',
+            baseCost: 120,
             maxLevel: 1,
             valueFormatter: () => 'Unlocked'
+        },
+        {
+            id: 'pointMultiplier',
+            name: 'Wealth Accumulation',
+            description: 'Earn more points per room',
+            icon: '💰',
+            baseCost: 200,
+            maxLevel: 3,
+            valueFormatter: (level) => `+${level * 25}% points`
         }
     ];
     
     upgrades.forEach(upgrade => {
-        const currentLevel = stats.permanentUpgrades[upgrade.id] || 0;
-        const isMaxed = currentLevel >= upgrade.maxLevel;
-        const nextCost = isMaxed ? 0 : upgrade.baseCost * (currentLevel + 1);
+        const catalogEntry = (typeof UPGRADE_CATALOG !== 'undefined' && UPGRADE_CATALOG[upgrade.id]) ? UPGRADE_CATALOG[upgrade.id] : null;
+        const rawLevel = stats.permanentUpgrades[upgrade.id];
+        const isSinglePurchase = typeof rawLevel === 'boolean';
+        const currentLevel = isSinglePurchase ? (rawLevel ? 1 : 0) : (rawLevel || 0);
+        const isMaxed = isSinglePurchase ? !!rawLevel : currentLevel >= upgrade.maxLevel;
+        const nextCost = isMaxed ? 0 : (catalogEntry && typeof catalogEntry.getCost === 'function'
+            ? (isSinglePurchase ? catalogEntry.getCost() : catalogEntry.getCost(currentLevel))
+            : upgrade.baseCost * (currentLevel + 1));
         const canAfford = stats.availablePoints >= nextCost && !isMaxed;
         
         const upgradeDiv = document.createElement('div');
@@ -140,7 +175,7 @@ function populateUpgradesList() {
                     ${upgrade.description}
                 </div>
                 <div style="font-size: 14px; color: #88ffaa; margin-top: 8px;">
-                    Level: ${currentLevel} / ${upgrade.maxLevel}
+                    ${isSinglePurchase ? (rawLevel ? 'Owned' : 'Not owned') : `Level: ${currentLevel} / ${upgrade.maxLevel}`}
                     ${!isMaxed ? `• Next: ${nextCost} points` : '• MAX'}
                 </div>
             </div>
@@ -165,9 +200,12 @@ function populateUpgradesList() {
         const button = upgradeDiv.querySelector(`#upgrade_${upgrade.id}`);
         if (button && canAfford) {
             button.addEventListener('click', () => {
-                if (purchaseUpgrade(upgrade.id)) {
+                const result = purchaseUpgrade(upgrade.id);
+                if (result?.success) {
                     updateEndlessMenuStats();
                     populateUpgradesList();
+                } else if (result?.reason) {
+                    alert(result.reason);
                 }
             });
         }
@@ -181,14 +219,12 @@ function populateAbilitySchedule() {
     if (!schedule) return;
     
     const abilities = [
-        { room: 5, name: 'Double Jump', icon: '⬆️', description: 'Jump twice in mid-air' },
-        { room: 10, name: 'Reduced Stamina', icon: '⚡', description: '50% less stamina usage' },
-        { room: 15, name: 'Shield Durability', icon: '🛡️', description: 'Shield takes 5 hits' },
-        { room: 20, name: 'Infinite Projectiles', icon: '🔫', description: 'Unlimited shield ammo' },
-        { room: 25, name: 'Extra Life', icon: '❤️', description: '+1 life (one time)' },
-        { room: 30, name: 'Speed Boost', icon: '🏃', description: '30% faster movement' },
-        { room: 35, name: 'Fast Repair', icon: '⚙️', description: 'Generators 2x speed' },
-        { room: 40, name: 'Extended Jump', icon: '🦘', description: 'Super jump charge' }
+        { room: 3, name: 'Extra Life', icon: '❤️', description: 'Take one extra hit' },
+        { room: 5, name: 'Temporal Slow', icon: '🐢', description: 'Enemies 50% slower (30s)' },
+        { room: 7, name: 'Efficient Movement', icon: '⚡', description: 'Jumps cost 50% stamina' },
+        { room: 10, name: 'Wall Phase', icon: '👻', description: 'Walk through walls (10s)' },
+        { room: 12, name: 'Reinforced Shield', icon: '🛡️', description: 'Absorb 3 hits' },
+        { room: 15, name: 'Invincibility Burst', icon: '✨', description: 'Complete protection (5s)' }
     ];
     
     schedule.innerHTML = abilities.map(ability => `
@@ -217,6 +253,50 @@ function populateAbilitySchedule() {
 // Event Listeners
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', () => {
+        // Difficulty Mode Toggle
+        let selectedDifficulty = 'easy';
+        const easyBtn = document.getElementById('difficultyEasyBtn');
+        const hardBtn = document.getElementById('difficultyHardBtn');
+        const diffDesc = document.getElementById('difficultyDescription');
+        
+        function updateDifficultyUI(mode) {
+            selectedDifficulty = mode;
+            if (mode === 'easy') {
+                easyBtn.style.background = 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)';
+                easyBtn.style.color = '#000';
+                easyBtn.style.border = 'none';
+                hardBtn.style.background = 'rgba(100, 100, 100, 0.3)';
+                hardBtn.style.color = '#999';
+                hardBtn.style.border = '2px solid #666';
+                diffDesc.innerHTML = 'Easy: Progressive AI spawns (1→5 unique)<br/>Points: Standard rewards';
+            } else {
+                hardBtn.style.background = 'linear-gradient(135deg, #ff4444 0%, #cc2222 100%)';
+                hardBtn.style.color = '#fff';
+                hardBtn.style.border = 'none';
+                easyBtn.style.background = 'rgba(100, 100, 100, 0.3)';
+                easyBtn.style.color = '#999';
+                easyBtn.style.border = '2px solid #666';
+                diffDesc.innerHTML = 'Hard: Multiple AI duplicates (up to 10+)<br/>Points: <span style="color:#ffd700">2x rewards</span>';
+            }
+        }
+        
+        if (easyBtn) {
+            easyBtn.addEventListener('click', () => updateDifficultyUI('easy'));
+        }
+        if (hardBtn) {
+            hardBtn.addEventListener('click', () => updateDifficultyUI('hard'));
+        }
+        
+        // Unlock Dev Tools Button
+        const unlockDevToolsBtn = document.getElementById('endlessDevToolsBtn');
+        if (unlockDevToolsBtn) {
+            unlockDevToolsBtn.addEventListener('click', () => {
+                if (typeof window.toggleDevTools === 'function') {
+                    window.toggleDevTools();
+                }
+            });
+        }
+        
         // Start Run Button
         const startRunBtn = document.getElementById('startRunBtn');
         if (startRunBtn) {
@@ -224,9 +304,9 @@ if (typeof document !== 'undefined') {
                 const upgradesEnabled = document.getElementById('upgradesToggle')?.checked ?? true;
                 hideEndlessMenu();
                 if (typeof startProgressionRun === 'function') {
-                    startProgressionRun(upgradesEnabled);
+                    startProgressionRun(selectedDifficulty);
                 } else if (typeof window !== 'undefined' && typeof window.startProgressionRun === 'function') {
-                    window.startProgressionRun(upgradesEnabled);
+                    window.startProgressionRun(selectedDifficulty);
                 }
                 // Transition to game (handled by main game code)
             });
@@ -270,7 +350,14 @@ if (typeof document !== 'undefined') {
     });
 }
 
+// Make functions globally available
+window.showEndlessMenu = showEndlessMenu;
+window.hideEndlessMenu = hideEndlessMenu;
+window.updateEndlessMenuStats = updateEndlessMenuStats;
+window.populateUpgradesList = populateUpgradesList;
+window.populateAbilitySchedule = populateAbilitySchedule;
+
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { showEndlessMenu, hideEndlessMenu, updateEndlessMenuStats };
+    module.exports = { showEndlessMenu, hideEndlessMenu, updateEndlessMenuStats, populateUpgradesList, populateAbilitySchedule };
 }

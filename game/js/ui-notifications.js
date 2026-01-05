@@ -38,7 +38,8 @@ function displayAchievementNotification(achievement) {
         bronze: { primary: '#CD7F32', glow: 'rgba(205, 127, 50, 0.6)' },
         silver: { primary: '#C0C0C0', glow: 'rgba(192, 192, 192, 0.6)' },
         gold: { primary: '#FFD700', glow: 'rgba(255, 215, 0, 0.6)' },
-        platinum: { primary: '#E5E4E2', glow: 'rgba(229, 228, 226, 0.6)' }
+        platinum: { primary: '#E5E4E2', glow: 'rgba(229, 228, 226, 0.6)' },
+        diamond: { primary: '#00D9FF', glow: 'rgba(0, 217, 255, 0.9)' }
     };
     
     const colors = tierColors[achievement.tier] || tierColors.bronze;

@@ -7,3 +7,10 @@ Main Idea of the game: Im not going to explain much of how the game works as tha
 For Speedrun times there is a global leader board that if you show me proof of your best runs I will add the best times to the global leader board for everyone to see (Best runs by the end of the year will get a special prize, ONLY IF ENOUGH PEOPLE PARTICIPATE) And obviously cheating will get you banned of the leader board and if assumed of cheating in some way ur time will not be accepts.
 
 Link To play the game is here!!! (https://echomaze2.me)
+
+## Level Builder quick start
+- Open the game and click **Level Builder** in the main menu (or go to [game/level-builder.html](game/level-builder.html)).
+- Place tiles with left click/touch drag; right click (or choose **Erase**) to clear.
+- Every map needs exactly one **Spawn** and one **Exit**; teleporters must be placed as pairs (max two pairs).
+- Drop generators and enemy spawners (Chaser, Seeker, Batter, Flying Pig, Mortar) where you want them to appear.
+- Use **Playtest** to launch your layout instantly, **Export** to copy JSON, and **Import** to load a shared level.
