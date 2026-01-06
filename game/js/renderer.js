@@ -3405,7 +3405,7 @@ function drawPlayer() {
         ctx.restore();
         
     } else if (gameState.collisionShieldState === 'recharging' && gameState.collisionShieldRechargeEnd) {
-        // Enhanced recharge animation with energy building up
+        // Recharge animation - subtle progress arc with gentle pulse
         const remain = Math.max(0, gameState.collisionShieldRechargeEnd - now);
         const t = 1 - Math.min(1, remain / COLLISION_SHIELD_RECHARGE_TIME);
         
@@ -3416,37 +3416,27 @@ function drawPlayer() {
         }
         const rechargeColor = `rgb(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b})`;
         
+        // Subtle pulse effect
+        const pulse = 0.5 + 0.3 * Math.sin(now / 400);
+        
         ctx.save();
         // Base faint ring
-        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.2)`;
+        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.12)`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 4, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Progress arc with glow
-        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, ${0.6 + 0.2 * t})`;
-        ctx.lineWidth = 3;
-        ctx.shadowBlur = 8 * t;
-        ctx.shadowColor = rechargeColor;
+        // Progress arc - subtle with gentle glow
+        const opacity = 0.3 + 0.15 * pulse;
+        ctx.strokeStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, ${opacity})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.5)`;
         const start = -Math.PI / 2;
         ctx.beginPath();
         ctx.arc(centerX, collisionCenterY, radius + 4, start, start + t * Math.PI * 2);
         ctx.stroke();
-        
-        // Energy sparks appearing along the recharge arc
-        if (t > 0.2) {
-            const sparkCount = Math.floor(t * 6);
-            for (let i = 0; i < sparkCount; i++) {
-                const angle = start + (t * Math.PI * 2) * (i / sparkCount);
-                const sx = centerX + Math.cos(angle) * (radius + 4);
-                const sy = collisionCenterY + Math.sin(angle) * (radius + 4);
-                ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 100 + i);
-                ctx.fillStyle = `rgba(${rechargeColorRGB.r}, ${rechargeColorRGB.g}, ${rechargeColorRGB.b}, 0.9)`;
-                ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
         ctx.restore();
     }
     } // End collision shield section (don't show when blocking)
@@ -3645,9 +3635,10 @@ function drawUI() {
     const healthSimple = document.getElementById('health-simple');
     if (healthSimple) healthSimple.textContent = healthText;
     
-    const staminaPct = Math.floor(gameState.stamina);
+    // Clamp stamina to 0-100 range to prevent display of negative or >100 values
+    const staminaPct = Math.floor(Math.max(0, Math.min(100, gameState.stamina)));
     const staminaText = `${staminaPct}%`;
-    const staminaColor = gameState.stamina < 100 ? '#888' : '#0ff';
+    const staminaColor = staminaPct < 100 ? '#888' : '#0ff';
     
     // Update main stamina display
     if (staminaEl) {
@@ -3662,10 +3653,10 @@ function drawUI() {
         staminaSimple.style.color = staminaColor;
     }
     
-    // Update stamina bar
+    // Update stamina bar to match displayed value
     if (staminaFill) {
         staminaFill.style.width = `${staminaPct}%`;
-        staminaFill.style.background = gameState.stamina < 100
+        staminaFill.style.background = staminaPct < 100
             ? 'linear-gradient(90deg, #3aa3a3, #4dbbd6)'
             : 'linear-gradient(90deg, #0ff, #61dafb)';
     }

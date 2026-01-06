@@ -11,23 +11,9 @@ function setEndlessButtonLabel(text) {
 export function initDevTools() {
     console.log('Dev Tools Initialized');
     
-    // Check if already unlocked
-    if (localStorage.getItem('devToolsUnlocked') === 'true') {
-        devToolsUnlocked = true;
-        setEndlessButtonLabel('▼ Dev Tools');
-    } else {
-        setEndlessButtonLabel('▶ Dev Tools (locked)');
-    }
-    
-    // Add unlock hotkey on main menu (password prompt lives there)
-    document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
-            const mainMenu = document.getElementById('mainMenu');
-            if (mainMenu && mainMenu.style.display !== 'none') {
-                unlockDevToolsAccess();
-            }
-        }
-    });
+    // Dev tools in endless mode always start locked - require password for access
+    devToolsUnlocked = false;
+    setEndlessButtonLabel('🔐 Dev Tools');
 }
 
 // Unlock from main menu
@@ -38,10 +24,19 @@ function unlockDevToolsAccess() {
     alert('Dev Tools Unlocked! You can now access dev tools in endless mode.');
 }
 
-// Check if unlocked
+// Check if unlocked - prompt for password in endless mode
 function checkDevAccess() {
     if (!devToolsUnlocked) {
-        devToolsUnlocked = localStorage.getItem('devToolsUnlocked') === 'true';
+        // Prompt for password
+        const pwd = prompt('Enter dev tools password:');
+        const devPassword = String.fromCharCode(50,55,49,48,48,48,115,107,105,98); // "271000skib"
+        if (pwd === devPassword) {
+            devToolsUnlocked = true;
+            return true;
+        } else {
+            alert('Incorrect password');
+            return false;
+        }
     }
     return devToolsUnlocked;
 }
@@ -49,10 +44,7 @@ function checkDevAccess() {
 // Expose toggle function for unlock button
 window.toggleDevTools = function() {
     if (!checkDevAccess()) {
-        alert('Dev tools locked.\n\nTo unlock: enter password on main menu (Ctrl+Shift+D prompt).');
-        const btnLocked = document.getElementById('endlessDevToolsBtn');
-        if (btnLocked) btnLocked.textContent = '▶ Dev Tools (locked)';
-        return;
+        return; // checkDevAccess shows the password prompt
     }
     
     const panel = document.getElementById('endlessDevPanel');

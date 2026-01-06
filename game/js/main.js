@@ -1209,9 +1209,6 @@ function startLevel(level) {
     // Run core init only; legacy Level 11 flow handles its own rooms
     gameState._useCustomLevel11 = false;
     initGame();
-
-    // If level 2 and dev tools unlocked, surface a lightweight in-game dev panel
-    maybeShowLevel2DevPanel();
     
     // Apply UI style based on settings
     applyUIStyle();
@@ -1225,108 +1222,7 @@ function startLevel(level) {
     }
 }
 
-// Simple in-level dev panel (level 2 only) gated by dev tools unlock
-function maybeShowLevel2DevPanel() {
-    const unlocked = localStorage.getItem('devToolsUnlocked') === 'true';
-    if (!unlocked || gameState.currentLevel !== 2) {
-        const existing = document.getElementById('levelDevPanel');
-        if (existing) existing.style.display = 'none';
-        return;
-    }
-    let panel = document.getElementById('levelDevPanel');
-    if (!panel) {
-        panel = document.createElement('div');
-        panel.id = 'levelDevPanel';
-        panel.style.cssText = 'position:fixed; top:12px; right:12px; width:240px; background:rgba(0,0,0,0.8); border:2px solid #ff0; border-radius:8px; padding:10px; z-index:9999; color:#fff; font-family:"Courier New", monospace; font-size:12px; box-shadow:0 0 16px rgba(255,255,0,0.4)';
-        panel.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-weight:bold; color:#ff0;">Level Dev Panel</span>
-                <button id="lvlDevClose" style="background:#444; color:#fff; border:none; border-radius:4px; padding:2px 6px; cursor:pointer;">✕</button>
-            </div>
-            <div style="margin-bottom:8px;">
-                <div>Lives: <span id="lvlDevLives">3</span></div>
-                <div style="display:flex; gap:4px; margin-top:4px;">
-                    <button id="lvlDevAddLife" style="flex:1; background:#0f0; color:#000; border:none; border-radius:4px; padding:4px; cursor:pointer;">+1</button>
-                    <button id="lvlDevSubLife" style="flex:1; background:#f33; color:#fff; border:none; border-radius:4px; padding:4px; cursor:pointer;">-1</button>
-                </div>
-                <div style="display:flex; gap:4px; margin-top:4px;">
-                    <input id="lvlDevLifeInput" type="number" value="3" style="flex:1; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #ff0; border-radius:4px; padding:3px;">
-                    <button id="lvlDevSetLives" style="background:#00affa; color:#000; border:none; border-radius:4px; padding:4px; cursor:pointer;">Set</button>
-                </div>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:6px;">
-                <button id="lvlDevSkipRoom" style="background:#ffaa00; color:#000; border:none; border-radius:4px; padding:6px; cursor:pointer; font-weight:bold;">Skip to Next Level</button>
-                <button id="lvlDevRefill" style="background:#88ff88; color:#000; border:none; border-radius:4px; padding:6px; cursor:pointer;">Refill Stamina</button>
-            </div>
-        `;
-        document.body.appendChild(panel);
-        wireLevelDevPanel();
-    }
-    refreshLevelDevPanel();
-    panel.style.display = 'block';
-}
 
-function wireLevelDevPanel() {
-    const closeBtn = document.getElementById('lvlDevClose');
-    if (closeBtn && !closeBtn._wired) {
-        closeBtn.addEventListener('click', () => {
-            const panel = document.getElementById('levelDevPanel');
-            if (panel) panel.style.display = 'none';
-        });
-        closeBtn._wired = true;
-    }
-    const addBtn = document.getElementById('lvlDevAddLife');
-    if (addBtn && !addBtn._wired) {
-        addBtn.addEventListener('click', () => {
-            gameState.lives = (gameState.lives || 3) + 1;
-            refreshLevelDevPanel();
-        });
-        addBtn._wired = true;
-    }
-    const subBtn = document.getElementById('lvlDevSubLife');
-    if (subBtn && !subBtn._wired) {
-        subBtn.addEventListener('click', () => {
-            gameState.lives = Math.max(1, (gameState.lives || 3) - 1);
-            refreshLevelDevPanel();
-        });
-        subBtn._wired = true;
-    }
-    const setBtn = document.getElementById('lvlDevSetLives');
-    if (setBtn && !setBtn._wired) {
-        setBtn.addEventListener('click', () => {
-            const val = parseInt(document.getElementById('lvlDevLifeInput')?.value || gameState.lives || 3);
-            gameState.lives = Math.max(1, val);
-            refreshLevelDevPanel();
-        });
-        setBtn._wired = true;
-    }
-    const skipBtn = document.getElementById('lvlDevSkipRoom');
-    if (skipBtn && !skipBtn._wired) {
-        skipBtn.addEventListener('click', () => {
-            const next = Math.min(LEVEL_COUNT, (gameState.currentLevel || 2) + 1);
-            startLevel(next);
-        });
-        skipBtn._wired = true;
-    }
-    const refillBtn = document.getElementById('lvlDevRefill');
-    if (refillBtn && !refillBtn._wired) {
-        refillBtn.addEventListener('click', () => {
-            const maxSta = gameState.maxStamina || 100;
-            gameState.stamina = maxSta;
-            gameState.isStaminaCoolingDown = false;
-            gameState.shieldBrokenLock = false;
-            refreshLevelDevPanel();
-        });
-        refillBtn._wired = true;
-    }
-}
-
-function refreshLevelDevPanel() {
-    const livesEl = document.getElementById('lvlDevLives');
-    if (livesEl) livesEl.textContent = gameState.lives || 3;
-    const lifeInput = document.getElementById('lvlDevLifeInput');
-    if (lifeInput && gameState.lives) lifeInput.value = gameState.lives;
-}
 
 function wireMenuUi() {
     const resetBtn = document.getElementById('resetProgressBtn');
@@ -1643,7 +1539,12 @@ function wireMenuUi() {
     const builderBtn = document.querySelector("button[data-level='builder']");
     if (builderBtn && !builderBtn._wired) {
         builderBtn.addEventListener('click', () => {
-            window.location.href = 'level-builder.html';
+            const unlocked = getUnlockedLevel();
+            if (unlocked >= 11) {
+                window.location.href = 'level-builder.html';
+            } else {
+                showBottomAlert('🔒 Complete Level 10 to unlock Builder Mode!', 3000);
+            }
         });
         builderBtn._wired = true;
     }

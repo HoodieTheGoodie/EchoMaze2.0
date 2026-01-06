@@ -85,55 +85,115 @@ function buildCustomMazeData(payload) {
     generators.forEach(g => { grid[g.y][g.x] = CELL.GENERATOR; });
 
     const telepads = [];
-    const pairs = Array.isArray(payload.telepads) ? payload.telepads : [];
-    if (pairs.length) {
-        pairs.forEach(pair => {
-            if (!Array.isArray(pair) || pair.length < 2) return;
-            const a = pair[0];
-            const b = pair[1];
-            if (!a || !b) return;
-            const ax = clamp(a.x, MAZE_WIDTH);
-            const ay = clamp(a.y, MAZE_HEIGHT);
-            const bx = clamp(b.x, MAZE_WIDTH);
-            const by = clamp(b.y, MAZE_HEIGHT);
-            const aIndex = telepads.length;
-            const bIndex = telepads.length + 1;
-            telepads.push({ x: ax, y: ay, cooldownUntil: 0, chargeStartAt: 0, pair: bIndex });
-            telepads.push({ x: bx, y: by, cooldownUntil: 0, chargeStartAt: 0, pair: aIndex });
-            grid[ay][ax] = CELL.TELEPAD;
-            grid[by][bx] = CELL.TELEPAD;
+    const cellPosKey = (x, y) => `${x},${y}`;
+    const cellPosToIndex = new Map();
+
+    // Build teleporter map from link records (builder-created links)
+    if (Array.isArray(payload.teleporterLinksV2) && payload.teleporterLinksV2.length > 0) {
+        const teleSources = new Set(); // Teleporters that are sources of links
+        const linksBySource = new Map(); // Map from "x,y" -> links
+        
+        // Identify all source teleporters and group links by source
+        payload.teleporterLinksV2.forEach(link => {
+            if (!link || !link.from) return;
+            const fromKey = cellPosKey(clamp(link.from.x, MAZE_WIDTH), clamp(link.from.y, MAZE_HEIGHT));
+            teleSources.add(fromKey);
+            if (!linksBySource.has(fromKey)) linksBySource.set(fromKey, []);
+            linksBySource.get(fromKey).push(link);
         });
-    } else if (teleCells.length >= 2) {
-        for (let i = 0; i + 1 < teleCells.length; i += 2) {
-            const a = teleCells[i];
-            const b = teleCells[i + 1];
-            const ax = clamp(a.x, MAZE_WIDTH);
-            const ay = clamp(a.y, MAZE_HEIGHT);
-            const bx = clamp(b.x, MAZE_WIDTH);
-            const by = clamp(b.y, MAZE_HEIGHT);
-            const aIndex = telepads.length;
-            const bIndex = telepads.length + 1;
-            telepads.push({ x: ax, y: ay, cooldownUntil: 0, chargeStartAt: 0, pair: bIndex });
-            telepads.push({ x: bx, y: by, cooldownUntil: 0, chargeStartAt: 0, pair: aIndex });
-            grid[ay][ax] = CELL.TELEPAD;
-            grid[by][bx] = CELL.TELEPAD;
+        
+        // Create telepads only for source teleporters; clear non-source telepad tiles
+        teleCells.forEach(cell => {
+            const cx = clamp(cell.x, MAZE_WIDTH);
+            const cy = clamp(cell.y, MAZE_HEIGHT);
+            const key = cellPosKey(cx, cy);
+            
+            if (teleSources.has(key)) {
+                // This is a source teleporter; create its pad
+                if (!cellPosToIndex.has(key)) {
+                    cellPosToIndex.set(key, telepads.length);
+                    telepads.push({ x: cx, y: cy, cooldownUntil: 0, chargeStartAt: 0, pair: -1 });
+                    grid[cy][cx] = CELL.TELEPAD;
+                }
+            } else {
+                // This teleporter is not a source (one-way destination only); mark as empty
+                grid[cy][cx] = CELL.EMPTY;
+            }
+        });
+        
+        // Now apply the links
+        linksBySource.forEach((links, fromKey) => {
+            const fromIdx = cellPosToIndex.get(fromKey);
+            if (fromIdx == null || links.length === 0) return;
+            
+            const link = links[0]; // Use first link
+            const toX = clamp(link.to.x, MAZE_WIDTH);
+            const toY = clamp(link.to.y, MAZE_HEIGHT);
+            const toKey = cellPosKey(toX, toY);
+            
+            let toIdx;
+            if (link.targetType === 'teleporter' && cellPosToIndex.has(toKey)) {
+                // Link to another teleporter that exists as a source
+                toIdx = cellPosToIndex.get(toKey);
+            } else {
+                // Link to a map spot (regular cell); don't create a pad there
+                toIdx = -1; // Mark as invalid so we store the destination differently
+            }
+            
+            // Set the link; if toIdx is -1, store destination in a separate field
+            if (toIdx >= 0) {
+                telepads[fromIdx].pair = toIdx;
+            } else {
+                telepads[fromIdx].pair = -1;
+                telepads[fromIdx].customDest = { x: toX, y: toY };
+            }
+            
+            // For bidirectional links
+            if (link.bidirectional && toIdx >= 0) {
+                telepads[toIdx].pair = fromIdx;
+            }
+        });
+    } else {
+        // Fallback: pair up sequentially if no link records
+        teleCells.forEach(cell => {
+            const cx = clamp(cell.x, MAZE_WIDTH);
+            const cy = clamp(cell.y, MAZE_HEIGHT);
+            if (!cellPosToIndex.has(cellPosKey(cx, cy))) {
+                cellPosToIndex.set(cellPosKey(cx, cy), telepads.length);
+                telepads.push({ x: cx, y: cy, cooldownUntil: 0, chargeStartAt: 0, pair: -1 });
+                grid[cy][cx] = CELL.TELEPAD;
+            }
+        });
+        
+        // Pair up sequential telepads
+        for (let i = 0; i + 1 < telepads.length; i += 2) {
+            telepads[i].pair = i + 1;
+            telepads[i + 1].pair = i;
         }
     }
 
     const enemies = [];
+    const enemyDedup = new Set();
+    const addEnemy = (x, y, type) => {
+        const key = `${clamp(x, MAZE_WIDTH)},${clamp(y, MAZE_HEIGHT)},${type}`;
+        if (enemyDedup.has(key)) return; // Prevent double-spawns when both grid tiles and payload list include the same enemy
+        enemyDedup.add(key);
+        enemies.push({ x: clamp(x, MAZE_WIDTH), y: clamp(y, MAZE_HEIGHT), type });
+    };
+
     const tileToType = { 10: 'chaser', 11: 'seeker', 12: 'batter', 13: 'flying_pig', 14: 'mortar' };
     enemyCells.forEach(e => {
         const type = tileToType[e.tile];
-        if (type) enemies.push({ x: clamp(e.x, MAZE_WIDTH), y: clamp(e.y, MAZE_HEIGHT), type });
+        if (type) addEnemy(e.x, e.y, type);
     });
     if (Array.isArray(payload.enemies)) {
         payload.enemies.forEach(e => {
             if (!e || !e.type) return;
-            enemies.push({ x: clamp(e.x, MAZE_WIDTH), y: clamp(e.y, MAZE_HEIGHT), type: e.type });
+            addEnemy(e.x, e.y, e.type);
         });
     }
 
-    return { grid, generators, telepads, start, exit, enemies };
+    return { grid, generators, telepads, start, exit, enemies, barriers: payload.enemyBarriers || [] };
 }
 
 function canSeePlayerFromEntity(e) {
@@ -184,6 +244,7 @@ export const gameState = {
     savedLevelState: null,
     mazeDirty: false,
     terminalRoomOrigin: null,
+    enemyBarriers: [],
     settings: {
         nightVisionMode: false  // Dev-only setting: see in darkness with full visibility
     }
@@ -862,7 +923,7 @@ export function initGame() {
     // Use legacy Level 11 maze when applicable
     let mazeData;
     if (customMazeData) {
-        mazeData = { grid: customMazeData.grid, generators: customMazeData.generators, telepads: customMazeData.telepads, customStart: customMazeData.start, customExit: customMazeData.exit };
+        mazeData = { grid: customMazeData.grid, generators: customMazeData.generators, telepads: customMazeData.telepads, customStart: customMazeData.start, customExit: customMazeData.exit, barriers: customMazeData.barriers };
     } else if (gameState.isLevel11) {
         mazeData = generateLevel11Maze();
     } else {
@@ -872,6 +933,11 @@ export function initGame() {
     gameState.maze = mazeData.grid;
     gameState.generators = mazeData.generators;
     gameState.teleportPads = (mazeData.telepads || []).map((p, idx) => ({ ...p, id: idx, pair: Number.isInteger(p.pair) ? p.pair : ((idx % 2 === 0 && idx + 1 < (mazeData.telepads || []).length) ? idx + 1 : Math.max(0, idx - 1)), cooldownUntil: p.cooldownUntil || 0, chargeStartAt: p.chargeStartAt || 0 }));
+    gameState.enemyBarriers = (mazeData.barriers || []).map(b => ({
+        id: b.id,
+        enemyType: b.enemy?.type,
+        rect: b.rect // {x, y, w, h}
+    }));
     gameState.glitchTile = null;
     gameState.inTerminalRoom = false;
     gameState.currentTerminalId = null;
@@ -1065,19 +1131,28 @@ export function updateTeleportPads(currentTime) {
         if (!pad.chargeStartAt) pad.chargeStartAt = currentTime;
         const elapsed = currentTime - pad.chargeStartAt;
         if (elapsed >= TELEPORT_CHARGE_TIME) {
-            // Teleport to the paired pad
-            const dest = pads[pad.pair] || null;
-            if (dest) {
+            // Teleport to the paired pad or custom destination
+            let destX, destY;
+            if (pad.customDest) {
+                // One-way teleport to map spot
+                destX = pad.customDest.x;
+                destY = pad.customDest.y;
+                gameState.player.x = destX;
+                gameState.player.y = destY;
+                pad.cooldownUntil = currentTime + TELEPORT_COOLDOWN_TIME;
+            } else if (pad.pair >= 0 && pads[pad.pair]) {
+                // Standard teleport to another pad
+                const dest = pads[pad.pair];
                 gameState.player.x = dest.x;
                 gameState.player.y = dest.y;
                 // Put both pads on cooldown to avoid instant bounce
                 pad.cooldownUntil = currentTime + TELEPORT_COOLDOWN_TIME;
                 dest.cooldownUntil = currentTime + TELEPORT_COOLDOWN_TIME;
-                // Reset charges
-                pad.chargeStartAt = 0;
+                // Reset dest charge
                 dest.chargeStartAt = 0;
-                // Small freeze for feedback (optional): none for now
             }
+            // Reset source charge
+            pad.chargeStartAt = 0;
         }
     }
 }
@@ -1685,16 +1760,18 @@ export function triggerStaminaCooldown(currentTime) {
     const staminaMultiplier = getStaminaMultiplier();
     const staminaDrain = baseStaminaDrain * staminaMultiplier;
     
-    const startStamina = gameState.stamina; // Track starting stamina before drain
+    // Drain stamina first
     gameState.stamina = gameState.stamina - staminaDrain;
     if (gameState.stamina < 0) gameState.stamina = 0;
+    
+    // Track the stamina AFTER drain (this is where regen starts from)
+    const startStamina = gameState.stamina;
     
     gameState.staminaCooldownStartTime = currentTime;
     gameState.staminaCooldownDuration = 2000; // 2 second recovery
     gameState.isStaminaCoolingDown = true;
     gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
-    gameState.staminaCooldownStartStamina = startStamina; // Track where we started
-    gameState.staminaCooldownStartTime = currentTime; // Track when cooldown started
+    gameState.staminaCooldownStartStamina = startStamina; // Track where we started (after drain)
     // Open a brief dodge window for special attacks
     gameState.dodgeWindowUntil = Math.max(gameState.dodgeWindowUntil, currentTime + 400);
 }
@@ -1859,7 +1936,8 @@ export function updateStaminaCooldown(currentTime) {
         // Linearly interpolate from startStamina to 100
         gameState.stamina = Math.floor(startStamina + (100 - startStamina) * progress);
         
-        if (currentTime >= gameState.staminaCooldownEnd) {
+        // Check if cooldown is complete based on adjusted duration
+        if (elapsedTime >= cooldownDuration) {
             gameState.stamina = 100;
             gameState.isStaminaCoolingDown = false;
             // Unlock shield after a break once fully charged
@@ -1934,6 +2012,42 @@ function isPassableForEnemy(cell) {
     return cell === CELL.EMPTY || cell === CELL.EXIT || cell === CELL.TELEPAD;
 }
 
+// Check if a specific enemy type is INSIDE a containment barrier at (x, y)
+function getEnemyBarrier(enemyType, x, y) {
+    if (!gameState.enemyBarriers || gameState.enemyBarriers.length === 0) return null;
+    for (const barrier of gameState.enemyBarriers) {
+        if (barrier.enemyType !== enemyType) continue; // Only check barriers for this enemy type
+        const rect = barrier.rect;
+        if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
+            return barrier; // Enemy is currently INSIDE this barrier
+        }
+    }
+    return null;
+}
+
+// Check if a move from (fromX, fromY) to (toX, toY) is blocked by containment barriers
+function isBlockedByBarrier(enemyType, fromX, fromY, toX, toY) {
+    // If enemy is currently INSIDE a containment barrier, block movement OUTSIDE it
+    const currentBarrier = getEnemyBarrier(enemyType, fromX, fromY);
+    if (currentBarrier) {
+        // Enemy is contained - check if destination is outside barrier
+        const rect = currentBarrier.rect;
+        if (toX < rect.x || toX >= rect.x + rect.w || toY < rect.y || toY >= rect.y + rect.h) {
+            return true; // Block: trying to leave containment
+        }
+    }
+    return false; // Allow: either not in barrier, or moving within barrier
+}
+
+// Check if an enemy object can move from its current position to (x, y)
+function canEnemyMoveTo(enemy, x, y) {
+    const cx = Math.floor(enemy.fx ?? (enemy.x + 0.5));
+    const cy = Math.floor(enemy.fy ?? (enemy.y + 0.5));
+    if (!isPassableForEnemy(gameState.maze[y]?.[x])) return false;
+    if (isBlockedByBarrier(enemy.type, cx, cy, x, y)) return false;
+    return true;
+}
+
 function findNearestPassable(targetX, targetY, maxRadius = 12) {
     const clamp = (v, max) => Math.max(1, Math.min(max - 2, v));
     const tx = clamp(targetX, MAZE_WIDTH);
@@ -1950,7 +2064,7 @@ function findNearestPassable(targetX, targetY, maxRadius = 12) {
     return null;
 }
 
-export function bfsDistancesFrom(maze, startX, startY) {
+export function bfsDistancesFrom(maze, startX, startY, enemyType = null) {
     const w = MAZE_WIDTH, h = MAZE_HEIGHT;
     const dist = Array(h).fill(null).map(() => Array(w).fill(Infinity));
     const q = new Array(w * h);
@@ -1967,6 +2081,8 @@ export function bfsDistancesFrom(maze, startX, startY) {
             const nx = x + s.dx, ny = y + s.dy;
             if (nx <= 0 || nx >= w - 1 || ny <= 0 || ny >= h - 1) continue;
             if (!isPassableForEnemy(maze[ny][nx])) continue;
+            // If enemy type is specified, check barrier containment
+            if (enemyType && isBlockedByBarrier(enemyType, x, y, nx, ny)) continue;
             if (d >= dist[ny][nx]) continue;
             dist[ny][nx] = d;
             q[tail++] = { x: nx, y: ny };
@@ -1976,7 +2092,7 @@ export function bfsDistancesFrom(maze, startX, startY) {
 }
 
 // --- Simple A* pathfinding for Seeker ---
-function aStarPath(maze, sx, sy, gx, gy) {
+function aStarPath(maze, sx, sy, gx, gy, enemyType = null) {
     const W = MAZE_WIDTH, H = MAZE_HEIGHT;
     const key = (x,y)=> (y*W + x);
     const open = new MinHeap((a,b)=> a.f - b.f);
@@ -2006,6 +2122,8 @@ function aStarPath(maze, sx, sy, gx, gy) {
             const nx = cur.x + s.dx, ny = cur.y + s.dy;
             if (nx<=0||nx>=W-1||ny<=0||ny>=H-1) continue;
             if (!isPassableForEnemy(maze[ny][nx])) continue;
+            // If enemy type is specified, check barrier containment
+            if (enemyType && isBlockedByBarrier(enemyType, cur.x, cur.y, nx, ny)) continue;
             const tentative = cur.g + 1;
             const nk = key(nx,ny);
             const best = gScore.has(nk)? gScore.get(nk): Infinity;
@@ -2421,8 +2539,24 @@ function updateFlyingPig(e, currentTime, px, py, bazookaSpeedMult = 1.0, enemySp
             const step = e.circleSpeed * dt * thawMult * bazookaSpeedMult * enemySpeedMult;
             if (cdist > 0.001) {
                 const m = Math.min(step, cdist);
-                e.fx += (cdx / cdist) * m;
-                e.fy += (cdy / cdist) * m;
+                const newFx = e.fx + (cdx / cdist) * m;
+                const newFy = e.fy + (cdy / cdist) * m;
+                const newX = Math.max(1, Math.min(MAZE_WIDTH - 2, Math.floor(newFx)));
+                const newY = Math.max(1, Math.min(MAZE_HEIGHT - 2, Math.floor(newFy)));
+                if (!isBlockedByBarrier(e.type, Math.floor(e.fx), Math.floor(e.fy), newX, newY)) {
+                    e.fx = newFx;
+                    e.fy = newFy;
+                }
+            }
+            // Enforce barrier containment - if pig escaped, clamp it back
+            const barrier = getEnemyBarrier(e);
+            if (barrier) {
+                const minX = barrier.rect.x;
+                const minY = barrier.rect.y;
+                const maxX = barrier.rect.x + barrier.rect.w - 1;
+                const maxY = barrier.rect.y + barrier.rect.h - 1;
+                e.fx = Math.max(minX, Math.min(maxX + 0.99, e.fx));
+                e.fy = Math.max(minY, Math.min(maxY + 0.99, e.fy));
             }
             // Trigger shot sequence between 1-10 seconds randomly
             if (currentTime >= e.nextDashAt) {
@@ -3343,7 +3477,7 @@ export function updateEnemies(currentTime) {
                 if (!e.target) {
                     let neighbors = [
                         { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    ].filter(s => canEnemyMoveTo(e, cx + s.dx, cy + s.dy));
                     if (e.roamDir) {
                         const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
                         const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
@@ -3374,11 +3508,24 @@ export function updateEnemies(currentTime) {
                     }
                 }
 
+                // Enforce barrier containment - if chaser escaped, clamp it back
+                const barrier = getEnemyBarrier(e);
+                if (barrier) {
+                    const minX = barrier.rect.x;
+                    const minY = barrier.rect.y;
+                    const maxX = barrier.rect.x + barrier.rect.w - 1;
+                    const maxY = barrier.rect.y + barrier.rect.h - 1;
+                    e.fx = Math.max(minX, Math.min(maxX + 0.99, e.fx));
+                    e.fy = Math.max(minY, Math.min(maxY + 0.99, e.fy));
+                    e.x = Math.floor(e.fx);
+                    e.y = Math.floor(e.fy);
+                }
+
                 // Always-moving fallback in roam: pick a valid neighbor, avoid backtracking when possible
                 if (!e.target) {
                     let neighbors = [
                         { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    ].filter(s => canEnemyMoveTo(e, cx + s.dx, cy + s.dy));
                     if (e.roamDir) {
                         const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
                         const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
@@ -3794,7 +3941,7 @@ export function updateEnemies(currentTime) {
                 if (pick) {
                     e.roamGoal = pick;
                     e._roamGoalSetAt = currentTime;
-                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y, e.type);
                 }
             }
             // In flee, pick far goal from player or target a teleport pad to escape
@@ -3807,7 +3954,7 @@ export function updateEnemies(currentTime) {
                     for (const pad of gameState.teleportPads) {
                         // Respect pad cooldown; Mortar won't attempt to use cooling pads
                         if (currentTime < (pad.cooldownUntil || 0)) continue;
-                        const distFromPad = bfsDistancesFrom(gameState.maze, pad.x, pad.y);
+                        const distFromPad = bfsDistancesFrom(gameState.maze, pad.x, pad.y, e.type);
                         const reach = distFromPad[cy][cx];
                         if (!Number.isFinite(reach)) continue; // can't reach origin pad
                         const dest = gameState.teleportPads[pad.pair];
@@ -3834,7 +3981,7 @@ export function updateEnemies(currentTime) {
                 }
                 e.roamGoal = pickedGoal;
                 e._roamGoalSetAt = currentTime;
-                e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+                e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y, e.type);
             }
 
             // Opportunistic teleport while fleeing: if standing on a pad and it's ready, use it instantly
@@ -3858,7 +4005,7 @@ export function updateEnemies(currentTime) {
                 let here = e._roamDist[cy][cx];
                 if (!Number.isFinite(here)) {
                     // recompute if out of bounds
-                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y);
+                    e._roamDist = bfsDistancesFrom(gameState.maze, e.roamGoal.x, e.roamGoal.y, e.type);
                     here = e._roamDist[cy][cx];
                 }
                 let best = { x: cx, y: cy, d: here };
@@ -3923,7 +4070,7 @@ export function updateEnemies(currentTime) {
                 // 1) Alert steering
                 if (e.alertUntil && currentTime < e.alertUntil && e.alertTarget) {
                     if (!e._alertDist) {
-                        e._alertDist = bfsDistancesFrom(gameState.maze, e.alertTarget.x, e.alertTarget.y);
+                        e._alertDist = bfsDistancesFrom(gameState.maze, e.alertTarget.x, e.alertTarget.y, e.type);
                     }
                     let best = { x: cx, y: cy, d: e._alertDist[cy][cx] };
                     for (const s of steps) {
@@ -3995,7 +4142,7 @@ export function updateEnemies(currentTime) {
                     }
 
                     if (!e.target && e.roamGoal) {
-                        const distFS = bfsDistancesFrom(gameState.maze, cx, cy);
+                        const distFS = bfsDistancesFrom(gameState.maze, cx, cy, e.type);
                         let next = { x: cx, y: cy, d: distFS[cy][cx] };
                         for (const s of steps) {
                             const nx = cx + s.dx, ny = cy + s.dy;
@@ -4044,11 +4191,24 @@ export function updateEnemies(currentTime) {
                     }
                 }
 
+                // Enforce barrier containment - if seeker escaped, clamp it back
+                const barrier = getEnemyBarrier(e);
+                if (barrier) {
+                    const minX = barrier.rect.x;
+                    const minY = barrier.rect.y;
+                    const maxX = barrier.rect.x + barrier.rect.w - 1;
+                    const maxY = barrier.rect.y + barrier.rect.h - 1;
+                    e.fx = Math.max(minX, Math.min(maxX + 0.99, e.fx));
+                    e.fy = Math.max(minY, Math.min(maxY + 0.99, e.fy));
+                    e.x = Math.floor(e.fx);
+                    e.y = Math.floor(e.fy);
+                }
+
                 // Always-moving fallback to keep Seeker from idling in roam
                 if (!e.target) {
                     const neighbors = [
                         { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-                    ].filter(s => isPassableForEnemy(gameState.maze[cy + s.dy][cx + s.dx]));
+                    ].filter(s => canEnemyMoveTo(e, cx + s.dx, cy + s.dy));
                     if (e.roamDir) {
                         const rev = { dx: -e.roamDir.dx, dy: -e.roamDir.dy };
                         const filtered = neighbors.filter(n => !(n.dx === rev.dx && n.dy === rev.dy));
@@ -4767,6 +4927,7 @@ function findGlitchSpawnTile() {
 
 export function spawnGlitchTile() {
     if (gameState.glitchTile) return;
+    if (gameState.customLevelActive) return; // Don't spawn glitch portal in custom levels
     if (!GLITCH_LEVEL_TERMINAL[gameState.currentLevel]) return;
     const spot = findGlitchSpawnTile();
     if (!spot) return;

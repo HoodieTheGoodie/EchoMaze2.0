@@ -91,6 +91,7 @@
             border-bottom: 1px solid var(--grid-line);
             background: rgba(255,255,255,0.02);
         }
+        .scrollable { max-height: calc(100vh - 140px); overflow-y: auto; }
         .palette {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
@@ -115,12 +116,18 @@
         .canvas-wrapper {
             position: relative;
             padding: 12px;
+            overflow: visible;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         #builderCanvas {
-            width: 100%;
+            width: 600px;
+            height: 600px;
             background: var(--grid);
             border: 1px solid var(--grid-line);
-            border-radius: 12px;
+            flex-shrink: 0;
         }
         .grid-overlay {
             position: absolute;
@@ -128,8 +135,14 @@
             pointer-events: none;
             background-image: linear-gradient(0deg, transparent 95%, var(--grid-line) 95%),
                               linear-gradient(90deg, transparent 95%, var(--grid-line) 95%);
-            background-size: calc(100% / 30) calc(100% / 30);
-            border-radius: 12px;
+            background-size: 20px 20px;
+            width: 600px;
+            height: 600px;
+            margin: auto;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
         }
         .right-pane {
             padding: 12px;
@@ -207,26 +220,45 @@
         </div>
     </header>
     <main>
-        <section class="panel" aria-label="palette">
+        <section class="panel scrollable" aria-label="palette">
             <h2>Palette</h2>
             <div class="palette" id="palette"></div>
             <div class="section">
-                <h3>Constraints</h3>
-                <div class="legend">
-                    <span><span class="swatch" style="background: var(--safe);"></span>1 Spawn required</span>
-                    <span><span class="swatch" style="background: var(--accent-2);"></span>1 Exit required</span>
-                    <span><span class="swatch" style="background: var(--accent);"></span>Teleporters need pairs</span>
+                <h3>Teleporter Links</h3>
+                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--grid-line); display:flex; gap:6px; flex-wrap:wrap;">
+                        <button id="linkTeleportersBtn" style="flex:1; padding: 6px; border-radius: 6px; background: rgba(77,225,255,0.14); color: var(--accent); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Link Mode</button>
+                        <button id="dirTwoWay" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">2-way</button>
+                        <button id="dirOneWay" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">1-way</button>
+                        <button id="targetTeleporter" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">To Teleporter</button>
+                        <button id="targetCell" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">To Map Spot</button>
+                        <button id="toggleLinkLinesBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Show Lines</button>
+                    </div>
+                <div id="teleporterList" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin-top: 8px; max-height: 260px; overflow-y: auto;"></div>
+            </div>
+            <div class="section">
+                <h3>Enemy Barriers</h3>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button id="barrierModeBtn" style="flex:1; padding: 6px; border-radius: 6px; background: rgba(205,180,255,0.18); color: #cdb4ff; border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Barrier Mode</button>
+                    <button id="pickEnemyBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Pick Enemy</button>
+                    <button id="toggleBarriersBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Show Barriers</button>
                 </div>
+                <div id="barrierList" style="display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height: 220px; overflow-y:auto;"></div>
             </div>
         </section>
         <section class="panel" aria-label="canvas">
-            <h2>Canvas (30 x 30)</h2>
+            <h2>Canvas (<span id="canvasSize">30 x 30</span>)</h2>
+            <div style="display: flex; gap: 8px; padding: 0 12px 8px; align-items: center;">
+                <label for="sizeSlider" style="color: var(--muted); font-size: 12px;">Size:</label>
+                <input id="sizeSlider" type="range" min="1" max="30" value="30" style="flex: 1; cursor: pointer;">
+                <input id="sizeInput" type="number" min="1" max="30" value="30" style="width: 45px; padding: 4px; border-radius: 6px; border: 1px solid var(--grid-line); background: #0d1424; color: var(--text); text-align: center; font-weight: 600;">
+                <button id="resetBtn" style="padding: 6px 10px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 12px; transition: background 0.15s ease, transform 0.1s ease;" title="Clear board">🗑️ Reset</button>
+            </div>
             <div class="canvas-wrapper">
-                <canvas id="builderCanvas" width="900" height="900"></canvas>
+                <canvas id="builderCanvas" width="600" height="600"></canvas>
                 <div class="grid-overlay"></div>
             </div>
         </section>
-        <section class="panel right-pane" aria-label="details">
+        <section class="panel right-pane scrollable" aria-label="details">
             <div class="section">
                 <h3>Level Info</h3>
                 <div class="row">
@@ -239,11 +271,20 @@
                 </div>
             </div>
             <div class="section">
+                <h3>Constraints</h3>
+                <div class="legend">
+                    <span><span class="swatch" style="background: var(--safe);"></span>1 Spawn required</span>
+                    <span><span class="swatch" style="background: var(--accent-2);"></span>1 Exit required</span>
+                    <span><span class="swatch" style="background: var(--accent);"></span>Teleporters need pairs</span>
+                </div>
+            </div>
+            <div class="section">
                 <h3>Share JSON</h3>
                 <textarea id="shareText" aria-label="Level JSON"></textarea>
                 <div class="row" style="margin-top:8px;">
                     <button id="copyBtn">Copy</button>
                     <button id="loadJsonBtn">Load</button>
+                    <button id="backupBtn" title="Save current draft without checks">Backup</button>
                 </div>
             </div>
             <div class="section">
