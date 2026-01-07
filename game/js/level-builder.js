@@ -53,6 +53,16 @@
     const sizeSlider = document.getElementById('sizeSlider');
     const sizeInput = document.getElementById('sizeInput');
     const canvasSizeDisplay = document.getElementById('canvasSize');
+    // Tools toolbar
+    const toolPaintBtn = document.getElementById('toolPaintBtn');
+    const toolSelectBtn = document.getElementById('toolSelectBtn');
+    const toolFillBtn = document.getElementById('toolFillBtn');
+    const toolEyedropBtn = document.getElementById('toolEyedropBtn');
+    const actionCopyBtn = document.getElementById('actionCopyBtn');
+    const actionCutBtn = document.getElementById('actionCutBtn');
+    const actionPasteBtn = document.getElementById('actionPasteBtn');
+    const actionClearSelBtn = document.getElementById('actionClearSelBtn');
+    const toolStatusEl = document.getElementById('toolStatus');
     const linkTeleportersBtn = document.getElementById('linkTeleportersBtn');
     const teleporterList = document.getElementById('teleporterList');
     const dirTwoWayBtn = document.getElementById('dirTwoWay');
@@ -92,6 +102,15 @@
     const enemyBarriers = []; // {id, enemy:{x,y,type}, rect:{x,y,w,h}}
     let barrierIdCounter = 1;
 
+    // Tools state
+    let toolMode = 'paint'; // 'paint' | 'select' | 'fill' | 'paste' | 'eyedropper'
+    let selecting = false;
+    let selectionStart = null; // {x,y}
+    let selectionCurrent = null; // {x,y}
+    let selectionRect = null; // {x,y,w,h}
+    let clipboard = null; // 2D array of tiles
+    let pasteHover = null; // {x,y}
+
     function showToast(msg, dur = 1800) {
         toastEl.textContent = msg;
         toastEl.classList.add('show');
@@ -103,13 +122,74 @@
         palette.forEach(item => {
             const div = document.createElement('div');
             div.className = 'tile' + (activeTile === item.id ? ' active' : '');
-            div.textContent = item.label;
+            // icon + label
+            const icon = createTileIcon(item.id);
+            const label = document.createElement('div');
+            label.textContent = item.label;
+            label.style.marginTop = '6px';
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '700';
+            div.style.display = 'flex';
+            div.style.flexDirection = 'column';
+            div.style.alignItems = 'center';
+            div.appendChild(icon);
+            div.appendChild(label);
             div.addEventListener('click', () => {
                 activeTile = item.id;
                 renderPalette();
             });
             paletteEl.appendChild(div);
         });
+    }
+
+    function createTileIcon(value) {
+        const c = document.createElement('canvas');
+        c.width = 28; c.height = 28;
+        const g = c.getContext('2d');
+        // base
+        g.fillStyle = '#1d2a44';
+        g.fillRect(0, 0, 28, 28);
+        // border
+        g.strokeStyle = '#233456';
+        g.strokeRect(0.5, 0.5, 27, 27);
+        const color = tileColor(value);
+        if (value === Tiles.EMPTY) {
+            // eraser icon
+            g.strokeStyle = '#a0b3d1';
+            g.lineWidth = 2;
+            g.beginPath();
+            g.moveTo(6, 20); g.lineTo(22, 6);
+            g.stroke();
+        } else if (value === Tiles.TELEPORT) {
+            g.fillStyle = color; g.beginPath(); g.arc(14, 14, 9, 0, Math.PI*2); g.fill();
+            g.fillStyle = '#0b0f1a'; g.beginPath(); g.arc(14, 14, 4, 0, Math.PI*2); g.fill();
+        } else if (value >= 10) {
+            // enemy spawns as diamond
+            g.fillStyle = color;
+            g.beginPath();
+            g.moveTo(14, 5); g.lineTo(23, 14); g.lineTo(14, 23); g.lineTo(5, 14); g.closePath();
+            g.fill();
+        } else {
+            g.fillStyle = color;
+            g.fillRect(4, 4, 20, 20);
+        }
+        return c;
+    }
+
+    function tileColor(value) {
+        switch (value) {
+            case Tiles.WALL: return '#1f3c88';
+            case Tiles.START: return '#3bd671';
+            case Tiles.EXIT: return '#ff9f1c';
+            case Tiles.GENERATOR: return '#ff4d6d';
+            case Tiles.TELEPORT: return '#4de1ff';
+            case Tiles.SPAWN_CHASER: return '#cdb4ff';
+            case Tiles.SPAWN_SEEKER: return '#bde0fe';
+            case Tiles.SPAWN_BATTER: return '#ffc8dd';
+            case Tiles.SPAWN_PIG: return '#ffafcc';
+            case Tiles.SPAWN_MORTAR: return '#ffd166';
+            default: return '#1d2a44';
+        }
     }
 
     function drawCell(x, y, value) {
@@ -142,6 +222,8 @@
         }
         if (showLinkLines) drawLinks();
         if (showBarriers || barrierStage === 'draw') drawBarriers();
+        if (selectionRect) drawSelectionOverlay();
+        if (toolMode === 'paste' && clipboard && pasteHover) drawPastePreview();
     }
 
     function drawArrow(fromX, fromY, toX, toY) {
@@ -255,6 +337,43 @@
             return;
         }
         const { x, y } = cellFromEvent(e);
+        if (toolMode === 'select') {
+            if (!selecting) {
+                selecting = true;
+                selectionStart = { x, y };
+                selectionCurrent = { x, y };
+            } else {
+                selectionCurrent = { x, y };
+            }
+            selectionRect = normalizeRect(selectionStart, selectionCurrent);
+            redraw();
+            return;
+        }
+
+        if (toolMode === 'fill') {
+            floodFill(x, y, grid[y][x], activeTile);
+            redraw(); markDirty();
+            return;
+        }
+
+        if (toolMode === 'eyedropper') {
+            const picked = grid[y][x];
+            activeTile = picked;
+            renderPalette();
+            setTool('paint');
+            showToast('Picked tile');
+            return;
+        }
+
+        if (toolMode === 'paste') {
+            if (clipboard) {
+                pasteAt(x, y, clipboard);
+                redraw(); markDirty();
+            }
+            return;
+        }
+
+        // default: paint/erase
         if (e.button === 2) {
             setCell(x, y, Tiles.EMPTY);
             const key = `${x},${y}`;
@@ -273,6 +392,11 @@
             handlePaint(e);
         });
         canvas.addEventListener('mousemove', e => {
+            if (toolMode === 'paste' && clipboard) {
+                pasteHover = cellFromEvent(e);
+                redraw();
+                return;
+            }
             if (isMouseDown) handlePaint(e);
         });
         window.addEventListener('mouseup', () => {
@@ -291,6 +415,11 @@
                 redraw();
                 markDirty();
             }
+            if (selecting) {
+                selecting = false;
+                selectionRect = normalizeRect(selectionStart, selectionCurrent);
+                redraw();
+            }
             isMouseDown = false;
         });
         canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -302,8 +431,134 @@
         canvas.addEventListener('touchmove', e => {
             e.preventDefault();
             const touch = e.touches[0];
+            if (toolMode === 'paste' && clipboard) {
+                pasteHover = cellFromEvent({ clientX: touch.clientX, clientY: touch.clientY });
+                redraw();
+                return;
+            }
             handlePaint({ clientX: touch.clientX, clientY: touch.clientY, button: 0 });
         }, { passive: false });
+    }
+
+    function normalizeRect(a, b) {
+        if (!a || !b) return null;
+        const minX = Math.max(0, Math.min(a.x, b.x));
+        const minY = Math.max(0, Math.min(a.y, b.y));
+        const maxX = Math.min(SIZE - 1, Math.max(a.x, b.x));
+        const maxY = Math.min(SIZE - 1, Math.max(a.y, b.y));
+        return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    }
+
+    function drawSelectionOverlay() {
+        if (!selectionRect) return;
+        ctx.save();
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = '#4de1ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(selectionRect.x * TILE + 1, selectionRect.y * TILE + 1, selectionRect.w * TILE - 2, selectionRect.h * TILE - 2);
+        ctx.restore();
+    }
+
+    function drawPastePreview() {
+        if (!pasteHover || !clipboard) return;
+        const startX = pasteHover.x;
+        const startY = pasteHover.y;
+        ctx.save();
+        for (let y = 0; y < clipboard.length; y++) {
+            for (let x = 0; x < clipboard[0].length; x++) {
+                const gx = startX + x, gy = startY + y;
+                if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) continue;
+                const color = tileColor(clipboard[y][x]);
+                ctx.globalAlpha = 0.55;
+                ctx.fillStyle = color;
+                ctx.fillRect(gx * TILE + 1, gy * TILE + 1, TILE - 2, TILE - 2);
+                ctx.globalAlpha = 1;
+            }
+        }
+        ctx.restore();
+    }
+
+    function extractSelection(rect) {
+        if (!rect) return null;
+        const data = [];
+        for (let y = 0; y < rect.h; y++) {
+            const row = [];
+            for (let x = 0; x < rect.w; x++) {
+                row.push(grid[rect.y + y][rect.x + x]);
+            }
+            data.push(row);
+        }
+        return data;
+    }
+
+    function clearSelectionArea(rect) {
+        for (let y = 0; y < rect.h; y++) {
+            for (let x = 0; x < rect.w; x++) {
+                grid[rect.y + y][rect.x + x] = Tiles.EMPTY;
+            }
+        }
+    }
+
+    function pasteAt(x, y, data) {
+        for (let yy = 0; yy < data.length; yy++) {
+            for (let xx = 0; xx < data[0].length; xx++) {
+                const gx = x + xx, gy = y + yy;
+                if (gx < 0 || gy < 0 || gx >= SIZE || gy >= SIZE) continue;
+                const val = data[yy][xx];
+                grid[gy][gx] = val;
+            }
+        }
+    }
+
+    function floodFill(sx, sy, target, replacement) {
+        if (target === replacement) return;
+        const inBounds = (x, y) => x >= 0 && y >= 0 && x < SIZE && y < SIZE;
+        const q = [];
+        q.push({ x: sx, y: sy });
+        const seen = new Set();
+        const key = (x, y) => `${x},${y}`;
+        while (q.length) {
+            const { x, y } = q.shift();
+            const k = key(x, y);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            if (!inBounds(x, y)) continue;
+            if (grid[y][x] !== target) continue;
+            grid[y][x] = replacement;
+            q.push({ x: x + 1, y });
+            q.push({ x: x - 1, y });
+            q.push({ x, y: y + 1 });
+            q.push({ x, y: y - 1 });
+        }
+    }
+
+    function setTool(mode) {
+        toolMode = mode;
+        const buttons = [toolPaintBtn, toolSelectBtn, toolFillBtn, toolEyedropBtn];
+        buttons.forEach(b => {
+            if (!b) return;
+            if ((mode === 'paint' && b === toolPaintBtn) ||
+                (mode === 'select' && b === toolSelectBtn) ||
+                (mode === 'fill' && b === toolFillBtn) ||
+                (mode === 'eyedropper' && b === toolEyedropBtn) ||
+                (mode === 'paste' && b === actionPasteBtn)) {
+                b.style.background = 'rgba(77,225,255,0.18)';
+                b.style.color = 'var(--accent)';
+            } else {
+                b.style.background = 'var(--panel-strong)';
+                b.style.color = 'var(--text)';
+            }
+        });
+        toolStatusEl.textContent = `Active: ${mode[0].toUpperCase()}${mode.slice(1)}`;
+        // Clear selection when switching away from select tool
+        if (mode !== 'select') {
+            selectionRect = null;
+            selectionStart = null;
+            selectionCurrent = null;
+            selecting = false;
+        }
+        pasteHover = null;
+        redraw();
     }
 
     function gridToData() {
@@ -427,6 +682,33 @@
         if (!shareText.value) { showToast('Nothing to copy'); return; }
         navigator.clipboard.writeText(shareText.value).then(() => showToast('Copied!')); 
     }
+
+    // Tool button events
+    if (toolPaintBtn) toolPaintBtn.addEventListener('click', () => setTool('paint'));
+    if (toolSelectBtn) toolSelectBtn.addEventListener('click', () => setTool('select'));
+    if (toolFillBtn) toolFillBtn.addEventListener('click', () => setTool('fill'));
+    if (toolEyedropBtn) toolEyedropBtn.addEventListener('click', () => setTool('eyedropper'));
+    if (actionCopyBtn) actionCopyBtn.addEventListener('click', () => {
+        if (!selectionRect) { showToast('No selection'); return; }
+        clipboard = extractSelection(selectionRect);
+        showToast('Copied selection');
+    });
+    if (actionCutBtn) actionCutBtn.addEventListener('click', () => {
+        if (!selectionRect) { showToast('No selection'); return; }
+        clipboard = extractSelection(selectionRect);
+        clearSelectionArea(selectionRect);
+        redraw(); markDirty();
+        showToast('Cut selection');
+    });
+    if (actionPasteBtn) actionPasteBtn.addEventListener('click', () => {
+        if (!clipboard) { showToast('Clipboard empty'); return; }
+        setTool('paste');
+        showToast('Paste: click to place');
+    });
+    if (actionClearSelBtn) actionClearSelBtn.addEventListener('click', () => {
+        selectionRect = null; selectionStart = null; selectionCurrent = null; pasteHover = null;
+        redraw();
+    });
 
     function playtest() {
         const payload = exportJson();
@@ -855,6 +1137,7 @@
 
     function init() {
         renderPalette();
+        setTool('paint');
         redraw();
         restoreDraft();
         canvasListeners();
@@ -935,6 +1218,28 @@
             if (!dirty) return;
             e.preventDefault();
             e.returnValue = '';
+        });
+
+        // keyboard shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                selectionRect = null; selectionStart = null; selectionCurrent = null; pasteHover = null;
+                if (toolMode === 'paste') setTool('paint');
+                redraw();
+                return;
+            }
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key.toLowerCase() === 'c') {
+                    if (selectionRect) { clipboard = extractSelection(selectionRect); showToast('Copied selection'); }
+                    e.preventDefault();
+                } else if (e.key.toLowerCase() === 'x') {
+                    if (selectionRect) { clipboard = extractSelection(selectionRect); clearSelectionArea(selectionRect); redraw(); markDirty(); showToast('Cut selection'); }
+                    e.preventDefault();
+                } else if (e.key.toLowerCase() === 'v') {
+                    if (clipboard) { setTool('paste'); showToast('Paste: click to place'); }
+                    e.preventDefault();
+                }
+            }
         });
 
         // initial visual sync

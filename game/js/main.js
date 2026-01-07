@@ -1,4 +1,5 @@
 // main.js - Game loop and initialization
+// Game belongs to Hoodie and Scott Efiel, no one else.
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom, updateLevel11EndingDialog } from './state.js';
 import { completeGenerator } from './state.js';

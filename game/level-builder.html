@@ -116,10 +116,10 @@
         .canvas-wrapper {
             position: relative;
             padding: 12px;
-            overflow: visible;
+            overflow: auto;
             flex: 1;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
         }
         #builderCanvas {
@@ -131,18 +131,14 @@
         }
         .grid-overlay {
             position: absolute;
-            inset: 12px;
             pointer-events: none;
             background-image: linear-gradient(0deg, transparent 95%, var(--grid-line) 95%),
                               linear-gradient(90deg, transparent 95%, var(--grid-line) 95%);
             background-size: 20px 20px;
             width: 600px;
             height: 600px;
-            margin: auto;
             top: 0;
             left: 0;
-            right: 0;
-            bottom: 0;
         }
         .right-pane {
             padding: 12px;
@@ -245,7 +241,7 @@
                 <div id="barrierList" style="display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height: 220px; overflow-y:auto;"></div>
             </div>
         </section>
-        <section class="panel" aria-label="canvas">
+        <section class="panel scrollable" aria-label="canvas">
             <h2>Canvas (<span id="canvasSize">30 x 30</span>)</h2>
             <div style="display: flex; gap: 8px; padding: 0 12px 8px; align-items: center;">
                 <label for="sizeSlider" style="color: var(--muted); font-size: 12px;">Size:</label>
@@ -253,9 +249,24 @@
                 <input id="sizeInput" type="number" min="1" max="30" value="30" style="width: 45px; padding: 4px; border-radius: 6px; border: 1px solid var(--grid-line); background: #0d1424; color: var(--text); text-align: center; font-weight: 600;">
                 <button id="resetBtn" style="padding: 6px 10px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 12px; transition: background 0.15s ease, transform 0.1s ease;" title="Clear board">🗑️ Reset</button>
             </div>
+            <div style="display:flex; gap:6px; padding: 0 12px 8px; flex-wrap: wrap; align-items:center;">
+                <span style="color: var(--muted); font-size: 12px; margin-right:4px;">Tools:</span>
+                <button id="toolPaintBtn" class="tool" title="Paint (default)" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">🖌️ Paint</button>
+                <button id="toolSelectBtn" class="tool" title="Select rectangle" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🔲 Select</button>
+                <button id="toolFillBtn" class="tool" title="Fill (bucket)" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🪣 Fill</button>
+                <button id="toolEyedropBtn" class="tool" title="Eyedropper" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🧲 Pick</button>
+                <span style="width:12px"></span>
+                <button id="actionCopyBtn" title="Copy selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">📋 Copy</button>
+                <button id="actionCutBtn" title="Cut selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">✂️ Cut</button>
+                <button id="actionPasteBtn" title="Paste" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">📌 Paste</button>
+                <button id="actionClearSelBtn" title="Clear selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🧹 Clear Sel</button>
+                <span id="toolStatus" style="margin-left:auto; color: var(--muted); font-size:12px;">Active: Paint</span>
+            </div>
             <div class="canvas-wrapper">
-                <canvas id="builderCanvas" width="600" height="600"></canvas>
-                <div class="grid-overlay"></div>
+                <div style="position: relative;">
+                    <canvas id="builderCanvas" width="600" height="600"></canvas>
+                    <div class="grid-overlay"></div>
+                </div>
             </div>
         </section>
         <section class="panel right-pane scrollable" aria-label="details">

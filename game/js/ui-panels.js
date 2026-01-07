@@ -556,14 +556,14 @@ export async function handleCodeRedemption() {
                 alert('🚀 BAZOOKA MODE unlocked! Head to Settings to enable it.');
                 status.textContent = '';
                 // Close skins panel
-                closeSkinPanel();
+                closeSkinsPanel();
             }, 2000);
         } else if (result.isRGBAchievement) {
             // Special handling for RGB achievements
             setTimeout(() => {
                 alert(result.message);
                 status.textContent = '';
-                closeSkinPanel();
+                closeSkinsPanel();
                 // Open achievements to show the new RGB achievement
                 openAchievementsPanel();
             }, 2000);
