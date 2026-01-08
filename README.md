@@ -12,8 +12,6 @@ For Speedrun times there is a global leader board that if you show me proof of y
 - All assets, scripts, and styles are bundled locally
 - Works offline once files are extracted
 
-Online version: https://echomaze2.me
-
 ## Level Builder quick start
 - Open the game and click **Level Builder** in the main menu (or go to [game/level-builder.html](game/level-builder.html)).
 - Place tiles with left click/touch drag; right click (or choose **Erase**) to clear.

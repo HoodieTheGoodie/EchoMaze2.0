@@ -1,0 +1,149 @@
+================================================================================
+                    ECHO MAZE 2.0 - SUBMISSION GUIDE
+================================================================================
+
+COOLMATH GAMES SUBMISSION
+========================
+
+✓ Your game is ready for Coolmath Games!
+
+CHANGES MADE:
+------------
+1. Removed external links from Credits overlay (GitHub, Itch.io references)
+2. Removed website link (echomaze2.me) from README.md
+3. Verified no analytics, tracking, or stats reporting
+4. Confirmed no name entry prompts
+5. Verified family-friendly content (no violence/profanity)
+
+ALL REQUIREMENTS MET:
+--------------------
+✓ HTML5 (no Flash or plugins)
+✓ Strategy/puzzle gameplay
+✓ No violence or foul language
+✓ No advertising
+✓ No external links
+✓ No stats tracking
+✓ No name entry
+
+WHAT TO SUBMIT:
+--------------
+Submit the entire /game/ folder and index.html from this repository.
+The modified files are now compliant with all Coolmath Games requirements.
+
+See COOLMATH_VERIFICATION.txt for detailed verification report.
+
+
+ITCH.IO UPLOAD
+==============
+
+✓ Download package created: EchoMaze2.0-itch.io.zip (359KB)
+
+This ZIP file contains:
+- index.html (entry point)
+- ITCH_IO_README.txt (player instructions)
+- game/ folder (all game files)
+- No development files or unnecessary content
+
+HOW TO UPLOAD TO ITCH.IO:
+-------------------------
+
+OPTION 1: Browser Playable (Recommended)
+----------------------------------------
+1. Go to https://itch.io/game/new
+2. Fill in game details (title, description, screenshots)
+3. Under "Uploads":
+   - Upload: EchoMaze2.0-itch.io.zip
+   - Check: "This file will be played in the browser"
+   - Set the entry point file as: index.html
+4. Set "Kind of project" to "HTML"
+5. Set viewport dimensions: 800x800 (or your preference)
+6. Publish!
+
+OPTION 2: Downloadable Game
+---------------------------
+1. Go to https://itch.io/game/new
+2. Fill in game details
+3. Under "Uploads":
+   - Upload: EchoMaze2.0-itch.io.zip
+   - Leave unchecked: "This file will be played in the browser"
+   - Set platform: Windows, Mac, Linux
+4. Players will download and extract the ZIP
+5. They open index.html in their browser to play offline
+
+OPTION 3: Both Browser + Download
+---------------------------------
+You can offer both options:
+1. Upload the same ZIP file twice
+2. First upload: Check "played in browser"
+3. Second upload: Leave unchecked for download
+4. Players choose their preferred method
+
+
+GAME DETAILS FOR ITCH.IO PAGE:
+-----------------------------
+
+Title: Echo Maze 2.0
+
+Short Description:
+Navigate cyberpunk mazes, manage stamina, repair generators, and outsmart AI 
+enemies in this strategic puzzle adventure!
+
+Tags (suggested):
+puzzle, strategy, maze, singleplayer, browser, html5, retro, cyberpunk
+
+Features to highlight:
+• 10 Story Levels + Secret Boss
+• Endless Mode with permanent upgrades
+• Custom Level Builder
+• Strategic ability management
+• Timing-based challenges
+• Touch controls for mobile
+
+Genre: Puzzle, Strategy
+
+Made with: HTML5, JavaScript, Canvas
+
+Controls: Keyboard (Arrow keys/WASD), Mouse, Touch
+
+
+SCREENSHOTS RECOMMENDATIONS:
+---------------------------
+Capture these moments for your itch.io page:
+1. Main menu showing level selection
+2. Gameplay with player character and maze
+3. Generator repair skill check
+4. Endless mode menu with upgrades
+5. Level builder interface
+6. Boss fight (if you want to tease it)
+
+
+FILE LOCATIONS:
+--------------
+✓ EchoMaze2.0-itch.io.zip - Ready to upload
+✓ ITCH_IO_README.txt - Included in ZIP (player instructions)
+✓ COOLMATH_VERIFICATION.txt - Requirements verification
+✓ package-for-itch.sh - Script to rebuild package if needed
+
+
+NOTES:
+-----
+• The ZIP is only 359KB - very lightweight!
+• Game works 100% offline after download
+• No external dependencies
+• Compatible with all modern browsers
+• Mobile-friendly with touch controls
+
+
+NEED TO REBUILD THE PACKAGE?
+----------------------------
+If you make changes and need to repackage:
+
+Run this command:
+    ./package-for-itch.sh
+
+This will create a fresh EchoMaze2.0-itch.io.zip
+
+
+================================================================================
+                    You're all set! Good luck! 🎮
+================================================================================
