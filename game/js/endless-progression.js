@@ -261,7 +261,8 @@ export function startEndlessRun(difficultyMode = 'easy') {
         points: 0,
         activeAbilities: [],
         difficultyMode: difficultyMode,
-        livesGained: 0
+        livesGained: 0,
+        startTime: performance.now() // Track start time for survival achievement
     };
     
     // Apply starting upgrades if enabled
@@ -287,6 +288,19 @@ export function startEndlessRun(difficultyMode = 'easy') {
 export function completeEndlessRoom() {
     if (!endlessProgression.currentRun.active) return;
     
+    // Check 10-minute survival achievement
+    const survivalTime = performance.now() - endlessProgression.currentRun.startTime;
+    if (survivalTime >= 600000 && !endlessProgression.currentRun.survivalAchievementFired) {
+        endlessProgression.currentRun.survivalAchievementFired = true;
+        try {
+            import('./achievements.js').then(mod => {
+                if (mod.checkAchievements) {
+                    mod.checkAchievements('achievement_event', { eventType: 'endless_survival_10min' });
+                }
+            }).catch(() => {});
+        } catch {}
+    }
+    
     endlessProgression.currentRun.roomNumber++;
     const roomNum = endlessProgression.currentRun.roomNumber;
     const mode = endlessProgression.currentRun.difficultyMode || 'easy';
@@ -294,6 +308,17 @@ export function completeEndlessRoom() {
     // Award points (2x for hard mode)
     const points = calculateRoomPoints(roomNum, mode);
     endlessProgression.currentRun.points += points;
+    
+    // Fire endless_wave achievement event for endless-progression mode
+    try {
+        import('./achievements.js').then(mod => {
+            if (mod.checkAchievements) {
+                mod.checkAchievements('endless_wave', { wave: roomNum, perfectWave: false });
+            }
+        });
+    } catch (e) {
+        console.error('Achievement endless_wave event error:', e);
+    }
     
     // Check for new abilities earned
     for (const [key, ability] of Object.entries(TEMP_ABILITIES)) {

@@ -399,6 +399,9 @@ function triggerPowerDisableSequence() {
     ];
     gameState.level11.endingDialogIndex = 0;
     gameState.level11.endingDialogNextAt = performance.now() + 2500;
+    
+    // Fire achievement event for discovering power supply
+    fireAchievementEvent('power_supply_discovered', { choice: 'disable' });
 }
 
 function triggerBadEndingSequence() {
@@ -413,6 +416,9 @@ function triggerBadEndingSequence() {
     ];
     gameState.level11.endingDialogIndex = 0;
     gameState.level11.endingDialogNextAt = performance.now() + 2500;
+    
+    // Fire achievement event for discovering power supply
+    fireAchievementEvent('power_supply_discovered', { choice: 'keep' });
 }
 
 function showGoodEndingNote() {
@@ -857,6 +863,15 @@ export const COLLISION_SHIELD_BREAK_FLASH = 220; // ms
 export const SKILL_WINDOW_MIN_START = 90; // degrees
 
 export function initGame() {
+    // Fire run_start event to reset achievement per-run counters
+    try {
+        if (typeof checkAchievements === 'function') {
+            checkAchievements('run_start');
+        }
+    } catch (e) {
+        console.error('[state] Achievement run_start event error:', e);
+    }
+    
     // Level/meta
     gameState.godMode = isGodMode();
     // Clear any boss/bazooka-specific carryover when starting a fresh level
@@ -954,6 +969,18 @@ export function initGame() {
     }
     gameState.lives = 3;
     gameState.equippedSkin = getEquippedSkin();
+    
+    // Apply endless progression upgrades BEFORE skin abilities
+    if (gameState.mode === 'endless-progression') {
+        try {
+            if (typeof window !== 'undefined' && window.applyPermanentUpgrades) {
+                window.applyPermanentUpgrades();
+            }
+        } catch (e) {
+            console.error('Failed to apply endless upgrades:', e);
+        }
+    }
+    
     gameState.hundred_percentDoubleMove = false; // 100%MAN: default 1-tile; toggle to 2-tiles with T
     gameState.phoenixUsedThisLevel = false; // (legacy flag, unused for new shield ability)
     gameState.phoenixShieldActive = false;
@@ -984,6 +1011,16 @@ export function initGame() {
     gameState.skillCheckState = null;
     gameState.skillCheckFlash = null;
     gameState.isPaused = false;
+    
+    // Achievement tracking for level challenges
+    gameState.sprintUsedThisLevel = false;
+    gameState.backwardsMovementPercent = 0;
+    gameState.totalMovementsThisLevel = 0;
+    gameState.backwardsMovementsThisLevel = 0;
+    gameState.lastMovementDirection = null;
+    gameState.wallTouchStartTime = null;
+    gameState.wallSideTouched = null;
+    
     // Projectiles reset
     gameState.projectiles = [];
     // Collision Shield state
@@ -1000,6 +1037,8 @@ export function initGame() {
     // Reset speedrun timer per fresh level
     gameState.runActive = false;
     gameState.runStartAt = 0;
+    // Track ability usage for no-ability achievements
+    gameState.abilitiesUsed = false;
     gameState.runTimeMs = 0;
     // Enemies
     gameState.enemies = [];
@@ -1043,7 +1082,8 @@ export function initGame() {
     gameState.enemiesThawUntil = performance.now() + ENEMY_THAW_TIME;
 
     // SECRET: Bazooka Mode (regenerating ammo cheat)
-    if (isBazookaMode()) {
+    // Don't equip bazooka in custom/builder levels
+    if (isBazookaMode() && !gameState.customLevelActive) {
         gameState.bazooka = { 
             has: true, 
             ammo: 15, 
@@ -1424,11 +1464,15 @@ export function movePlayer(dx, dy, currentTime) {
                 const timeMs = currentTime - (gameState.runStartAt || currentTime);
                 const deathless = gameState.lives >= 3;
                 const noAbilities = gameState.abilitiesUsed === false; // Track if abilities were disabled
+                const sprintUsed = gameState.sprintUsedThisLevel || false;
+                const backwardsPercent = gameState.backwardsMovementPercent || 0;
                 fireAchievementEvent('level_complete', { 
                     level: gameState.currentLevel,
                     timeMs: Math.max(0, timeMs),
                     deathless,
-                    noAbilities
+                    noAbilities,
+                    sprintUsed,
+                    backwardsPercent
                 });
             }, 1000);
             return true;
@@ -1534,6 +1578,91 @@ export function movePlayer(dx, dy, currentTime) {
     }
     gameState.player.x = targetX;
     gameState.player.y = targetY;
+    
+    // Check if player is touching a wall (for wall_hugger achievement)
+    const isAgainstWall = (
+        gameState.maze[gameState.player.y]?.[gameState.player.x - 1] === CELL.WALL ||
+        gameState.maze[gameState.player.y]?.[gameState.player.x + 1] === CELL.WALL ||
+        gameState.maze[gameState.player.y - 1]?.[gameState.player.x] === CELL.WALL ||
+        gameState.maze[gameState.player.y + 1]?.[gameState.player.x] === CELL.WALL
+    );
+    
+    if (isAgainstWall) {
+        if (!gameState.lastWallTouchTime) gameState.lastWallTouchTime = currentTime;
+        if (currentTime - gameState.lastWallTouchTime > 30000) { // 30 seconds
+            try {
+                import('./achievements.js').then(mod => {
+                    if (mod.checkAchievements) mod.checkAchievements('wall_touch', { wallSide: 'any', touchTime: currentTime - gameState.lastWallTouchTime });
+                }).catch(() => {});
+            } catch {}
+        }
+    } else {
+        gameState.lastWallTouchTime = null;
+    }
+    
+    // Track proximity to fallen/stunned pigs for pet_pig achievement
+    const nearbyPig = gameState.enemies && gameState.enemies.find(e => 
+        e.type === 'flying_pig' && e.state === 'stunned' &&
+        Math.abs(gameState.player.x - e.x) <= 1 && Math.abs(gameState.player.y - e.y) <= 1
+    );
+    
+    if (nearbyPig) {
+        if (!gameState.lastPigProximityTime) {
+            gameState.lastPigProximityTime = currentTime;
+            gameState.nearbyPigId = nearbyPig.id;
+        } else if (gameState.nearbyPigId === nearbyPig.id && (currentTime - gameState.lastPigProximityTime) > 5000) {
+            // Stood near stunned pig for 5 seconds
+            try {
+                import('./achievements.js').then(mod => {
+                    if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'pet_pig' });
+                }).catch(() => {});
+            } catch {}
+            gameState.lastPigProximityTime = null;
+            gameState.nearbyPigId = null;
+        }
+    } else {
+        gameState.lastPigProximityTime = null;
+        gameState.nearbyPigId = null;
+    }
+    
+    // Track corner visits for corner_dweller achievement (Level 1 only)
+    if (gameState.currentLevel === 1) {
+        if (!gameState.cornerVisitStartTime) {
+            gameState.cornerVisitStartTime = currentTime;
+        }
+        
+        const cornerThreshold = 2; // How close to corner (tiles)
+        const corners = [
+            { name: 'tl', x: cornerThreshold, y: cornerThreshold },
+            { name: 'tr', x: MAZE_WIDTH - 1 - cornerThreshold, y: cornerThreshold },
+            { name: 'bl', x: cornerThreshold, y: MAZE_HEIGHT - 1 - cornerThreshold },
+            { name: 'br', x: MAZE_WIDTH - 1 - cornerThreshold, y: MAZE_HEIGHT - 1 - cornerThreshold }
+        ];
+        
+        gameState.visitedCorners = gameState.visitedCorners || new Set();
+        corners.forEach(corner => {
+            if (Math.abs(gameState.player.x - corner.x) <= cornerThreshold && 
+                Math.abs(gameState.player.y - corner.y) <= cornerThreshold) {
+                gameState.visitedCorners.add(corner.name);
+            }
+        });
+        
+        // Check if visited all 4 corners within 20 seconds
+        if (gameState.visitedCorners.size === 4 && (currentTime - gameState.cornerVisitStartTime) < 20000) {
+            try {
+                import('./achievements.js').then(mod => {
+                    if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'corner_dweller' });
+                }).catch(() => {});
+            } catch {}
+            gameState.visitedCorners = new Set(); // Reset to prevent multiple triggers
+            gameState.cornerVisitStartTime = null;
+        } else if ((currentTime - gameState.cornerVisitStartTime) >= 20000) {
+            // Reset if time expires
+            gameState.visitedCorners = new Set();
+            gameState.cornerVisitStartTime = null;
+        }
+    }
+    
     if (gameState.isLevel11 && gameState.level11 && (dx !== 0 || dy !== 0)) {
         gameState.level11.flashlightDir = { dx: Math.sign(dx), dy: Math.sign(dy) };
     }
@@ -1687,6 +1816,8 @@ export function startJumpCharge(currentTime) {
     }
     
     gameState.isJumpCharging = true;
+    // Track ability usage for no-ability achievements
+    fireAchievementEvent('ability_used');
     const chargeMultiplier = (gameState.mode === 'endless-progression' && gameState.endlessUpgrades)
         ? (gameState.endlessUpgrades.jumpChargeMultiplier || 1)
         : 1;
@@ -1772,6 +1903,9 @@ export function triggerStaminaCooldown(currentTime) {
     gameState.isStaminaCoolingDown = true;
     gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
     gameState.staminaCooldownStartStamina = startStamina; // Track where we started (after drain)
+    
+    // Fire achievement event for stamina use
+    fireAchievementEvent('stamina_used');
     // Open a brief dodge window for special attacks
     gameState.dodgeWindowUntil = Math.max(gameState.dodgeWindowUntil, currentTime + 400);
 }
@@ -1802,6 +1936,8 @@ export function startBlock(currentTime) {
     if (staminaPct <= 0) return;
     const dur = (staminaPct / 100) * BLOCK_MAX_DURATION_MS;
     gameState.blockActive = true;
+    // Track ability usage for no-ability achievements
+    fireAchievementEvent('ability_used');
     gameState.blockStartTime = currentTime; // For pull-out animation
     gameState.blockUntil = currentTime + dur;
     // Reset shield health to dynamic durability value
@@ -2408,39 +2544,25 @@ function updateLevel11Enemies(currentTime) {
         const dt = Math.max(0, Math.min(0.1, (currentTime - (bat.lastUpdate || currentTime)) / 1000));
         bat.lastUpdate = currentTime;
 
-        // Free-flying movement like pig - smoothly stalk player
-        const batSpeed = 2.8; // Slightly faster than pig base speed
         const dx = px - bat.fx;
-        const dy = py - bat.fy;
+        const dy = bat.fy - py;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist > 0.5) {
-            // Move towards player with smooth floating motion
-            const moveX = (dx / dist) * batSpeed * dt;
-            const moveY = (dy / dist) * batSpeed * dt;
-            
-            // Try to move, bounce off walls smoothly
-            let nx = bat.fx + moveX;
-            let ny = bat.fy + moveY;
-            
-            if (!passable(nx, bat.fy)) {
-                nx = bat.fx; // Hit wall on X, stop X movement
-            }
-            if (!passable(bat.fx, ny)) {
-                ny = bat.fy; // Hit wall on Y, stop Y movement
-            }
-            
-            bat.fx = nx;
-            bat.fy = ny;
-        }
-
         const currentDist = Math.hypot(bat.fx - px, bat.fy - py);
-
-        // Flashlight exposure kills the player after 0.5s if bat is in beam
-        if (isInBeam(bat)) {
+        const flashOn = gameState.level11.flashlightOn || false;
+        
+        // Check if bat is in flashlight beam
+        const inBeam = isInBeam(bat);
+        
+        // Enrage bat when flashlight shines on them
+        if (flashOn && inBeam) {
+            if (!bat.enraged) {
+                bat.enraged = true;
+                bat.enragedAt = currentTime;
+            }
             bat.exposedAt = bat.exposedAt || currentTime;
             const exposureTime = currentTime - bat.exposedAt;
-            if (!gameState.godMode && exposureTime >= 500) {
+            // Kill player after 1 second of exposure
+            if (!gameState.godMode && exposureTime >= 1000) {
                 gameState.lives = 0;
                 gameState.deathCause = 'bat_flashlight';
                 gameState.gameStatus = 'lost';
@@ -2449,13 +2571,66 @@ function updateLevel11Enemies(currentTime) {
         } else {
             bat.exposedAt = 0;
         }
-
-        // Physical collision is lethal
-        if (currentDist < 0.65 && !gameState.godMode) {
-            gameState.lives = 0;
-            gameState.deathCause = 'bat';
-            gameState.gameStatus = 'lost';
-            setStatusMessage('A bat shredded you.');
+        
+        // Bat AI behavior based on enraged state
+        const batSpeed = 2.8;
+        const safeRadius = 2.5; // Bats keep this distance when not enraged
+        
+        if (bat.enraged) {
+            // ENRAGED: Chase player aggressively
+            if (dist > 0.5) {
+                const moveX = (dx / dist) * batSpeed * dt;
+                const moveY = (dy / dist) * batSpeed * dt;
+                
+                let nx = bat.fx + moveX;
+                let ny = bat.fy + moveY;
+                
+                if (!passable(nx, bat.fy)) nx = bat.fx;
+                if (!passable(bat.fx, ny)) ny = bat.fy;
+                
+                bat.fx = nx;
+                bat.fy = ny;
+            }
+            
+            // Enraged bats can kill on contact
+            if (currentDist < 0.65 && !gameState.godMode) {
+                gameState.lives = 0;
+                gameState.deathCause = 'bat';
+                gameState.gameStatus = 'lost';
+                setStatusMessage('An enraged bat shredded you.');
+            }
+        } else {
+            // NOT ENRAGED: Keep distance from player, harmless
+            if (currentDist < safeRadius) {
+                // Move away from player to maintain safe distance
+                const fleeSpeed = batSpeed * 0.8;
+                const moveX = -(dx / dist) * fleeSpeed * dt;
+                const moveY = -(dy / dist) * fleeSpeed * dt;
+                
+                let nx = bat.fx + moveX;
+                let ny = bat.fy + moveY;
+                
+                if (!passable(nx, bat.fy)) nx = bat.fx;
+                if (!passable(bat.fx, ny)) ny = bat.fy;
+                
+                bat.fx = nx;
+                bat.fy = ny;
+            } else if (currentDist > safeRadius + 2) {
+                // Too far - drift slowly back toward player (but maintain distance)
+                const driftSpeed = batSpeed * 0.3;
+                const moveX = (dx / dist) * driftSpeed * dt;
+                const moveY = (dy / dist) * driftSpeed * dt;
+                
+                let nx = bat.fx + moveX;
+                let ny = bat.fy + moveY;
+                
+                if (!passable(nx, bat.fy)) nx = bat.fx;
+                if (!passable(bat.fx, ny)) ny = bat.fy;
+                
+                bat.fx = nx;
+                bat.fy = ny;
+            }
+            // Else: in sweet spot (safeRadius to safeRadius+2), just hover/idle
         }
     }
 
@@ -2688,7 +2863,6 @@ export function updateEnemies(currentTime) {
     // Level 11 uses custom bat AI and flashlight rules
     if (gameState.isLevel11) {
         updateLevel11Enemies(currentTime);
-        return;
     }
 
     // Handle player crash lock (post-pig dismount) to prevent movement while invisible
@@ -2882,6 +3056,8 @@ export function updateEnemies(currentTime) {
                             gameState.maze[gy][gx] = CELL.EMPTY;
                             gameState.wallHealth[wallKey] = 0; // Keep track of destroyed walls
                             console.log('[bazooka mode] destroyed inner wall at', gx, gy);
+                            // Fire achievement event for bazooka wall destruction
+                            fireAchievementEvent('bazooka_wall_destroyed');
                         } else {
                             console.log('[bazooka mode] damaged wall at', gx, gy, '- health:', gameState.wallHealth[wallKey]);
                         }
@@ -2898,6 +3074,50 @@ export function updateEnemies(currentTime) {
                     console.log('[bazooka] rocket exploded at', gx, gy);
                     p.resolved = true;
                     continue;
+                }
+
+                // Level 11: Check for power system collision
+                if (gameState.isLevel11 && gameState.powerSystemPos && !gameState.powerSystemDestroyed) {
+                    const psx = gameState.powerSystemPos.x;
+                    const psy = gameState.powerSystemPos.y;
+                    const pdist = Math.hypot(p.x - psx, p.y - psy);
+                    if (pdist < 0.8) {
+                        // Rocket hit the power system
+                        gameState.powerSystemDestroyed = true;
+                        
+                        // Sync to level11State
+                        if (gameState.level11State) {
+                            gameState.level11State.powerSystemDestroyed = true;
+                            gameState.level11State.powerDecisionMade = true;
+                            gameState.level11State.goodEndingNote = true;
+                        }
+                        
+                        // Award achievement only if bazooka mode is active
+                        try {
+                            import('./config.js').then(cfg => {
+                                const bazookaModeActive = cfg.isBazookaMode();
+                                console.log('[Level 11] Power system destroyed. Bazooka mode active:', bazookaModeActive);
+                                
+                                if (bazookaModeActive) {
+                                    import('./achievements.js').then(mod => {
+                                        if (mod.unlockAchievement) {
+                                            mod.unlockAchievement('bazooka_power_destroy');
+                                            console.log('[Level 11] why??? achievement unlocked (bazooka mode active)');
+                                        }
+                                    });
+                                } else {
+                                    console.log('[Level 11] Power system destroyed but bazooka mode not active - no achievement');
+                                }
+                            });
+                        } catch {}
+                        // Explosion effect
+                        gameState.lastExplosionSource = 'rocket';
+                        bossExplosion(psx, psy, 2, now);
+                        try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                        p.resolved = true;
+                        console.log('[Level 11] Power system destroyed by rocket!');
+                        continue;
+                    }
                 }
             }
 
@@ -2928,6 +3148,26 @@ export function updateEnemies(currentTime) {
                                 p.trail = []; // Clear trail on reflection
                                 p.spawnTime = now; // Reset for fresh glow
                                 try { playShieldReflect(); } catch {}
+                                // Fire shield reflect achievement event
+                                fireAchievementEvent('shield_reflect');
+                                // Track for shield_reflect_consecutive (block without moving)
+                                if (!gameState.lastPlayerPosForBlock) {
+                                    gameState.lastPlayerPosForBlock = { x: gameState.player.x, y: gameState.player.y };
+                                    gameState.consecutiveBlocksNoMove = 0;
+                                }
+                                if (gameState.lastPlayerPosForBlock.x === gameState.player.x && gameState.lastPlayerPosForBlock.y === gameState.player.y) {
+                                    gameState.consecutiveBlocksNoMove = (gameState.consecutiveBlocksNoMove || 0) + 1;
+                                    if (gameState.consecutiveBlocksNoMove >= 5) {
+                                        try {
+                                            import('./achievements.js').then(mod => {
+                                                if (mod.checkAchievements) mod.checkAchievements('shield_reflect_block', { consecutive: true });
+                                            }).catch(() => {});
+                                        } catch {}
+                                    }
+                                } else {
+                                    gameState.consecutiveBlocksNoMove = 0;
+                                    gameState.lastPlayerPosForBlock = { x: gameState.player.x, y: gameState.player.y };
+                                }
                                 // Spectacular reflection burst
                                 const reflectX = (gameState.player.x + 0.5) * CELL_SIZE;
                                 const reflectY = (gameState.player.y + 0.5) * CELL_SIZE;
@@ -3127,6 +3367,8 @@ export function updateEnemies(currentTime) {
                     if (!gameState.bazooka) gameState.bazooka = { has: false, ammo: 0, maxAmmo: 10 };
                     const max = gameState.bazooka.maxAmmo || 10;
                     gameState.bazooka.ammo = max;
+                    // Fire bazooka_reload achievement event
+                    fireAchievementEvent('bazooka_reload');
                     try { import('./audio.js').then(a=>a.playReload && a.playReload()); } catch {}
                     console.log('[prep] Reloaded to max. Ammo=', gameState.bazooka.ammo);
                     gameState.reloadPressedAt = 0;
@@ -4452,6 +4694,7 @@ export function updateEnemies(currentTime) {
     // (projectile updates moved to the top of this function)
 }
 
+
 function handleEnemyHit(currentTime) {
     if (currentTime < gameState.playerInvincibleUntil) return;
     if (gameState.godMode) return;
@@ -4640,6 +4883,12 @@ function attemptLevel11Interaction(currentTime) {
             if (notePos && at(notePos)) {
                 showGoodEndingNote();
                 gameState.level11.goodEndingNote = false;
+                // Fire achievement event for finding the secret note
+                try {
+                    import('./achievements.js').then(mod => {
+                        if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'hidden_note' });
+                    }).catch(() => {});
+                } catch {}
                 return true;
             }
         }
@@ -4837,10 +5086,19 @@ export function attemptSkillCheck() {
     // Success if pointer is within the window size
     const success = relativeAngle <= windowSize;
     
+    // Check for perfect timing (within first 5 degrees of window start)
+    const isPerfectTiming = success && relativeAngle <= 5;
+    
     if (success) {
         gameState.completedSkillChecks.push(gameState.skillCheckState.index);
         setStatusMessage('Skill check success!', 1500);
         playSkillSuccess();
+        
+        // Fire generator_perfect achievement event if perfect timing
+        if (isPerfectTiming) {
+            fireAchievementEvent('generator_perfect');
+        }
+        
         gameState.skillCheckFlash = { type: 'success', until: performance.now() + 220 };
         gameState.skillCheckState = null;
         if (gameState.skillCheckTimeout) {
@@ -5293,9 +5551,10 @@ export function applyPlayerDamage(source = 'unknown', currentTime = performance.
     if (gameState.lives <= 0) {
         gameState.lives = 0;
         gameState.gameStatus = 'lost';
+        // Only fire death achievement when player actually dies (lives reach 0)
+        checkAchievements('death');
     }
     
-    checkAchievements('death');
     return true;
 }
 

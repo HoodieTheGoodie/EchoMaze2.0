@@ -282,11 +282,11 @@ const SLIDES = [
                     <div class="enemy-icon" style="background: radial-gradient(circle, #00ffff, #00aaaa); display: flex; align-items: center; justify-content: center; font-size: 4em; border: 4px solid #ff0099;">👑</div>
                     <div class="description">
                         <div style="background: #ff0099; padding: 10px; border-radius: 5px; margin-bottom: 20px; font-weight: bold;">⚠️ THE CORE: 60/60</div>
-                        <p>The Core Boss is the final boss of EchoMaze 1. You are given a bazooka that has 10 shots before needing to reload, the boss has 40 health (each shell deals 20 health per shot). The boss has 3 different phases:</p>
+                        <p>The Core Boss is the final boss of EchoMaze 1. You are given an Energy Blaster that has 10 shots before needing to reload, the boss has 40 health (each blast deals 20 health per shot). The boss has 3 different phases:</p>
                         
                         <div class="boss-phase" style="margin: 20px 0; padding: 15px; background: rgba(255,105,180,0.1); border-left: 4px solid #ff69b4; border-radius: 5px;">
                             <h4 style="color: #ff69b4; margin-bottom: 10px;">Pink Phase (60-40 HP)</h4>
-                            <p>The Pink phase will summon in 2 pigs on the left and right side of the maze, the two will merge into 1 stronger pig. You must knock the pig out to damage the boss. You cannot use your bazooka before moving on.</p>
+                            <p>The Pink phase will summon in 2 pigs on the left and right side of the maze, the two will merge into 1 stronger pig. You must knock the pig out to damage the boss. You cannot use your Energy Blaster before moving on.</p>
                         </div>
                         
                         <div class="boss-phase" style="margin: 20px 0; padding: 15px; background: rgba(255,0,0,0.1); border-left: 4px solid #ff0000; border-radius: 5px;">
@@ -301,7 +301,7 @@ const SLIDES = [
                         
                         <div style="margin-top: 30px; padding: 15px; background: rgba(255,215,0,0.1); border: 2px solid #ffd700; border-radius: 5px;">
                             <h4 style="color: #ffd700; margin-bottom: 10px;">🎯 Ammo Crates</h4>
-                            <p>You can reload your bazooka by using the ammo crates on the edges of the maze. Press <strong>E</strong> to collect ammo and refill your shots.</p>
+                            <p>You can reload your Energy Blaster by using the ammo crates on the edges of the maze. Press <strong>E</strong> to collect ammo and refill your shots.</p>
                         </div>
                     </div>
                 </div>

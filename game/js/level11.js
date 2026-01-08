@@ -45,7 +45,9 @@ export const level11State = {
     cutsceneStartTime: 0,
     noteOverlay: null, // {text, visible}
     goodEndingNote: false, // True after player disables power supply
-    powerDecisionMade: false // True after player makes power decision
+    powerDecisionMade: false, // True after player makes power decision
+    powerSystemPos: null, // Position of power system in finale room
+    powerSystemDestroyed: false // True if power system destroyed by bazooka
 };
 
 // Puzzle solution pattern (matches paper note)
@@ -126,7 +128,6 @@ export function initLevel11() {
     
     // CRITICAL: Clear all Level 10 boss state to stop lava/collapse/freeze
     gameState.boss = null;
-    gameState.bazooka = null;
     gameState.bazookaPickup = null;
     gameState.projectiles = [];
     gameState.enemies = [];
@@ -136,6 +137,22 @@ export function initLevel11() {
     // CRITICAL: Clear old level11 bat system to prevent dual bat systems
     gameState.level11 = null;
     gameState.bossVictory = false;
+    
+    // Initialize bazooka ONLY if bazooka mode is active
+    import('./config.js').then(cfg => {
+        if (cfg.isBazookaMode && cfg.isBazookaMode()) {
+            gameState.bazooka = { has: true, ammo: 15, maxAmmo: 15 };
+            console.log('[Level 11] Bazooka mode active - Energy Blaster enabled (15/15 ammo, auto-regen)');
+        } else {
+            gameState.bazooka = { has: false, ammo: 0, maxAmmo: 0 };
+            console.log('[Level 11] Bazooka mode not active - no Energy Blaster');
+        }
+    }).catch(() => {
+        gameState.bazooka = { has: false, ammo: 0, maxAmmo: 0 };
+    });
+    
+    // Initialize level11 state in gameState for bat logic
+    gameState.level11 = { flashlightOn: false };
     
     // Disable abilities for Level 11
     gameState.lives = 0; // No lives system
@@ -452,6 +469,14 @@ function buildFinaleRoom() {
     gameState.player.x = cx;
     gameState.player.y = MAZE_HEIGHT - 5;
     
+    // Power system at top center (can be shot with bazooka)
+    level11State.powerSystemPos = { x: cx, y: 3 };
+    level11State.powerSystemDestroyed = false;
+    
+    // Sync to gameState for projectile collision in state.js
+    gameState.powerSystemPos = level11State.powerSystemPos;
+    gameState.powerSystemDestroyed = false;
+    
     gameState.maze = grid;
     
     // Start cutscene
@@ -680,6 +705,23 @@ export function handleLevel11Interact() {
                 level11State.inventory.flashlight = true;
                 level11State.rooms.puzzle.flashlightTaken = true;
                 setStatusMessage('Got flashlight! Press F to toggle. Be careful with the bats!');
+                
+                // Achievement: Flashlight Blaster (pick up flashlight while bazooka mode active)
+                import('./config.js').then(cfg => {
+                    const bazookaModeActive = cfg.isBazookaMode();
+                    console.log('[Level 11] Flashlight picked up. Bazooka mode active:', bazookaModeActive);
+                    
+                    if (bazookaModeActive) {
+                        console.log('[Level 11] Unlocking Flashlight Blaster achievement!');
+                        return import('./achievements.js');
+                    }
+                }).then(achieveMod => {
+                    if (achieveMod && achieveMod.unlockAchievement) {
+                        achieveMod.unlockAchievement('flashlight_blaster');
+                    }
+                }).catch(err => {
+                    console.error('[Level 11] Achievement check failed:', err);
+                });
                 return;
             }
         }
@@ -784,6 +826,10 @@ function checkPuzzleSolution() {
 export function toggleFlashlight() {
     if (level11State.inventory.flashlight) {
         level11State.inventory.flashlightOn = !level11State.inventory.flashlightOn;
+        // Sync to gameState for bat logic in state.js
+        if (gameState.level11) {
+            gameState.level11.flashlightOn = level11State.inventory.flashlightOn;
+        }
         setStatusMessage(level11State.inventory.flashlightOn ? 'Flashlight ON' : 'Flashlight OFF');
     }
 }
@@ -798,6 +844,49 @@ export function updateLevel11(currentTime) {
     if (level11State.currentRoom === 'maze' && gameState.mousePosition) {
         level11State.flashlightBeamX = gameState.mousePosition.x;
         level11State.flashlightBeamY = gameState.mousePosition.y;
+    }
+    
+    // Check for bazooka projectile hitting power system in finale room
+    if (level11State.currentRoom === 'finale' && level11State.powerSystemPos && !level11State.powerSystemDestroyed) {
+        if (gameState.projectiles && gameState.projectiles.length > 0) {
+            for (const proj of gameState.projectiles) {
+                const projX = Math.round(proj.x);
+                const projY = Math.round(proj.y);
+                const powerX = Math.round(level11State.powerSystemPos.x);
+                const powerY = Math.round(level11State.powerSystemPos.y);
+                
+                // Check if projectile hit power system
+                if (Math.abs(projX - powerX) <= 1 && Math.abs(projY - powerY) <= 1) {
+                    level11State.powerSystemDestroyed = true;
+                    level11State.powerDecisionMade = true;
+                    level11State.goodEndingNote = true;
+                    level11State.cutsceneStep = 3; // Good ending path
+                    
+                    // Remove the prompt if it's showing
+                    const promptOverlay = document.getElementById('power-prompt-overlay');
+                    if (promptOverlay) promptOverlay.remove();
+                    
+                    // Achievement: why??? (destroy power system with bazooka mode)
+                    import('./config.js').then(cfg => {
+                        const bazookaModeActive = cfg.isBazookaMode();
+                        console.log('[Level 11] Power system hit. Bazooka mode active:', bazookaModeActive);
+                        
+                        if (bazookaModeActive) {
+                            import('./achievements.js').then(m => {
+                                m.unlockAchievement('bazooka_power_destroy');
+                                console.log('[Level 11] why??? achievement unlocked!');
+                            });
+                        }
+                    }).catch(() => {});
+                    
+                    // Remove projectile
+                    const idx = gameState.projectiles.indexOf(proj);
+                    if (idx >= 0) gameState.projectiles.splice(idx, 1);
+                    
+                    break;
+                }
+            }
+        }
     }
     
     // Update cutscene

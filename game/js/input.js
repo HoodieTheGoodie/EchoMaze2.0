@@ -49,8 +49,37 @@ function handleMouseMove(e) {
     if (!gameState.mousePosition) {
         gameState.mousePosition = { x: 0, y: 0, inCanvas: false };
     }
+    
+    // Track rotation for spin_cycle achievement
+    const oldX = gameState.mousePosition.x;
+    const oldY = gameState.mousePosition.y;
     gameState.mousePosition.x = e.clientX - rect.left;
     gameState.mousePosition.y = e.clientY - rect.top;
+    
+    // Calculate rotation from center of canvas
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    if (oldX !== 0 && oldY !== 0) {
+        const oldAngle = Math.atan2(oldY - centerY, oldX - centerX);
+        const newAngle = Math.atan2(gameState.mousePosition.y - centerY, gameState.mousePosition.x - centerX);
+        let angleDelta = newAngle - oldAngle;
+        
+        // Normalize to -pi to pi
+        while (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+        while (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+        
+        // Track cumulative rotation (for spin_cycle)
+        gameState.cumulativeRotation = (gameState.cumulativeRotation || 0) + Math.abs(angleDelta);
+        if (gameState.cumulativeRotation >= Math.PI * 2 * 5) { // 5 full rotations
+            try {
+                import('./achievements.js').then(mod => {
+                    if (mod.checkAchievements) mod.checkAchievements('rotation', { rotations: 5 });
+                }).catch(() => {});
+            } catch {}
+            gameState.cumulativeRotation = 0;
+        }
+    }
 }
 
 // Mobile: Initialize touch handlers (called from main.js)
@@ -190,6 +219,13 @@ function handleKeyDown(e) {
         if (!gameState.isGeneratorUIOpen && gameState.stamina >= 100 && !gameState.isStaminaCoolingDown) {
             if (gameState.isPaused) return;
             gameState.isSprinting = true;
+            gameState.sprintUsedThisLevel = true;
+            // Track ability usage for no-ability achievements
+            try {
+                import('./achievements.js').then(mod => {
+                    if (mod.checkAchievements) mod.checkAchievements('ability_used');
+                });
+            } catch {}
         }
         return;
     }
@@ -205,26 +241,35 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Toggle Seeker debug overlay (H) / Skip dialog in prep room
-    if (e.code === 'KeyH' || key === 'h') {
-        // Skip dialog in prep room
-        if (gameState.boss && gameState.boss.prepRoom) {
-            import('./state.js').then(m => {
-                if (m.skipTextSequence) m.skipTextSequence();
-            });
-        }
-        // Toggle debug overlay
-        if (!gameState.isGeneratorUIOpen) {
-            gameState.debugSeeker = !gameState.debugSeeker;
-        }
-        return;
-    }
-
     // Y key: Manually activate Phoenix shield (one-time)
     if (e.code === 'KeyY' || key === 'y') {
         if (gameState.gameStatus === 'playing' && !gameState.isPaused && !gameState.isGeneratorUIOpen) {
             activatePhoenixShieldAbility(performance.now());
         }
+        return;
+    }
+
+    // D key: Dance in hub (victory dance achievement) - check if in hub and not blocking
+    if ((e.code === 'KeyD' || key === 'd') && !gameState.blockActive && (gameState.currentLevel === 0 || gameState.isHub)) {
+        // Track consecutive D presses for dance achievement
+        gameState.lastDKeyTime = gameState.lastDKeyTime || 0;
+        const now = performance.now();
+        
+        if (now - gameState.lastDKeyTime < 500) { // Within 500ms of last press
+            gameState.dKeyStreak = (gameState.dKeyStreak || 0) + 1;
+            if (gameState.dKeyStreak >= 10) {
+                // Victory dance achievement
+                try {
+                    import('./achievements.js').then(mod => {
+                        if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'hub_dance' });
+                    }).catch(() => {});
+                } catch {}
+                gameState.dKeyStreak = 0;
+            }
+        } else {
+            gameState.dKeyStreak = 1;
+        }
+        gameState.lastDKeyTime = now;
         return;
     }
 
@@ -251,6 +296,10 @@ function handleKeyDown(e) {
             else if (key === 'arrowup' || key === 'w') mdy = -1;
             else if (key === 'arrowdown' || key === 's') mdy = 1;
             if (mdx !== 0 || mdy !== 0) {
+                // Track WASD movement in Level 7 (breaks jump-only achievement)
+                if (gameState.currentLevel === 7) {
+                    gameState.level7HasWASDMovement = true;
+                }
                 // Only move once per physical key press; ignore holds until keyup
                 if (!keysPressed[key]) {
                     keysPressed[key] = true;

@@ -72,6 +72,8 @@ const ui = {
     jumpIndicator: document.getElementById('jumpIndicator'),
     streak: document.getElementById('streak'),
     streakSection: document.getElementById('streakSection'),
+    currentRooms: document.getElementById('currentRooms'),
+    roomsSection: document.getElementById('roomsSection'),
     skill: null
 };
 const FLOOR_COLOR = '#2a2a2a'; // dark gray floor for cyberpunk aesthetic
@@ -3714,7 +3716,19 @@ function drawUI() {
         }
     }
     
-    // Bazooka ammo display (only show when bazooka is active)
+    // Endless rooms UI
+    if (ui.roomsSection) {
+        if (gameState.mode === 'endless-progression') {
+            ui.roomsSection.style.display = 'flex';
+            const progression = gameState.endlessProgression;
+            const currentRoom = progression && progression.currentRun ? progression.currentRun.roomNumber : 0;
+            if (ui.currentRooms) ui.currentRooms.textContent = String(currentRoom);
+        } else {
+            ui.roomsSection.style.display = 'none';
+        }
+    }
+    
+    // Energy Blaster ammo display (only show when bazooka is active)
     const bazookaSection = document.getElementById('bazookaAmmoSection');
     const bazookaAmmoEl = document.getElementById('bazookaAmmo');
     if (bazookaSection && bazookaAmmoEl) {

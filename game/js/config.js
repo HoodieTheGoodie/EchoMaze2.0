@@ -239,36 +239,36 @@ export function hasTerminalAccess(id) {
 }
 
 export function isGodMode() {
-    return localStorage.getItem(KEY_GODMODE) === '1';
+    return false;
 }
 
 export function setGodMode(enabled) {
-    localStorage.setItem(KEY_GODMODE, enabled ? '1' : '0');
+    try { localStorage.removeItem(KEY_GODMODE); } catch {}
 }
 
 export function isDevUnlocked() {
-    return localStorage.getItem(KEY_DEVUNLOCK) === '1';
+    return false;
 }
 
 export function setDevUnlocked(enabled) {
-    localStorage.setItem(KEY_DEVUNLOCK, enabled ? '1' : '0');
+    try { localStorage.removeItem(KEY_DEVUNLOCK); } catch {}
 }
 
 // Dev convenience: Skip directly to pre-boss area on Level 10
 export function isSkipPreBossEnabled() {
-    return localStorage.getItem(KEY_SKIP_PREBOSS) === '1';
+    return false;
 }
 export function setSkipPreBossEnabled(enabled) {
-    localStorage.setItem(KEY_SKIP_PREBOSS, enabled ? '1' : '0');
+    try { localStorage.removeItem(KEY_SKIP_PREBOSS); } catch {}
 }
 
 // Dev convenience: 10x boss damage
 const KEY_BOSS_DMG_10X = 'smg_boss_dmg_10x';
 export function isBossDamage10x() {
-    return localStorage.getItem(KEY_BOSS_DMG_10X) === '1';
+    return false;
 }
 export function setBossDamage10x(enabled) {
-    localStorage.setItem(KEY_BOSS_DMG_10X, enabled ? '1' : '0');
+    try { localStorage.removeItem(KEY_BOSS_DMG_10X); } catch {}
 }
 
 // --- Endless defaults persistence ---
@@ -312,15 +312,16 @@ export function setEndlessDefaults(cfg) {
 export function getSettings() {
     try {
         const raw = localStorage.getItem(KEY_SETTINGS);
-        if (!raw) return { movementAudio: true, autoMovement: true, simplifiedUI: true };
+        if (!raw) return { movementAudio: true, autoMovement: true, simplifiedUI: true, masterVolume: 1.0 };
         const obj = JSON.parse(raw);
         return {
             movementAudio: obj && obj.movementAudio !== false,
             autoMovement: obj && obj.autoMovement !== false,
             simplifiedUI: true, // force simplified UI as default and only mode
+            masterVolume: (obj && typeof obj.masterVolume === 'number') ? Math.max(0, Math.min(1, obj.masterVolume)) : 1.0,
         };
     } catch {
-        return { movementAudio: true, autoMovement: true, simplifiedUI: true };
+        return { movementAudio: true, autoMovement: true, simplifiedUI: true, masterVolume: 1.0 };
     }
 }
 
@@ -329,6 +330,7 @@ export function setSettings(settings) {
         movementAudio: settings && settings.movementAudio !== false,
         autoMovement: settings && settings.autoMovement !== false,
         simplifiedUI: true, // locked on
+        masterVolume: (settings && typeof settings.masterVolume === 'number') ? Math.max(0, Math.min(1, settings.masterVolume)) : 1.0,
     };
     try { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); } catch {}
 }
@@ -341,7 +343,7 @@ export function setSecretUnlocked(enabled) {
     try { localStorage.setItem(KEY_SECRET_UNLOCK, enabled ? '1' : '0'); } catch {}
 }
 
-// --- Bazooka Mode (secret cheat) ---
+// --- Energy Blaster Mode (formerly Bazooka Mode) ---
 export function isBazookaMode() {
     try { return localStorage.getItem(KEY_BAZOOKA_MODE) === '1'; } catch { return false; }
 }

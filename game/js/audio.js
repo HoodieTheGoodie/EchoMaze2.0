@@ -3,6 +3,25 @@
 let ctx = null;
 let preBossLoopId = null;
 
+// Master volume control (0.0 to 1.0)
+let masterVolume = 1.0;
+
+// Get master volume from settings
+export function getMasterVolume() {
+  if (typeof window !== 'undefined' && window.gameState && window.gameState.settings) {
+    return window.gameState.settings.masterVolume !== undefined ? window.gameState.settings.masterVolume : 1.0;
+  }
+  return masterVolume;
+}
+
+// Set master volume (0.0 to 1.0)
+export function setMasterVolume(volume) {
+  masterVolume = Math.max(0, Math.min(1, volume));
+  if (typeof window !== 'undefined' && window.gameState && window.gameState.settings) {
+    window.gameState.settings.masterVolume = masterVolume;
+  }
+}
+
 function getCtx() {
   if (!ctx) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -17,6 +36,9 @@ function playTone({ freq = 440, duration = 0.12, type = 'sine', gain = 0.06, att
   const amp = audio.createGain();
   osc.type = type;
   osc.frequency.value = freq;
+  
+  // Apply master volume
+  const adjustedGain = gain * getMasterVolume();
   amp.gain.value = 0.0;
   osc.connect(amp);
   amp.connect(audio.destination);
@@ -24,8 +46,8 @@ function playTone({ freq = 440, duration = 0.12, type = 'sine', gain = 0.06, att
   const now = audio.currentTime;
   const end = now + duration + release;
   amp.gain.setValueAtTime(0, now);
-  amp.gain.linearRampToValueAtTime(gain, now + attack);
-  amp.gain.setValueAtTime(gain, now + duration);
+  amp.gain.linearRampToValueAtTime(adjustedGain, now + attack);
+  amp.gain.setValueAtTime(adjustedGain, now + duration);
   amp.gain.linearRampToValueAtTime(0.0001, end);
 
   osc.start(now);
@@ -263,9 +285,26 @@ export function playWallHit() {
 }
 
 // --- Explosion SFX ---
+let lastExplosionTime = 0;
+const EXPLOSION_THROTTLE = 50; // Minimum ms between explosions to prevent stacking
+
 export function playExplosion() {
-  // Deep explosive boom with rumble
-  playTone({ freq: 80, duration: 0.15, type: 'square', gain: 0.12, attack: 0.001, release: 0.1 });
-  setTimeout(() => playTone({ freq: 50, duration: 0.20, type: 'sine', gain: 0.09 }), 40);
-  setTimeout(() => playTone({ freq: 120, duration: 0.12, type: 'sawtooth', gain: 0.08 }), 80);
+  // Throttle explosions to prevent overwhelming audio stacking
+  const now = performance.now();
+  if (now - lastExplosionTime < EXPLOSION_THROTTLE) return;
+  lastExplosionTime = now;
+  
+  // Deep explosive boom with rumble (reduced gain to prevent overwhelming volume)
+  playTone({ freq: 80, duration: 0.15, type: 'square', gain: 0.08, attack: 0.001, release: 0.1 });
+  setTimeout(() => playTone({ freq: 50, duration: 0.20, type: 'sine', gain: 0.06 }), 40);
+  setTimeout(() => playTone({ freq: 120, duration: 0.12, type: 'sawtooth', gain: 0.05 }), 80);
+}
+
+// --- Achievement Unlock SFX ---
+export function playAchievementUnlock() {
+  // Triumphant rising chime sequence
+  playTone({ freq: 523, duration: 0.08, type: 'sine', gain: 0.07 }); // C
+  setTimeout(() => playTone({ freq: 659, duration: 0.08, type: 'sine', gain: 0.07 }), 80); // E
+  setTimeout(() => playTone({ freq: 784, duration: 0.08, type: 'sine', gain: 0.07 }), 160); // G
+  setTimeout(() => playTone({ freq: 1047, duration: 0.15, type: 'sine', gain: 0.09 }), 240); // C high
 }

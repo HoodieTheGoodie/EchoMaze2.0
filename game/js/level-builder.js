@@ -712,8 +712,13 @@
 
     function playtest() {
         const payload = exportJson();
-        if (!payload) return;
+        if (!payload) {
+            console.warn('[playtest] exportJson returned null, validation failed');
+            return;
+        }
+        console.log('[playtest] Saving custom level to localStorage:', payload.name || 'Untitled');
         localStorage.setItem('customLevel', JSON.stringify(payload));
+        console.log('[playtest] Saved, navigating to index.html?custom=1');
         window.location.href = 'index.html?custom=1';
     }
 
@@ -750,8 +755,9 @@
                     }
                 });
             }
-            levelNameEl.value = data.name || '';
-            authorNameEl.value = data.author || '';
+            // Don't restore name/author - let user start fresh with each session
+            levelNameEl.value = '';
+            authorNameEl.value = '';
             redraw();
             dirty = false;
             showToast('Draft restored');
@@ -961,8 +967,21 @@
             }
         }
         clearLinks();
-        enemyBarriers = [];
+        enemyBarriers.length = 0;
+        barrierMode = false;
+        barrierStage = 'idle';
+        barrierDragStart = null;
+        barrierDragCurrent = null;
+        barrierSelectedEnemy = null;
+        showBarriers = false;
         updateBarrierList();
+        clipboard = null;
+        selectionRect = null;
+        selectionStart = null;
+        selectionCurrent = null;
+        pasteHover = null;
+        if (toolMode === 'paste') setTool('paint');
+        syncLinkControls();
         redraw();
         markDirty();
         showToast('Board cleared');

@@ -326,6 +326,22 @@
             box-shadow:0 0 18px #ff4455a0;
             position:relative;
         }
+
+        /* Version tag bottom-right */
+        #versionTag {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            padding: 6px 10px;
+            border: 1px solid rgba(0, 246, 255, 0.35);
+            border-radius: 8px;
+            background: rgba(8, 10, 16, 0.7);
+            color: #8be9ff;
+            font-size: 0.85rem;
+            letter-spacing: 0.08em;
+            z-index: 4000;
+            box-shadow: 0 0 10px rgba(0, 246, 255, 0.25);
+        }
     </style>
 </head>
 <body>
@@ -374,8 +390,12 @@
                 <span class="ui-label">Streak:</span>
                 <span id="streak">0</span>
             </div>
+            <div class="ui-section" id="roomsSection" style="display:none;">
+                <span class="ui-label">Rooms:</span>
+                <span id="currentRooms">0</span>
+            </div>
             <div class="ui-section" id="bazookaAmmoSection" style="display:none;">
-                <span class="ui-label">🚀 Ammo:</span>
+                <span class="ui-label">⚡ Blaster:</span>
                 <span id="bazookaAmmo" style="font-weight:bold; color:#ff4400; text-shadow: 0 0 8px rgba(255,68,0,0.6);">10/10</span>
             </div>
             <div class="ui-section">
@@ -427,29 +447,6 @@
                 <button id="nextLevelBtn" type="button">Next Level</button>
                 <button id="winReturnMenuBtn" type="button">Main Menu</button>
                 <button id="winSecretBtn" type="button" style="display:none;">Secret?</button>
-                <button id="creditsBtn" type="button" style="display:none;">Credits</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Credits Overlay -->
-    <div id="creditsOverlay" style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.9); z-index:3500;">
-        <div style="position:absolute; inset:10% 15%; background:#0d0a0f; border:3px solid #00f6ff; border-radius:14px; padding:16px; display:flex; flex-direction:column;">
-            <h2 style="color:#00f6ff; text-align:center; margin-bottom:8px;">Credits</h2>
-            <div class="credits-content" style="flex:1; overflow:auto; padding:8px; color:#eee; line-height:1.6;">
-                <p style="margin-bottom:12px;">Thank you for playing our game! This was created out of boredom and because my school blocked most games in my school so I thought I would just work on developing my own in my free time.</p>
-                <p style="margin-bottom:12px; color:#ff9955;">It seems you didn't get the best possible ending as you were manipulated by the virus into destroying the anti-virus and giving it full access to this game and didn't do anything to fix it.</p>
-                <p style="margin-bottom:12px; color:#ffdd66;">Maybe you missed something in past levels... some sort of puzzles in order to achieve a better ending 👀</p>
-                <div style="height:12px;"></div>
-                <p style="margin-bottom:8px; font-size:0.9em; opacity:0.7;">Developed by Hoodie/Will and Scott Eifel</p>
-                <div style="height:12px;"></div>
-                <div style="color:#aaa; font-size:10px; word-break:break-all;">
-                    8G9M15O17J22D10T24Q22D25B19Y26H13F5K24Q15O21Z12L7W15O21Z12L1X13F24Q15O7W24Q10T9M16P22D9M13F22D9M13F15O12L13F9M15O24Q15O12L13F9M18S13F25B1X13F12L9M
-                </div>
-                <div style="height:200px"></div>
-            </div>
-            <div style="display:flex; justify-content:center; gap:12px; padding-top:8px;">
-                <button id="creditsMenuBtn" type="button" data-close-credits="1">Main Menu</button>
             </div>
         </div>
     </div>
@@ -501,64 +498,8 @@
             <!-- Optional secondary buttons (collapsed) -->
             <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(0,246,255,0.2); display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
                 <button id="trophyBtn" class="level-btn" title="Best Times" style="padding:6px 10px; font-size:0.85rem; border-color:#00f6ff; opacity:0.7;">🏆 Times</button>
+                <button id="creditsBtn" class="level-btn" title="Credits" style="padding:6px 10px; font-size:0.85rem; border-color:#00f6ff; opacity:0.7;">📜 Credits</button>
                 <button id="resetProgressBtn" class="level-btn" style="padding:6px 10px; font-size:0.85rem; border-color:#ff6b6b; color:#ff6b6b; opacity:0.7;">↺ Reset</button>
-                <button id="devToggleBtn" class="level-btn" style="padding:6px 10px; font-size:0.85rem; border-color:#999; opacity:0.5;">Dev</button>
-            
-                        <!-- Dev Tools Unlock (Password) -->
-                        <div id="devUnlockSection" style="display:none; margin-top:10px; padding:8px; border:1px solid rgba(255,255,0,0.3); border-radius:6px; background:rgba(0,0,0,0.3);">
-                            <div style="font-size:0.8rem; color:#ffff00; margin-bottom:5px;">🔒 Enter password to unlock dev tools:</div>
-                            <div style="display:flex; gap:5px;">
-                                <input type="password" id="devPasswordInput" placeholder="Password" style="flex:1; padding:5px; border-radius:3px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #ffff00; font-family:'Courier New',monospace;">
-                                <button id="devUnlockBtn" style="padding:5px 15px; background:#ffff00; color:#000; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-family:'Courier New',monospace;">Unlock</button>
-                            </div>
-                            <div id="devUnlockStatus" style="font-size:0.7rem; margin-top:5px; color:#ff4444;"></div>
-                        </div>
-            
-            </div>
-            <!-- Dev Panel (hidden until unlocked) -->
-            <div id="devPanel" style="display:none; margin-top:10px; padding:8px; border:2px solid #00f6ff; border-radius:6px; background:#0f1618; text-align:left; max-height:280px; overflow-y:auto;">
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.8rem;">
-                  <!-- Checkboxes Column 1 -->
-                  <div>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="godModeChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Invincible</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="skipPreBossChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Skip→Boss</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="bossDmg10xChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>10x Dmg</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="instaGenChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Instant Gen</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="nightVisionModeChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Night Vision</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="showSkinAbilitiesChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Show Skills</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:4px; margin:2px 0; white-space:nowrap;">
-                        <input id="showAchievementInfoChk" type="checkbox" style="width:14px; height:14px;" />
-                        <span>Show Ach Info</span>
-                    </label>
-                  </div>
-                  <!-- Buttons Column 2 -->
-                  <div style="display:flex; flex-direction:column; gap:3px;">
-                    <button id="unlockAllSkinsBtn" type="button" style="padding:3px 6px; background:#00f6ff; color:#000; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">Skins</button>
-                    <button id="unlockAllAchievementsBtn" type="button" style="padding:3px 6px; background:#00f6ff; color:#000; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">Achievements</button>
-                    <button id="unlockAllLevelsBtn" type="button" style="padding:3px 6px; background:#00f6ff; color:#000; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">Levels</button>
-                    <button id="playLevel11Btn" type="button" style="padding:3px 6px; background:#00d9ff; color:#000; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">L11</button>
-                    <button id="resetAllBtn" type="button" style="padding:3px 6px; background:#ff6b6b; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">Reset</button>
-                    <button id="resetRGBAchievementsBtn" type="button" style="padding:3px 6px; background:#ff00ff; color:#fff; border:none; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.75rem;">Reset RGB</button>
-                  </div>
-                </div>
             </div>
         </div>
     </div>
@@ -575,6 +516,45 @@
     </div>
 
     <!-- Endless Config Overlay -->
+        <!-- Credits Overlay -->
+        <div id="creditsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
+            <div class="overlay-panel" style="min-width: 480px; max-height:80vh; overflow-y:auto;">
+                <h2 style="color:#00f6ff; margin-bottom:20px; text-shadow: 0 0 10px rgba(0, 246, 255, 0.5);">CREDITS</h2>
+            
+                <div style="text-align:left; margin:20px 0; color:#aaa; line-height:1.8;">
+                    <div style="margin-bottom:24px;">
+                        <div style="color:#00f6ff; font-weight:bold; font-size:1.1rem; margin-bottom:12px; text-shadow: 0 0 8px rgba(0, 246, 255, 0.4);">🎮 ECHO MAZE 2.0</div>
+                        <div style="font-size:0.95rem; color:#bbb;">A cyberpunk maze adventure built with passion for puzzle exploration</div>
+                    </div>
+                
+                    <div style="margin-bottom:24px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
+                        <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">DEVELOPMENT TEAM</div>
+                        <div style="margin-bottom:10px;">
+                            <div style="color:#fff; font-weight:600;">HoodieTheGoodie</div>
+                            <div style="font-size:0.9rem; color:#888;">Lead Developer & Designer</div>
+                        </div>
+                        <div>
+                            <div style="color:#fff; font-weight:600;">Scott Efiel</div>
+                            <div style="font-size:0.9rem; color:#888;">Developer</div>
+                        </div>
+                    </div>
+                
+                    <div style="padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
+                        <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">FIND US</div>
+                        <div style="font-size:0.95rem; color:#bbb; line-height:1.6;">
+                            <div>🐙 GitHub: <span style="color:#fff;">Echomaze2</span></div>
+                            <div>🎮 Itch.io: <span style="color:#fff;">EchoMazeVT</span></div>
+                            <div style="margin-top:10px; color:#ddd; font-size:0.92rem; line-height:1.5;">Feel free to reach out on either site to report bugs or suggest changes—every bit of feedback is reviewed. Thank you!</div>
+                        </div>
+                    </div>
+                </div>
+            
+                <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
+                    <button id="creditsCloseBtn" type="button">Close</button>
+                </div>
+            </div>
+        </div>
+
     <div id="endlessOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
         <div class="overlay-panel" style="min-width: 480px;">
             <h2>Endless Mode</h2>
@@ -643,28 +623,36 @@
                     <span>Movement Audio</span>
                 </label>
                 <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement step sounds are muted. Other sounds still play.</div>
+                
+                <!-- Master Volume Slider -->
+                <div style="margin:16px 0;">
+                    <label style="display:flex; align-items:center; gap:10px;">
+                        <span>Master Volume:</span>
+                        <input id="masterVolumeSlider" type="range" min="0" max="100" value="100" style="flex:1; accent-color:#00f6ff;" />
+                        <span id="masterVolumeLabel" style="min-width:40px; text-align:right; color:#00f6ff; font-weight:bold;">100%</span>
+                    </label>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px; margin-top:4px;">Adjust the volume of all game sounds</div>
+                </div>
+                
                 <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
                     <input id="autoMovementChk" type="checkbox" checked />
                     <span id="autoMovementLabel">Auto-Movement</span>
                 </label>
                 <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
-                
-                <!-- Secret Bazooka Mode Section with Cool Styling -->
-                <div id="bazookaModeSection" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,68,0,0.15), rgba(255,140,0,0.1)); border: 2px solid rgba(255,68,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,68,0,0.3), 0 0 40px rgba(255,68,0,0.1) inset;">
-                    <div style="text-align:center; margin-bottom:12px;">
-                        <span style="font-size:1.8rem; text-shadow: 0 0 10px rgba(255,68,0,0.8);">🚀</span>
-                        <div style="color:#ff4400; font-weight:bold; font-size:1.1rem; text-shadow: 0 0 8px rgba(255,68,0,0.6); margin-top:4px;">BAZOOKA MODE</div>
-                        <div style="color:#ff8800; font-size:0.85rem; margin-top:4px;">SECRET UNLOCKED</div>
+                <!-- Energy Blaster Mode toggle (unlocks via secret code in Skins) -->
+                <div id="energyBlasterSection" style="display:none; margin-top:16px; padding:14px; background: linear-gradient(135deg, rgba(0,246,255,0.12), rgba(0,246,255,0.06)); border: 2px solid rgba(0,246,255,0.45); border-radius:12px; box-shadow: 0 0 20px rgba(0,246,255,0.18), 0 0 40px rgba(0,246,255,0.08) inset;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                        <div>
+                            <div style="color:#00f6ff; font-weight:bold;">Energy Blaster Mode</div>
+                            <div id="energyBlasterStatus" style="color:#88d7ff; font-size:0.9rem;">Locked — redeem the secret code in Skins.</div>
+                        </div>
+                        <label style="display:flex; align-items:center; gap:8px;">
+                            <input id="energyBlasterChk" type="checkbox" />
+                            <span style="font-weight:bold;">Enable</span>
+                        </label>
                     </div>
-                    <label style="display:flex; align-items:center; justify-content:center; gap:10px; margin:12px 0;">
-                        <input id="bazookaModeChk" type="checkbox" />
-                        <span style="color:#fff; font-weight:bold;">Enable Bazooka Mode</span>
-                    </label>
-                    <div style="color:#ffa500; font-size:0.9rem; text-align:center; line-height:1.4; margin-top:8px;">
-                        Start every level with a regenerating bazooka.<br>Destroy inner walls and unleash chaos!
-                    </div>
+                    <div style="color:#9cdcff; font-size:0.9rem; margin-top:8px;">Play with regenerating blaster ammo and destructible walls. Unlock via the Skins menu secret code.</div>
                 </div>
-
                 <!-- Level 11 Access Section (unlocks via secret on win screen) -->
                 <div id="level11Section" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.08)); border: 2px solid rgba(255,215,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,215,0,0.3), 0 0 40px rgba(255,215,0,0.1) inset;">
                     <div style="text-align:center; margin-bottom:10px;">
@@ -676,14 +664,6 @@
                         <button id="level11PlayBtn" type="button" style="border-color:#ffd700; color:#ffd700;" disabled>Play Level 11</button>
                     </div>
                 </div>
-                
-                <!-- Secret Button (3 attempts) -->
-                <div style="display:flex; justify-content:center; margin-top:20px;" id="secretButtonContainer">
-                    <button id="secretBtn" type="button" style="background: linear-gradient(90deg, #6a0dad, #9d4edd); color:#fff; border:2px solid #9d4edd; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 0 15px rgba(157,78,221,0.4); transition: all 0.3s;">
-                        🔒 SECRET
-                    </button>
-                </div>
-                
                 <div style="display:flex; justify-content:center; margin-top:16px;">
                     <button id="viewCreditsBtn" type="button" style="display:none; border-color:#00f6ff;">View Credits</button>
                 </div>
@@ -937,21 +917,6 @@
                         font-family: 'Courier New', monospace;
                     ">Back to Main Menu</button>
                     
-                    <!-- Dev Tools Button (at bottom) -->
-                    <button id="endlessDevToolsBtn" style="
-                        width: 100%;
-                        padding: 8px;
-                        background: rgba(255, 255, 0, 0.15);
-                        color: #ffff00;
-                        border: 1px solid #ffff00;
-                        border-radius: 5px;
-                        font-size: 11px;
-                        font-weight: bold;
-                        cursor: pointer;
-                        font-family: 'Courier New', monospace;
-                        margin-top: 10px;
-                        opacity: 0.7;
-                    ">▶ Dev Tools (locked)</button>
                 </div>
             </div>
         </div>
@@ -1007,6 +972,8 @@
             ">Back to Main Menu</button>
         </div>
     </div>
+
+    <div id="versionTag">Version 1.0</div>
 
     <script>
         // Lightweight error surface to help diagnose loading issues

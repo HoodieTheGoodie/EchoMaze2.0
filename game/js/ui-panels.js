@@ -9,8 +9,14 @@ export function openAchievementsPanel() {
     const overlay = document.getElementById('achievementsOverlay');
     if (!overlay) return;
     
+    // Always refresh achievements when opening panel to show latest unlocks
     renderAchievements();
     overlay.style.display = 'flex';
+    
+    // Trigger a refresh to ensure unlocked achievements show up immediately
+    setTimeout(() => {
+        renderAchievements();
+    }, 50);
 }
 
 // Close achievements panel
@@ -553,7 +559,7 @@ export async function handleCodeRedemption() {
         if (result.bazookaModeUnlocked) {
             // Show alert and redirect to settings
             setTimeout(() => {
-                alert('🚀 BAZOOKA MODE unlocked! Head to Settings to enable it.');
+            alert('🚀 ENERGY BLASTER MODE unlocked! Head to Settings to enable it.');
                 status.textContent = '';
                 // Close skins panel
                 closeSkinsPanel();

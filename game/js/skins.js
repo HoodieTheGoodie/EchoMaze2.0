@@ -282,6 +282,7 @@ const SECRET_CODES = {
     'MAZE': 'glitch',
     'SYSTEM': 'corrupted',
     'ECHOMAZE': 'BAZOOKA_MODE',
+    'UPUPDOWNDOWNLEFTRIGHTLEFTRIGHTABSTART': 'UNLOCK_ALL_LEVELS',
     
     // RGB ACHIEVEMENT CODES - EDIT TO ADD ACTUAL CODES
     // First 10 codes (100% completion winners) - LIMITED TO 10 TOTAL
@@ -434,12 +435,50 @@ export async function redeemCode(code) {
         return { success: false, message: 'Invalid code' };
     }
     
+    // Special handling for UNLOCK_ALL_LEVELS (Konami code)
+    if (target === 'UNLOCK_ALL_LEVELS') {
+        try {
+            const configMod = await import('./config.js');
+            // Unlock all levels 1-11
+            configMod.setUnlockedLevel(11);
+            configMod.setLevel11Unlocked(true);
+            // Hide game container to prevent custom level showing in background
+            const gameContainer = document.getElementById('game-container');
+            if (gameContainer) gameContainer.style.display = 'none';
+            const mainMenu = document.getElementById('mainMenu');
+            // Keep menu centered: must be flex, not block
+            if (mainMenu) mainMenu.style.display = 'flex';
+            // Refresh menu UI immediately
+            if (typeof window !== 'undefined' && window.buildMenu) {
+                try { window.buildMenu(); } catch {}
+            }
+            if (typeof window !== 'undefined' && window.__refreshLevel11UI) {
+                try { window.__refreshLevel11UI(); } catch {}
+            }
+        } catch (e) {
+            console.warn('[skins] Failed to unlock all levels:', e);
+            return { success: false, message: 'Error unlocking levels' };
+        }
+        
+        return { 
+            success: true, 
+            message: '🎮 ALL LEVELS UNLOCKED!',
+            skinId: null
+        };
+    }
+    
     // Special handling for BAZOOKA_MODE unlock
     if (target === 'BAZOOKA_MODE') {
         try {
             const configMod = await import('./config.js');
             if (configMod.setBazookaModeUnlocked) {
                 configMod.setBazookaModeUnlocked(true);
+            }
+            if (configMod.setBazookaMode) {
+                configMod.setBazookaMode(true); // auto-enable once unlocked
+            }
+            if (typeof window !== 'undefined' && window.__refreshEnergyBlasterUI) {
+                try { window.__refreshEnergyBlasterUI(); } catch {}
             }
         } catch (e) {
             console.warn('[skins] Failed to import config for bazooka mode:', e);
@@ -456,7 +495,7 @@ export async function redeemCode(code) {
         
         return { 
             success: true, 
-            message: '🚀 BAZOOKA MODE UNLOCKED! Check Settings to enable it.',
+            message: '🚀 ENERGY BLASTER MODE UNLOCKED! Check Settings to enable it.',
             skinId: null,
             bazookaModeUnlocked: true
         };

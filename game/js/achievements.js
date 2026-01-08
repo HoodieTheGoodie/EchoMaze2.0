@@ -45,9 +45,11 @@ export const ACHIEVEMENTS = [
     { id: 'endless_no_abilities_10', name: 'Endless Purist', desc: 'Complete 10 waves in Endless Mode without using any abilities', tier: 'gold', secret: false, unlockSkin: null },
     { id: 'secret_level11_power', name: 'System Override', desc: 'Discover the power supply in Level 11', tier: 'gold', secret: true, unlockSkin: 'glitch' },
     { id: 'secret_code_alpha', name: 'Code Breaker', desc: 'Enter a secret code', tier: 'gold', secret: true, unlockSkin: 'void' },
-    { id: 'bazooka_mode_unlock', name: 'Weapon System Online', desc: 'Unlock Bazooka Mode', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Enter code ECHOMAZE in the skins menu secret code area' },
+    { id: 'bazooka_mode_unlock', name: 'Weapon System Online', desc: 'Unlock Energy Blaster Mode', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Enter code ECHOMAZE in the skins menu secret code area' },
+    { id: 'bazooka_power_destroy', name: 'why???', desc: 'Use the Energy Blaster for something... questionable', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Destroy the power system in Level 11 finale room using Energy Blaster shots' },
+    { id: 'flashlight_blaster', name: 'Flashlight Blaster', desc: 'The ultimate tactical loadout', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Pick up the flashlight in Level 11 while holding the Energy Blaster' },
     { id: 'level4_no_sprint', name: 'Patience is a Virtue', desc: 'Complete Level 4 without sprinting once', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Complete Level 4 without pressing Shift at all' },
-    { id: 'bazooka_wall_breaker', name: 'Demolition Expert', desc: 'Destroy 50 walls with the bazooka', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Requires Bazooka Mode enabled - destroy 50 inner maze walls with bazooka shots' },
+    { id: 'bazooka_wall_breaker', name: 'Demolition Expert', desc: 'Destroy 50 walls with the Energy Blaster', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Requires Energy Blaster Mode enabled - destroy 50 inner maze walls with Energy Blaster shots' },
     { id: 'shield_reflect_consecutive', name: 'Perfect Parry', desc: 'Reflect 5 projectiles in a row without moving (easier with Defender)', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Block 5 projectiles consecutively - Defender skin recommended' },
     { id: 'level5_speed_challenge', name: 'Swift Escape', desc: 'Complete Level 5 in under 50 seconds (easier with Ghost/Blitz)', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Speed run Level 5 - recommend Ghost or Blitz skin' },
     { id: 'glitch_teleport_escape', name: 'Blinking Master', desc: 'Escape damage 10 times using Glitch teleport in one level', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Play as Glitch, dodge damage 10+ times with teleport in one level' },
@@ -62,7 +64,7 @@ export const ACHIEVEMENTS = [
     { id: 'endless_wave_75', name: 'Beyond Infinity', desc: 'Reach wave 75 in Endless Mode', tier: 'platinum', secret: false, unlockSkin: null },
     { id: 'endless_flawless_10', name: 'Flawless Endurance', desc: 'Complete 10 consecutive waves in Endless Mode without taking damage', tier: 'platinum', secret: false, unlockSkin: null },
     { id: 'total_deaths_100', name: 'Phoenix Rising', desc: 'Die 100 times total (across all runs)', tier: 'platinum', secret: true, unlockSkin: 'phoenix' },
-    { id: 'bazooka_boss_victory', name: 'Armed and Dangerous', desc: 'Defeat the boss with Bazooka Mode enabled', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Beat Level 10 boss with Bazooka Mode enabled (available from start)' },
+    { id: 'bazooka_boss_victory', name: 'Armed and Dangerous', desc: 'Defeat the boss with Energy Blaster Mode enabled', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Beat Level 10 boss with Energy Blaster Mode enabled (available from start)' },
     { id: 'level7_only_jumps', name: 'Kangaroo Mode', desc: 'Complete Level 7 using only jumping for movement', tier: 'platinum', secret: true, unlockSkin: null, devDesc: '[DEV] Complete Level 7 without pressing WASD - only use Space to jump for movement' },
     { id: 'level10_survival_5min', name: 'Ironclad Defender', desc: 'Survive on Level 10 (boss area) for 5 minutes without losing a life', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Stay alive in Level 10 boss arena for 5 continuous minutes' },
     { id: 'endless_survival_10min', name: 'Eternal Guardian', desc: 'Survive 10 minutes in Endless Mode without dying', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Last 10 full minutes (600s) in Endless without any deaths' },
@@ -133,9 +135,15 @@ export function getUnlockedAchievements() {
 
 // Unlock an achievement (only if not already unlocked)
 export function unlockAchievement(achievementId, skipNotification = false) {
-    // God mode doesn't earn achievements (except secrets and dev viewing)
-    if (isGodMode() && !achievementId.startsWith('secret_')) {
+    // God mode doesn't earn achievements (except ending achievements and secrets)
+    if (isGodMode() && !achievementId.startsWith('secret_') && !achievementId.startsWith('ending_') && achievementId !== 'all_endings' && achievementId !== 'game_complete') {
         console.log('[achievements] God mode active - achievement not earned:', achievementId);
+        return false;
+    }
+
+    // Custom/builder levels don't earn achievements
+    if (window.gameState && window.gameState.customLevelActive) {
+        console.log('[achievements] Custom level active - achievement not earned:', achievementId);
         return false;
     }
 
@@ -165,6 +173,15 @@ export function unlockAchievement(achievementId, skipNotification = false) {
 
     console.log('[achievements] Unlocked:', achievement.name);
 
+    // Play achievement unlock sound
+    try {
+        import('./audio.js').then(mod => {
+            if (mod.playAchievementUnlock) {
+                mod.playAchievementUnlock();
+            }
+        }).catch(() => {});
+    } catch (e) {}
+
     // Trigger notification (handled by UI module)
     if (!skipNotification) {
         import('./ui-notifications.js').then(mod => {
@@ -181,6 +198,11 @@ export function unlockAchievement(achievementId, skipNotification = false) {
                 mod.unlockSkin(achievement.unlockSkin, `Achievement: ${achievement.name}`);
             }
         }).catch(() => {});
+    }
+
+    // Check for 100% completion after each achievement unlock
+    if (achievementId !== '100_percent' && achievementId !== 'the_first_10' && achievementId !== 'world_record') {
+        setTimeout(() => checkAchievements('check_100_percent'), 100);
     }
 
     return true;
@@ -203,14 +225,26 @@ export function checkAchievements(event, data = {}) {
         case 'shield_reflect':
             handleShieldReflect(stats);
             break;
+        case 'shield_reflect_block':
+            handleShieldReflectBlock(stats, data);
+            break;
         case 'pig_mounted':
             handlePigMounted(stats);
             break;
         case 'bazooka_reload':
             handleBazookaReload(stats);
             break;
+        case 'bazooka_wall_destroyed':
+            handleBazookaWallDestroyed(stats);
+            break;
+        case 'power_supply_discovered':
+            handlePowerSupplyDiscovered(stats, data);
+            break;
         case 'endless_wave':
             handleEndlessWave(stats, data);
+            break;
+        case 'endless_damage_free_wave':
+            handleEndlessDamageFreeWave(stats, data);
             break;
         case 'generator_perfect':
             handleGeneratorPerfect(stats);
@@ -226,6 +260,24 @@ export function checkAchievements(event, data = {}) {
             break;
         case 'trap_catch':
             handleTrapCatch(stats);
+            break;
+        case 'glitch_dodged':
+            handleGlitchDodged(stats);
+            break;
+        case 'stamina_used':
+            handleStaminaUsed(stats);
+            break;
+        case 'enemy_combo':
+            handleEnemyCombo(stats, data);
+            break;
+        case 'wall_touch':
+            handleWallTouch(stats, data);
+            break;
+        case 'rotation':
+            handleRotation(stats, data);
+            break;
+        case 'achievement_event':
+            handleAchievementEvent(stats, data);
             break;
         case 'check_100_percent':
             checkHundredPercent();
@@ -274,6 +326,17 @@ function handleLevelComplete(stats, { level, timeMs, deathless, noAbilities }) {
     if (level === 3 && timeMs < 30000) { // Level 3 under 30s
         unlockAchievement('speedrun_level3_30s');
     }
+    if (level === 5 && timeMs < 50000) { // Level 5 under 50s
+        unlockAchievement('level5_speed_challenge');
+    }
+    
+    // Level-specific challenges
+    if (level === 4 && !sprintUsed) {
+        unlockAchievement('level4_no_sprint');
+    }
+    if (level === 2 && backwardsPercent >= 70) {
+        unlockAchievement('level2_backwards');
+    }
 
     // Deathless streak tracking
     if (deathless) {
@@ -318,9 +381,20 @@ function handleEndingReached(stats, { ending }) {
         stats.endingsReached.push(ending);
     }
 
-    if (ending === 'good') unlockAchievement('ending_good');
-    if (ending === 'bad') unlockAchievement('ending_bad');
-    if (ending === 'virus') unlockAchievement('ending_virus');
+    if (ending === 'good') {
+        unlockAchievement('ending_good');
+    }
+    if (ending === 'bad') {
+        unlockAchievement('ending_bad');
+        // Bad ending is the virus ending (player didn't disable power supply)
+        if (!stats.endingsReached.includes('virus')) {
+            stats.endingsReached.push('virus');
+        }
+        unlockAchievement('ending_virus');
+    }
+    if (ending === 'virus') {
+        unlockAchievement('ending_virus');
+    }
     
     // Check if all endings unlocked
     if (stats.endingsReached.includes('good') && 
@@ -370,6 +444,8 @@ function handleEndlessWave(stats, { wave, perfectWave }) {
     if (wave >= 20) unlockAchievement('endless_wave_20');
     if (wave >= 30) unlockAchievement('endless_wave_30');
     if (wave >= 50) unlockAchievement('endless_wave_50');
+    if (wave >= 75) unlockAchievement('endless_wave_75');
+    if (wave >= 100) unlockAchievement('endless_wave_100');
 
     if (perfectWave) {
         unlockAchievement('endless_perfect_wave');
@@ -407,6 +483,10 @@ function handleRunStart(stats) {
 
 function handleAbilityUsed(stats) {
     stats.currentNoAbilityStreak = 0;
+    // Mark that abilities were used in current run
+    if (typeof window !== 'undefined' && window.gameState) {
+        window.gameState.abilitiesUsed = true;
+    }
 }
 
 function handleTrapCatch(stats) {
@@ -416,12 +496,85 @@ function handleTrapCatch(stats) {
     }
 }
 
+function handleShieldReflectBlock(stats, { consecutive }) {
+    stats.shieldReflectsConsecutive = (stats.shieldReflectsConsecutive || 0) + 1;
+    if (consecutive && stats.shieldReflectsConsecutive >= 5) {
+        unlockAchievement('shield_reflect_consecutive');
+    }
+}
+
+function handleBazookaWallDestroyed(stats) {
+    stats.bazookaWallsDestroyed = (stats.bazookaWallsDestroyed || 0) + 1;
+    if (stats.bazookaWallsDestroyed >= 50) {
+        unlockAchievement('bazooka_wall_breaker');
+    }
+}
+
+function handlePowerSupplyDiscovered(stats, { choice }) {
+    // Unlock the discovery achievement regardless of choice
+    unlockAchievement('secret_level11_power');
+}
+
+function handleEndlessDamageFreeWave(stats, { wave }) {
+    stats.endlessFlawlessWaves = (stats.endlessFlawlessWaves || 0) + 1;
+    if (stats.endlessFlawlessWaves >= 10) {
+        unlockAchievement('endless_flawless_10');
+    }
+}
+
+function handleGlitchDodged(stats) {
+    stats.glitchDodgesThisLevel = (stats.glitchDodgesThisLevel || 0) + 1;
+    if (stats.glitchDodgesThisLevel >= 10) {
+        unlockAchievement('glitch_teleport_escape');
+    }
+}
+
+function handleStaminaUsed(stats) {
+    stats.staminaUsesThisLevel = (stats.staminaUsesThisLevel || 0) + 1;
+    if (stats.staminaUsesThisLevel >= 50) {
+        unlockAchievement('chrono_stamina_spree');
+    }
+}
+
+function handleEnemyCombo(stats, { count }) {
+    stats.currentEnemyCombo = count;
+    if (count >= 5) {
+        unlockAchievement('endless_combo_5');
+    }
+}
+
+function handleWallTouch(stats, { wallSide, touchTime }) {
+    // Track consecutive wall touches
+    stats.currentWallTouchTime = (stats.currentWallTouchTime || 0) + 1;
+    if (stats.currentWallTouchTime >= 30) {
+        unlockAchievement('wall_hugger');
+    }
+}
+
+function handleRotation(stats, { rotations }) {
+    stats.rotationsThisCheck = (stats.rotationsThisCheck || 0) + rotations;
+    if (stats.rotationsThisCheck >= 5) {
+        unlockAchievement('spin_cycle');
+    }
+}
+
+function handleAchievementEvent(stats, { eventType }) {
+    // Handle special achievement event types
+    if (eventType === 'level7_only_jumps') {
+        unlockAchievement('level7_only_jumps');
+    } else if (eventType === 'level10_survival_5min') {
+        unlockAchievement('level10_survival_5min');
+    } else if (eventType === 'endless_survival_10min') {
+        unlockAchievement('endless_survival_10min');
+    }
+}
+
 function checkHundredPercent() {
     const unlocked = getUnlockedAchievements();
     // Count all non-100% achievements
-    const totalAchievements = ACHIEVEMENTS.filter(a => a.id !== 'all_achievements').length;
+    const totalAchievements = ACHIEVEMENTS.filter(a => a.id !== '100_percent' && a.id !== 'the_first_10' && a.id !== 'world_record').length;
     if (unlocked.length >= totalAchievements) {
-        unlockAchievement('all_achievements');
+        unlockAchievement('100_percent');
     }
 }
 

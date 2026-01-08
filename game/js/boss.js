@@ -129,12 +129,12 @@ export function loadPrepRoom(currentTime) {
     const instructions = mobile ? [
       "You made it to the CORE...",
       "Defeat the CORE to beat the game.",
-      "Walk over the bazooka to pick it up.",
+      "Walk over the Energy Blaster to pick it up.",
       "Then go to the ammo box and tap reload."
     ] : [
       "You finally made it to the CORE...",
       "Defeat the CORE to beat the game.",
-      "Pick up the bazooka (it's unloaded).",
+      "Pick up the Energy Blaster (it's unloaded).",
       "Then go to the ammo box and press R to reload."
     ];
 
@@ -142,7 +142,7 @@ export function loadPrepRoom(currentTime) {
       try { enablePlayerInput(); } catch {};
       gameState.prepPickupLocked = false;
       if (!mobile) {
-        showPrompt('Press E near the bazooka to pick it up', 2500);
+        showPrompt('Press E near the Energy Blaster to pick it up', 2500);
       }
     });
     // Music/beep disabled in prep room (we can add a real track later)
@@ -256,8 +256,9 @@ export function spawnBossArena(currentTime) {
     doorFadeStartAt: 0,
     doorFadeUntil: 0,
     cutsceneStarted: false,
-    postEscapeStarted: false
-    ,
+    postEscapeStarted: false,
+    // Survival timer for achievement
+    survivalStartAt: now,
     // Virus monologue state
     virusDialogueActive: false,
     virusDialogueFinished: false,
@@ -290,6 +291,18 @@ export function spawnBossArena(currentTime) {
 export function updateBoss(currentTime) {
   const b = gameState.boss;
   if (!b) return;
+  
+  // Check survival timer achievement (5 minutes = 300000 ms in boss arena)
+  if (b.survivalStartAt && !b.survivalAchievementFired && currentTime - b.survivalStartAt >= 300000) {
+    b.survivalAchievementFired = true;
+    try {
+      import('./achievements.js').then(mod => {
+        if (mod.checkAchievements) {
+          mod.checkAchievements('achievement_event', { eventType: 'level10_survival_5min' });
+        }
+      }).catch(() => {});
+    } catch {}
+  }
   
   // Allow defeat timeline even after active=false; and prevent any further spawns while defeated
   if (b.defeated) {
@@ -766,6 +779,12 @@ export function updateBoss(currentTime) {
         if (!gameState.bazooka) gameState.bazooka = { has: true, ammo: 0, maxAmmo: BAZOOKA_MAX_AMMO };
         const give = 10; // each case gives 10
         gameState.bazooka.ammo = Math.min(gameState.bazooka.maxAmmo || 10, (gameState.bazooka.ammo || 0) + give);
+        // Fire bazooka_reload achievement event
+        try {
+          import('./achievements.js').then(mod => {
+            if (mod.checkAchievements) mod.checkAchievements('bazooka_reload');
+          });
+        } catch {}
         // pickup consumed; skip adding to keep
       } else {
         keep.push(a);
@@ -827,6 +846,12 @@ export function tryMountPig(currentTime) {
         gameState.mountedPigStart = currentTime;
         gameState.mountedPigUntil = currentTime + 4000; // 4s mount duration
         gameState.mountedPigId = e.id;
+        // Fire pig_mounted achievement event
+        try {
+          import('./achievements.js').then(mod => {
+            if (mod.checkAchievements) mod.checkAchievements('pig_mounted');
+          });
+        } catch {}
         // remove pig entity; you are now riding it
         gameState.enemies.splice(i,1);
   try { import('./state.js').then(m=> m.setStatusMessage && m.setStatusMessage('Mounted pig! 4s to blast the Core.', 1200)); } catch {}
@@ -981,8 +1006,12 @@ export function pickBazooka(currentTime) {
 }
 
 export function fireRocketAt(targetX, targetY, currentTime) {
-  // Allow firing in bazooka mode on any level, or during boss fight
-  const canFire = (isBazookaMode() && gameState.bazooka && gameState.bazooka.has) || (gameState.boss && gameState.boss.active);
+  // Allow firing in bazooka mode, during boss fight, or always in Level 11 finale
+  const canFire = (
+    (isBazookaMode() && gameState.bazooka && gameState.bazooka.has) ||
+    (gameState.boss && gameState.boss.active) ||
+    gameState.isLevel11 // Level 11 should always be able to fire rockets
+  );
   if (!canFire) return false;
   if (!gameState.bazooka || !gameState.bazooka.has || gameState.bazooka.ammo <= 0) return false;
   const sx = gameState.player.x + 0.5;
