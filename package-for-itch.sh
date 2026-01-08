@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script to create a downloadable ZIP package for itch.io
-# This creates a clean, playable package without development files
+# Script to create a browser-playable ZIP package for itch.io
+# This flattens the structure so index.html is at root with all assets
 
 echo "Creating Echo Maze 2.0 package for itch.io..."
 
@@ -14,21 +14,40 @@ if [ -f "$OUTPUT_FILE" ]; then
     rm "$OUTPUT_FILE"
 fi
 
-# Create the ZIP file with only necessary game files
-echo "Packaging game files..."
+# Create temporary directory for packaging
+TEMP_DIR="itch_io_build"
+if [ -d "$TEMP_DIR" ]; then
+    rm -rf "$TEMP_DIR"
+fi
+mkdir -p "$TEMP_DIR"
 
-zip -r "$OUTPUT_FILE" \
-    index.html \
-    ITCH_IO_README.txt \
-    game/ \
-    -x "*.git*" \
-    -x "*node_modules*" \
-    -x "*.DS_Store" \
-    -x "*Later/*" \
-    -x "*/dev-tools*.js" \
-    -x "notes.txt" \
-    -x "CNAME" \
-    -x "LICENSE"
+echo "Copying game files to temporary build directory..."
+
+# Copy the actual game index.html to root (not the redirect one)
+cp game/index.html "$TEMP_DIR/index.html"
+
+# Copy all other files from game directory
+cp -r game/css "$TEMP_DIR/"
+cp -r game/js "$TEMP_DIR/"
+cp -r game/assets "$TEMP_DIR/"
+cp game/favicon.* "$TEMP_DIR/" 2>/dev/null || true
+cp game/*.html "$TEMP_DIR/" 2>/dev/null || true
+
+# Copy README
+cp ITCH_IO_README.txt "$TEMP_DIR/"
+
+# Remove dev tools
+rm -f "$TEMP_DIR/js/dev-tools.js" "$TEMP_DIR/js/dev-tools-backup.js"
+
+echo "Creating ZIP file..."
+
+# Create the ZIP from the temp directory
+cd "$TEMP_DIR"
+zip -r "../$OUTPUT_FILE" ./* -x "*.git*" -x "*.DS_Store"
+cd ..
+
+# Clean up temp directory
+rm -rf "$TEMP_DIR"
 
 # Check if successful
 if [ -f "$OUTPUT_FILE" ]; then
@@ -40,17 +59,17 @@ if [ -f "$OUTPUT_FILE" ]; then
     echo ""
     echo "This ZIP file is ready to upload to itch.io!"
     echo ""
-    echo "Instructions:"
+    echo "IMPORTANT UPLOAD INSTRUCTIONS:"
+    echo "================================"
     echo "1. Go to your itch.io dashboard"
     echo "2. Create a new project or edit existing"
     echo "3. Set 'Kind of project' to 'HTML'"
     echo "4. Upload this ZIP file"
     echo "5. Check 'This file will be played in the browser'"
-    echo "6. Set index.html as the entry point"
+    echo "6. Set 'index.html' as the entry point"
+    echo "7. Set viewport: 800x800 or larger"
     echo ""
-    echo "For downloadable version:"
-    echo "- Upload the same ZIP"
-    echo "- Players can extract and play offline"
+    echo "The game will now load properly in itch.io's iframe!"
 else
     echo "✗ Error creating package"
     exit 1

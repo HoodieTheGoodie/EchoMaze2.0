@@ -1,0 +1,210 @@
+================================================================================
+                  ITCH.IO UPLOAD GUIDE - ECHO MAZE 2.0
+                    (FIXED FOR BROWSER PLAY)
+================================================================================
+
+ISSUE FIXED ✓
+-------------
+The previous package had index.html redirecting to game/index.html, which 
+doesn't work in itch.io's iframe. This has been FIXED!
+
+NEW PACKAGE: EchoMaze2.0-itch.io.zip (357KB)
+✓ index.html is now at the root level
+✓ No redirects - game loads directly
+✓ All paths corrected for itch.io hosting
+
+
+STEP-BY-STEP UPLOAD INSTRUCTIONS
+=================================
+
+1. LOG IN TO ITCH.IO
+   - Go to https://itch.io
+   - Click "Dashboard" in top right
+
+2. CREATE NEW PROJECT
+   - Click "Create new project"
+   - Or edit existing project if already created
+
+3. BASIC INFO
+   - Title: Echo Maze 2.0
+   - Short description: Navigate cyberpunk mazes with strategic abilities
+   - Classification: Games
+   - Kind of project: HTML ← IMPORTANT!
+
+4. UPLOAD FILES
+   - Scroll to "Uploads" section
+   - Click "Upload files"
+   - Select: EchoMaze2.0-itch.io.zip
+   
+   CRITICAL SETTINGS:
+   ☑ Check: "This file will be played in the browser"
+   
+   - After upload completes, you'll see a dropdown for "index file"
+   - Select: "index.html" from the dropdown
+   
+5. EMBED OPTIONS (appears after checking browser play)
+   - Frame options:
+     * Viewport dimensions: 800 x 800 (minimum recommended)
+     * Or: 1024 x 768 for more space
+   
+   - Options to check:
+     ☑ Automatically start on page load (recommended)
+     ☑ Enable fullscreen button (recommended)
+     ☑ Mobile friendly (your game has touch controls!)
+     ☐ Manually set size (optional - use if auto-size doesn't work)
+
+6. PROJECT DETAILS (fill these in)
+   - Cover image: Upload a screenshot (315x250 minimum)
+   - Screenshots: Add 3-5 gameplay images
+   - Tags: puzzle, strategy, maze, html5, browser, cyberpunk
+   - Genre: Puzzle
+   - Made with: HTML5
+   - Average session: 15-30 minutes
+   - Languages: English
+   - Inputs: Keyboard, Mouse, Touchscreen
+   - Accessibility: One button, Colorblind friendly
+
+7. VISIBILITY & ACCESS
+   - Public/Restricted: Your choice
+   - Pricing: Free (or set a price/donation)
+   
+8. SAVE & PUBLISH
+   - Click "Save & view page" at bottom
+   - Test the game in the preview
+   - If it works, click "Edit game" → Set to "Public"
+   - Done!
+
+
+TESTING BEFORE PUBLISHING
+=========================
+
+After uploading:
+1. The page will show a preview with "View project page" button
+2. Click it to test the game
+3. The game should load immediately in the embedded iframe
+4. Try playing a bit to make sure everything works
+
+If you see a blank screen:
+- Check that you selected "index.html" as the index file
+- Make sure "This file will be played in browser" is checked
+- Try increasing viewport dimensions to 1024x768
+
+
+COMMON ISSUES & SOLUTIONS
+=========================
+
+ISSUE: "Blank screen / nothing loads"
+SOLUTION: ✓ FIXED! The new package has index.html at root level
+
+ISSUE: "Can't find index.html in dropdown"
+SOLUTION: After uploading ZIP, wait for it to process. Refresh page if needed.
+         The ZIP extracts automatically and index.html should appear.
+
+ISSUE: "Game loads but layout is wrong"
+SOLUTION: Increase viewport dimensions. Try 1024x768 or larger.
+
+ISSUE: "Fullscreen doesn't work"
+SOLUTION: Make sure "Enable fullscreen button" is checked in embed options.
+
+ISSUE: "Mobile controls don't show"
+SOLUTION: They show automatically on touch devices. Test on phone to verify.
+
+
+DOWNLOADABLE VERSION (OPTIONAL)
+===============================
+
+Want players to download AND play in browser? Upload the file TWICE:
+
+FIRST UPLOAD (Browser Play):
+- Check: "This file will be played in the browser"
+- Set index.html
+
+SECOND UPLOAD (Download):
+- Upload the SAME ZIP file again
+- DON'T check "played in the browser"
+- Name it: "Offline Download"
+
+Players can then choose!
+
+
+RECOMMENDED SETTINGS
+===================
+
+Title: Echo Maze 2.0
+Tagline: Strategic cyberpunk maze puzzle adventure
+
+Description:
+----------
+Navigate through challenging cyberpunk mazes while managing your stamina and 
+shield abilities. Repair generators, outsmart AI enemies, and find the exit!
+
+FEATURES:
+• 10 Story Levels + Secret Boss Battle
+• Endless Mode with permanent upgrades
+• Custom Level Builder - create & share levels
+• Strategic ability management (Shield, Dash, Traps)
+• Multiple unlockable skins
+• Achievement system
+• Mobile touch controls included
+• Works offline after download
+
+CONTROLS:
+• Arrow Keys / WASD - Move
+• Space - Shield (blocks damage & projectiles)
+• Shift - Dash (faster movement)
+• F - Use trap
+• E - Interact
+
+Perfect for fans of puzzle games, maze games, and strategic thinking!
+
+Tags: puzzle, strategy, maze, html5, browser, singleplayer, cyberpunk, retro
+
+
+VIEWPORT RECOMMENDATIONS
+========================
+
+Minimum: 800 x 800
+Recommended: 1024 x 768 or 1280 x 800
+Optimal for mobile: Enable mobile-friendly option
+
+
+FILE SIZE
+=========
+357KB - Very lightweight and fast loading!
+
+
+POST-UPLOAD CHECKLIST
+====================
+☐ Game loads in preview
+☐ Controls work (keyboard/mouse)
+☐ Fullscreen button appears
+☐ Mobile touch controls work (test on phone)
+☐ Audio plays (if enabled)
+☐ Screenshots uploaded (3-5 images)
+☐ Cover image uploaded
+☐ Description filled out
+☐ Tags added (helps discovery)
+☐ Set to Public visibility
+
+
+GETTING MORE PLAYS
+==================
+- Add to relevant jams (search itch.io game jams)
+- Post in devlog to share updates
+- Use all relevant tags (max 10)
+- Add to collections
+- Share on social media
+- Ask friends to rate & review
+
+
+NEED HELP?
+==========
+If you still have issues:
+1. Check itch.io's HTML5 game guide: itch.io/docs/creators/html5
+2. Ask in itch.io community forums
+3. Verify the ZIP contents with: unzip -l EchoMaze2.0-itch.io.zip
+
+
+================================================================================
+                    Good luck with your upload! 🎮
+================================================================================

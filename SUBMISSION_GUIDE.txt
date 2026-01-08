@@ -36,28 +36,41 @@ See COOLMATH_VERIFICATION.txt for detailed verification report.
 ITCH.IO UPLOAD
 ==============
 
-✓ Download package created: EchoMaze2.0-itch.io.zip (359KB)
+✓ Download package created: EchoMaze2.0-itch.io.zip (357KB)
+
+IMPORTANT: This package has been restructured for itch.io compatibility!
+- index.html is now at the ROOT of the ZIP (not in a subfolder)
+- All game files are properly structured for itch.io's iframe
+- No redirects - the game loads directly
 
 This ZIP file contains:
-- index.html (entry point)
-- ITCH_IO_README.txt (player instructions)
-- game/ folder (all game files)
+- index.html (actual game file at root level)
+- css/ folder (stylesheets)
+- js/ folder (all game scripts)
+- assets/ folder (images, sounds, etc.)
 - No development files or unnecessary content
 
 HOW TO UPLOAD TO ITCH.IO:
 -------------------------
 
-OPTION 1: Browser Playable (Recommended)
-----------------------------------------
+BROWSER PLAYABLE (Recommended - Fixed for itch.io!)
+---------------------------------------------------
 1. Go to https://itch.io/game/new
 2. Fill in game details (title, description, screenshots)
 3. Under "Uploads":
+   - Click "Upload files"
    - Upload: EchoMaze2.0-itch.io.zip
-   - Check: "This file will be played in the browser"
-   - Set the entry point file as: index.html
+   - Check: ☑ "This file will be played in the browser"
+   - For "index file": Select "index.html" from dropdown
 4. Set "Kind of project" to "HTML"
-5. Set viewport dimensions: 800x800 (or your preference)
-6. Publish!
+5. Set embed options:
+   - Viewport dimensions: 800x800 (or adjust to your preference)
+   - Check "Automatically start on page load" if desired
+   - Check "Enable fullscreen button" (recommended)
+   - Check "Mobile friendly" ✓
+6. Click "Save" then "Publish"!
+
+The game will now load directly in the browser on itch.io!
 
 OPTION 2: Downloadable Game
 ---------------------------
