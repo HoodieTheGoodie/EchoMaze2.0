@@ -1,0 +1,31 @@
+INSTRUCTIONS FOR ADDING CUSTOM SPRITES
+========================================
+
+To add your custom textures to the game:
+
+1. Save your three images as:
+   - bazooka.png (for the bazooka pickup)
+   - generator.png (for the generator tiles)  
+   - ammo_crate.png (for the ammo crates)
+
+2. Place them in this folder: /workspaces/EchoMaze2.0/game/assets/
+
+3. The images should be PNG format with transparent backgrounds
+
+4. Recommended sizes:
+   - bazooka.png: 20x20 pixels (or larger, will be scaled)
+   - generator.png: 20x20 pixels (matches tile size)
+   - ammo_crate.png: 16x16 pixels (or larger, will be scaled)
+
+5. The game will automatically load and use them!
+
+If the images fail to load, the game will fall back to the original 
+geometric shapes (circles and squares).
+
+Current Status:
+- ✓ Sprite loading system created
+- ✓ Renderer updated to use sprites
+- ✓ Fallback rendering preserved
+- ⏳ Waiting for image files to be added
+
+Simply drag and drop your images into this assets folder!

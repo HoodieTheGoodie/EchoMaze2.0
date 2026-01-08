@@ -1,0 +1,160 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║          🎮 ITCH.IO - EMBED YOUR EXISTING SITE (EASIEST!) 🎮            ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+✅ YES! YOU CAN USE YOUR EXISTING SITE!
+---------------------------------------
+
+Instead of uploading files, you can embed echomaze2.me directly into your 
+itch.io page. This is MUCH simpler and will work perfectly!
+
+
+🚀 SUPER EASY SETUP (5 STEPS)
+==============================
+
+1. Go to: https://itch.io/game/new
+
+2. Fill in basic details:
+   - Title: Echo Maze 2.0
+   - Short description: Your game description
+   - Classification: Games
+   - Kind of project: HTML  ← Still select this!
+
+3. Scroll to "Embed options" section
+
+4. Instead of uploading a file, check this option:
+   ☑ "Embed an external website"
+
+5. In the URL field, enter:
+   https://echomaze2.me
+
+6. Set viewport dimensions:
+   - Width: 1024 (or larger)
+   - Height: 768 (or larger)
+   
+7. Additional options:
+   ☑ Enable fullscreen button (recommended)
+   ☑ Mobile friendly
+   ☑ Automatically start on page load
+
+8. Save and publish!
+
+
+THAT'S IT! ✅
+=============
+
+Your game will now load directly from echomaze2.me in an iframe on your 
+itch.io page. No file uploads needed!
+
+
+ADVANTAGES OF THIS METHOD
+==========================
+
+✓ No file upload hassles
+✓ No package restructuring needed
+✓ Game updates automatically (update echomaze2.me, itch.io shows latest)
+✓ Uses your existing working site
+✓ Simpler to maintain
+✓ One source of truth (your main site)
+
+
+THINGS TO NOTE
+==============
+
+• Your echomaze2.me site needs to allow iframe embedding
+  (Most sites do by default)
+
+• Players will be loading the game from your domain
+  (echomaze2.me), not from itch.io's servers
+
+• If your site goes down, the itch.io embed won't work
+  (But you can always switch to file upload later)
+
+
+FOR DOWNLOADABLE VERSION
+=========================
+
+You can STILL offer downloads alongside the web version:
+
+1. Use the external URL for browser play (as above)
+2. Also upload the ZIP file for download
+3. For the ZIP upload:
+   - DON'T check "played in browser"
+   - Label it "Offline Download"
+   
+Players can choose: Play in browser OR download!
+
+
+FULL EXAMPLE SETUP
+==================
+
+Embed options:
+--------------
+☑ Embed an external website
+URL: https://echomaze2.me
+Width: 1024
+Height: 768
+☑ Enable fullscreen button
+☑ Mobile friendly
+☑ Automatically start on page load
+
+
+TESTING
+=======
+
+After setup:
+1. Save your project
+2. Click "View project page"
+3. Your game should load from echomaze2.me
+4. Test that controls work
+5. Test fullscreen button
+6. If it works, set to Public!
+
+
+IF IT DOESN'T LOAD
+==================
+
+Issue: "This site refused to connect" or similar
+Solution: Your site might block iframe embedding
+
+Fix (if needed):
+- Check your site's server headers
+- Ensure X-Frame-Options allows embedding
+- Or use the ZIP file upload method instead
+
+
+RECOMMENDED VIEWPORT SIZES
+==========================
+
+Based on your game's design:
+- 1024 x 768 (good balance)
+- 1280 x 800 (more space)
+- 800 x 800 (square, compact)
+
+Try different sizes to see what looks best!
+
+
+SUMMARY
+=======
+
+Method 1: External URL (EASIEST)
+---------------------------------
+✓ Check "Embed an external website"
+✓ URL: https://echomaze2.me
+✓ No file upload needed!
+
+Method 2: File Upload (if external URL doesn't work)
+----------------------------------------------------
+✓ Upload: EchoMaze2.0-itch.io.zip
+✓ Check "played in browser"
+✓ Select index.html
+
+
+BOTH WORK, BUT EXTERNAL URL IS SIMPLER!
+
+
+════════════════════════════════════════════════════════════════════════════
+              Try the external URL method first! 🚀
+════════════════════════════════════════════════════════════════════════════

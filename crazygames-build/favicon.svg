@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="31" fill="#1a1425" stroke="#00f6ff" stroke-width="2.5"/>
+
+  <!-- Bright outer cyan glow -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(0, 246, 255, 0.6)" stroke-width="3"/>
+
+  <!-- Player character (brighter royal blue circle) -->
+  <circle cx="32" cy="32" r="13" fill="rgb(100, 140, 255)"/>
+
+  <!-- Bright cyan highlight on player -->
+  <circle cx="28" cy="28" r="4" fill="rgba(0, 246, 255, 0.9)"/>
+  <circle cx="28" cy="28" r="2.5" fill="rgb(200, 220, 255)"/>
+
+  <!-- Letter E (left side) -->
+  <text x="14" y="36" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#00f6ff" text-anchor="middle" style="text-shadow: 0 0 8px rgba(0, 246, 255, 0.8);">E</text>
+
+  <!-- Letter M (right side) -->
+  <text x="50" y="36" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#ffd700" text-anchor="middle" style="text-shadow: 0 0 8px rgba(255, 215, 0, 0.8);">M</text>
+</svg>

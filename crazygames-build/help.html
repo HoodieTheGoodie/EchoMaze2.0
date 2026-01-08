@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoMaze - Help Guide</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div id="helpContainer">
+        <div id="helpHeader">
+            <h1>ECHOMAZE GUIDE</h1>
+            <button id="backBtn" onclick="window.location.href='../index.html'">← BACK TO MENU</button>
+        </div>
+
+        <div id="helpContent">
+            <div id="slideContainer"></div>
+        </div>
+
+        <div id="helpNavigation">
+            <button id="prevBtn" class="nav-btn">◄</button>
+            <div id="pageIndicator">
+                <span id="currentPage">1</span> / <span id="totalPages">9</span>
+            </div>
+            <button id="nextBtn" class="nav-btn">►</button>
+        </div>
+
+        <div id="lockedOverlay" class="hidden">
+            <div class="locked-content">
+                <div class="lock-icon">🔒</div>
+                <h2>PAGE LOCKED</h2>
+                <p id="unlockCondition"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/help.js"></script>
+</body>
+</html>

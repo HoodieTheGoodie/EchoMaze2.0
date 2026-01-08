@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo Maze Level Builder</title>
+    <link rel="stylesheet" href="css/help.css">
+    <link rel="stylesheet" href="css/mobile-ui.css">
+    <style>
+        :root {
+            --bg: #0b0f1a;
+            --panel: #11182b;
+            --panel-strong: #19233a;
+            --accent: #4de1ff;
+            --accent-2: #ff9f1c;
+            --grid: #1d2a44;
+            --grid-line: #233456;
+            --text: #eaf4ff;
+            --muted: #8aa5c5;
+            --danger: #ff4d6d;
+            --safe: #3bd671;
+        }
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(77,225,255,0.08), transparent 30%),
+                        radial-gradient(circle at 80% 10%, rgba(255,159,28,0.08), transparent 25%),
+                        radial-gradient(circle at 50% 80%, rgba(71,201,164,0.08), transparent 25%),
+                        var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: linear-gradient(120deg, rgba(77,225,255,0.12), rgba(255,159,28,0.12));
+            border-bottom: 1px solid var(--grid-line);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+        }
+        header h1 {
+            margin: 0;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            font-size: 18px;
+        }
+        header .actions {
+            display: flex;
+            gap: 8px;
+        }
+        header button {
+            background: var(--panel-strong);
+            color: var(--text);
+            border: 1px solid var(--grid-line);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        header button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(0,0,0,0.25);
+            background: var(--panel);
+        }
+        main {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            gap: 12px;
+            padding: 12px 18px;
+            flex: 1;
+        }
+        .panel {
+            background: rgba(17,24,43,0.86);
+            border: 1px solid var(--grid-line);
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .panel h2 {
+            margin: 0;
+            padding: 12px 14px 10px;
+            font-size: 14px;
+            letter-spacing: 0.01em;
+            border-bottom: 1px solid var(--grid-line);
+            background: rgba(255,255,255,0.02);
+        }
+        .scrollable { max-height: calc(100vh - 100px); overflow-y: auto; flex: 1; }
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+            gap: 8px;
+            padding: 12px;
+        }
+        .tile {
+            border: 1px solid var(--grid-line);
+            border-radius: 10px;
+            padding: 10px 8px;
+            text-align: center;
+            cursor: pointer;
+            background: var(--panel-strong);
+            color: var(--text);
+            font-weight: 700;
+            font-size: 12px;
+            line-height: 1.4;
+            transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        .tile:hover { background: var(--panel); transform: translateY(-1px); }
+        .tile.active { outline: 2px solid var(--accent); background: rgba(77,225,255,0.12); }
+        .canvas-wrapper {
+            position: relative;
+            padding: 12px;
+            overflow: auto;
+            flex: 1;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        #builderCanvas {
+            width: 600px;
+            height: 600px;
+            background: var(--grid);
+            border: 1px solid var(--grid-line);
+            flex-shrink: 0;
+        }
+        .grid-overlay {
+            position: absolute;
+            pointer-events: none;
+            background-image: linear-gradient(0deg, transparent 95%, var(--grid-line) 95%),
+                              linear-gradient(90deg, transparent 95%, var(--grid-line) 95%);
+            background-size: 20px 20px;
+            width: 600px;
+            height: 600px;
+            top: 0;
+            left: 0;
+        }
+        .right-pane {
+            padding: 12px;
+            gap: 10px;
+        }
+        .section {
+            border: 1px solid var(--grid-line);
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            background: rgba(255,255,255,0.03);
+        }
+        .section h3 {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            letter-spacing: 0.01em;
+        }
+        .section textarea {
+            width: 100%;
+            min-height: 120px;
+            background: #0d1424;
+            color: var(--text);
+            border: 1px solid var(--grid-line);
+            border-radius: 10px;
+            padding: 10px;
+            font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+        }
+        .section .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(77,225,255,0.14);
+            color: var(--text);
+            font-weight: 700;
+            border: 1px solid var(--grid-line);
+        }
+        .toast {
+            position: fixed;
+            left: 50%;
+            top: 16px;
+            transform: translateX(-50%);
+            background: var(--panel-strong);
+            color: var(--text);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--grid-line);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            z-index: 999;
+        }
+        .toast.show { opacity: 1; transform: translate(-50%, 4px); }
+        .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+        .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+        .swatch { width: 14px; height: 14px; border-radius: 3px; }
+        footer { padding: 12px 18px; color: var(--muted); font-size: 12px; text-align: center; margin-top: auto; flex-shrink: 0; }
+        @media (max-width: 1080px) {
+            main { grid-template-columns: 1fr; }
+            header { flex-direction: column; gap: 12px; align-items: flex-start; }
+            header .actions { width: 100%; }
+            .panel { max-height: none; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Echo Maze — Level Builder</h1>
+        <div class="actions">
+            <button id="playTestBtn">▶ Playtest</button>
+            <button id="exportBtn">⬇ Export</button>
+            <button id="importBtn">⬆ Import</button>
+            <button id="featuredBtn">⭐ Featured Levels</button>
+            <button id="backBtn">⟵ Back</button>
+        </div>
+    </header>
+    <main>
+        <section class="panel scrollable" aria-label="palette">
+            <h2>Palette</h2>
+            <div class="palette" id="palette"></div>
+            <div class="section">
+                <h3>Teleporter Links</h3>
+                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--grid-line); display:flex; gap:6px; flex-wrap:wrap;">
+                        <button id="linkTeleportersBtn" style="flex:1; padding: 6px; border-radius: 6px; background: rgba(77,225,255,0.14); color: var(--accent); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Link Mode</button>
+                        <button id="dirTwoWay" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">2-way</button>
+                        <button id="dirOneWay" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">1-way</button>
+                        <button id="targetTeleporter" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">To Teleporter</button>
+                        <button id="targetCell" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">To Map Spot</button>
+                        <button id="toggleLinkLinesBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Show Lines</button>
+                    </div>
+                <div id="teleporterList" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin-top: 8px; max-height: 260px; overflow-y: auto;"></div>
+            </div>
+            <div class="section">
+                <h3>Enemy Barriers</h3>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button id="barrierModeBtn" style="flex:1; padding: 6px; border-radius: 6px; background: rgba(205,180,255,0.18); color: #cdb4ff; border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Barrier Mode</button>
+                    <button id="pickEnemyBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Pick Enemy</button>
+                    <button id="toggleBarriersBtn" style="padding: 6px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 11px;">Show Barriers</button>
+                </div>
+                <div id="barrierList" style="display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height: 220px; overflow-y:auto;"></div>
+            </div>
+        </section>
+        <section class="panel scrollable" aria-label="canvas">
+            <h2>Canvas (<span id="canvasSize">30 x 30</span>)</h2>
+            <div style="display: flex; gap: 8px; padding: 0 12px 8px; align-items: center;">
+                <label for="sizeSlider" style="color: var(--muted); font-size: 12px;">Size:</label>
+                <input id="sizeSlider" type="range" min="1" max="30" value="30" style="flex: 1; cursor: pointer;">
+                <input id="sizeInput" type="number" min="1" max="30" value="30" style="width: 45px; padding: 4px; border-radius: 6px; border: 1px solid var(--grid-line); background: #0d1424; color: var(--text); text-align: center; font-weight: 600;">
+                <button id="resetBtn" style="padding: 6px 10px; border-radius: 6px; background: var(--panel-strong); color: var(--text); border: 1px solid var(--grid-line); font-weight: 600; cursor: pointer; font-size: 12px; transition: background 0.15s ease, transform 0.1s ease;" title="Clear board">🗑️ Reset</button>
+            </div>
+            <div style="display:flex; gap:6px; padding: 0 12px 8px; flex-wrap: wrap; align-items:center;">
+                <span style="color: var(--muted); font-size: 12px; margin-right:4px;">Tools:</span>
+                <button id="toolPaintBtn" class="tool" title="Paint (default)" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: rgba(77,225,255,0.18); color: var(--accent); font-weight:700; font-size:11px; cursor:pointer;">🖌️ Paint</button>
+                <button id="toolSelectBtn" class="tool" title="Select rectangle" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🔲 Select</button>
+                <button id="toolFillBtn" class="tool" title="Fill (bucket)" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🪣 Fill</button>
+                <button id="toolEyedropBtn" class="tool" title="Eyedropper" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🧲 Pick</button>
+                <span style="width:12px"></span>
+                <button id="actionCopyBtn" title="Copy selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">📋 Copy</button>
+                <button id="actionCutBtn" title="Cut selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">✂️ Cut</button>
+                <button id="actionPasteBtn" title="Paste" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">📌 Paste</button>
+                <button id="actionClearSelBtn" title="Clear selection" style="padding:6px 8px; border-radius:6px; border:1px solid var(--grid-line); background: var(--panel-strong); color: var(--text); font-weight:700; font-size:11px; cursor:pointer;">🧹 Clear Sel</button>
+                <span id="toolStatus" style="margin-left:auto; color: var(--muted); font-size:12px;">Active: Paint</span>
+            </div>
+            <div class="canvas-wrapper">
+                <div style="position: relative;">
+                    <canvas id="builderCanvas" width="600" height="600"></canvas>
+                    <div class="grid-overlay"></div>
+                </div>
+            </div>
+        </section>
+        <section class="panel right-pane scrollable" aria-label="details">
+            <div class="section">
+                <h3>Level Info</h3>
+                <div class="row">
+                    <label for="levelName">Name:</label>
+                    <input id="levelName" type="text" placeholder="My Echo Maze" aria-label="Level name">
+                </div>
+                <div class="row" style="margin-top:8px;">
+                    <label for="authorName">Author:</label>
+                    <input id="authorName" type="text" placeholder="You" aria-label="Author name">
+                </div>
+            </div>
+            <div class="section">
+                <h3>Constraints</h3>
+                <div class="legend">
+                    <span><span class="swatch" style="background: var(--safe);"></span>1 Spawn required</span>
+                    <span><span class="swatch" style="background: var(--accent-2);"></span>1 Exit required</span>
+                    <span><span class="swatch" style="background: var(--accent);"></span>Teleporters need pairs</span>
+                </div>
+            </div>
+            <div class="section">
+                <h3>Share JSON</h3>
+                <textarea id="shareText" aria-label="Level JSON"></textarea>
+                <div class="row" style="margin-top:8px;">
+                    <button id="copyBtn">Copy</button>
+                    <button id="loadJsonBtn">Load</button>
+                    <button id="backupBtn" title="Save current draft without checks">Backup</button>
+                </div>
+            </div>
+            <div class="section">
+                <h3>Tips</h3>
+                <ul style="margin:0 0 6px 18px; padding:0; color: var(--muted);">
+                    <li>Click to paint. Right-click/drag to erase.</li>
+                    <li>Use teleporters in pairs; max 2 pairs.</li>
+                    <li>Place exactly one spawn and one exit.</li>
+                    <li>Export to play your level or share JSON.</li>
+                </ul>
+            </div>
+        </section>
+    </main>
+    <div class="toast" id="toast"></div>
+    <script src="js/level-builder.js"></script>
+</body>
+</html>

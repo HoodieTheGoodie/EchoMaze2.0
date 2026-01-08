@@ -1,0 +1,32 @@
+════════════════════════════════════════════════════════════════
+                    FASTEST ITCH.IO SETUP
+════════════════════════════════════════════════════════════════
+
+USE YOUR EXISTING SITE (NO UPLOAD NEEDED!)
+===========================================
+
+1. Go to: itch.io/game/new
+
+2. Basic info:
+   - Title: Echo Maze 2.0
+   - Kind of project: HTML
+
+3. Scroll to "Embed options"
+
+4. Check: ☑ "Embed an external website"
+
+5. Enter URL: https://echomaze2.me
+
+6. Set size: 1024 x 768
+
+7. Check: ☑ Enable fullscreen
+          ☑ Mobile friendly
+
+8. Save & Publish!
+
+DONE! Your game loads from echomaze2.me 🎮
+
+════════════════════════════════════════════════════════════════
+
+This is the EASIEST way. No file uploads, no packaging issues.
+Your existing working site will load directly on itch.io!

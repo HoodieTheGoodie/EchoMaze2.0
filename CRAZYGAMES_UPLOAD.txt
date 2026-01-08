@@ -1,0 +1,53 @@
+================================================================================
+                    CRAZYGAMES UPLOAD INSTRUCTIONS
+================================================================================
+
+WHAT THEY REQUIRE
+-----------------
+• A folder of files (NOT a zip upload) with an index.html at root
+• All assets relative to that root
+• No external dependencies
+
+WHAT I BUILT FOR YOU
+--------------------
+• Folder: crazygames-build/
+  - Contains index.html (actual game, no redirects)
+  - css/, js/, assets/, favicon files
+  - CRAZYGAMES_README.txt
+• Optional zip: EchoMaze2.0-crazygames.zip (same contents, just zipped for convenience)
+
+WHERE IT IS
+-----------
+/workspaces/EchoMaze2.0/crazygames-build/
+/workspaces/EchoMaze2.0/EchoMaze2.0-crazygames.zip
+
+HOW TO UPLOAD (DRAG & DROP FOLDER)
+----------------------------------
+1) Open the CrazyGames upload page.
+2) Drag the contents of crazygames-build/ directly into the upload zone:
+   - Select ALL files/folders inside crazygames-build (index.html, css, js, assets, etc.)
+   - Do NOT drag the folder itself if their UI wants individual files; if they allow folder drop, drop the folder.
+3) Ensure they detect index.html at root (no subfolders needed).
+4) Submit.
+
+If the UI won’t accept folder drag:
+- Open crazygames-build/
+- Select all items (index.html, css/, js/, assets/, favicon files)
+- Drag those selected items into the upload zone
+
+NOTES
+-----
+• index.html at root (no meta refresh, no redirects)
+• No external links or tracking
+• All assets local
+• Dev tools removed (dev-tools.js, dev-tools-backup.js)
+
+IF THEY EVER ALLOW ZIPS
+-----------------------
+Use EchoMaze2.0-crazygames.zip (same layout, index at root), but their message says no archives.
+
+TO REBUILD AFTER CHANGES
+------------------------
+./package-for-crazygames.sh
+
+================================================================================
