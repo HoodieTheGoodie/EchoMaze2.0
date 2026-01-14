@@ -35,16 +35,18 @@ export function updateCanvasSize() {
         );
         const targetSize = Math.min(maxSize, 500); // Cap at 500px
 
-        // Update canvas size
-        canvas.width = targetSize;
-        canvas.height = targetSize;
+        // Update canvas size (guard against negative/zero)
+        if (targetSize > 0) {
+            canvas.width = targetSize;
+            canvas.height = targetSize;
 
-        // Recalculate cell size to fit
-        CELL_SIZE = Math.floor(targetSize / 30); // 30x30 maze
-        canvasScale = targetSize / 600;
+            // Recalculate cell size to fit
+            CELL_SIZE = Math.max(1, Math.floor(targetSize / 30)); // 30x30 maze, minimum 1px
+            canvasScale = targetSize / 600;
 
-        // Mark maze as dirty to rebuild with new cell size
-        mazeBaseDirty = true;
+            // Mark maze as dirty to rebuild with new cell size
+            mazeBaseDirty = true;
+        }
     } else {
         // Desktop: standard size
         canvas.width = 600;

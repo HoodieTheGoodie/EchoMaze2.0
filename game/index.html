@@ -345,6 +345,16 @@
     </style>
 </head>
 <body>
+    <!-- Challenge Stopwatch (Top-left corner) -->
+    <div id="challengeStopwatch" style="display:none; position:fixed; top:20px; left:20px; z-index:1000;">
+        <div style="background: linear-gradient(135deg, rgba(128,0,255,0.95), rgba(255,0,128,0.95)); padding:12px 20px; border:2px solid #FF00FF; border-radius:8px; box-shadow: 0 0 20px rgba(255,0,255,0.6), 0 0 40px rgba(255,0,255,0.2) inset;">
+            <div style="text-align:center; color:#FFF; font-weight:bold; font-size:16px; text-shadow: 0 0 8px rgba(255,255,255,0.8);">
+                ⏱️ <span id="challengeStopwatchTime">00:00</span>
+            </div>
+            <div id="challengeStopwatchLabel" style="text-align:center; color:#FFD700; font-size:12px; margin-top:4px;">Speedrun Challenge</div>
+        </div>
+    </div>
+
     <!-- Boss Health Bar (Repositioned to top-right, outside canvas) -->
     <div id="bossHealthBarContainer" style="display:none; position:fixed; top:20px; right:20px; z-index:1000; width:280px;">
         <div style="background: linear-gradient(135deg, rgba(10,10,20,0.95), rgba(30,10,25,0.95)); padding:10px 16px; border:2px solid #ff3355; border-radius:8px; box-shadow: 0 0 20px rgba(255,51,85,0.5), 0 0 40px rgba(255,51,85,0.2) inset;">
@@ -516,42 +526,72 @@
     </div>
 
     <!-- Endless Config Overlay -->
+    
+    <!-- Loading Screen Overlay -->
+    <div id="loadingScreen" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); justify-content:center; align-items:center; z-index:9999; flex-direction:column;">
+        <div style="text-align:center;">
+            <div id="loadingSpinner" style="width:80px; height:80px; border:4px solid rgba(0,246,255,0.2); border-top:4px solid #00f6ff; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 30px;"></div>
+            <h2 id="loadingText" style="color:#00f6ff; font-size:1.8rem; margin:0 0 12px 0; text-shadow:0 0 15px rgba(0,246,255,0.6);">Loading...</h2>
+            <p id="loadingSubtext" style="color:#88d7ff; font-size:1rem; margin:0;">Preparing level</p>
+        </div>
+    </div>
+    
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    
         <!-- Credits Overlay -->
         <div id="creditsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
             <div class="overlay-panel" style="min-width: 480px; max-height:80vh; overflow-y:auto;">
-                <h2 style="color:#00f6ff; margin-bottom:20px; text-shadow: 0 0 10px rgba(0, 246, 255, 0.5);">CREDITS</h2>
-            
-                <div style="text-align:left; margin:20px 0; color:#aaa; line-height:1.8;">
-                    <div style="margin-bottom:24px;">
-                        <div style="color:#00f6ff; font-weight:bold; font-size:1.1rem; margin-bottom:12px; text-shadow: 0 0 8px rgba(0, 246, 255, 0.4);">🎮 ECHO MAZE 2.0</div>
-                        <div style="font-size:0.95rem; color:#bbb;">A cyberpunk maze adventure built with passion for puzzle exploration</div>
-                    </div>
+                <div class="credits-content">
+                    <h2 style="color:#00f6ff; margin-bottom:20px; text-shadow: 0 0 10px rgba(0, 246, 255, 0.5);">CREDITS</h2>
                 
-                    <div style="margin-bottom:24px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
-                        <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">DEVELOPMENT TEAM</div>
-                        <div style="margin-bottom:10px;">
-                            <div style="color:#fff; font-weight:600;">HoodieTheGoodie</div>
-                            <div style="font-size:0.9rem; color:#888;">Lead Developer & Designer</div>
+                    <div style="text-align:left; margin:20px 0; color:#aaa; line-height:1.8;">
+                        <div style="margin-bottom:24px;">
+                            <div style="color:#00f6ff; font-weight:bold; font-size:1.1rem; margin-bottom:12px; text-shadow: 0 0 8px rgba(0, 246, 255, 0.4);">🎮 ECHO MAZE 2.0</div>
+                            <div style="font-size:0.95rem; color:#bbb;">A cyberpunk maze adventure built with passion for puzzle exploration</div>
                         </div>
-                        <div>
-                            <div style="color:#fff; font-weight:600;">Scott Efiel</div>
-                            <div style="font-size:0.9rem; color:#888;">Developer</div>
+                    
+                        <div style="margin-bottom:24px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
+                            <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">DEVELOPMENT TEAM</div>
+                            <div style="margin-bottom:10px;">
+                                <div style="color:#fff; font-weight:600;">HoodieTheGoodie</div>
+                                <div style="font-size:0.9rem; color:#888;">Lead Developer & Designer</div>
+                            </div>
+                            <div>
+                                <div style="color:#fff; font-weight:600;">Scott Efiel</div>
+                                <div style="font-size:0.9rem; color:#888;">Developer</div>
+                            </div>
                         </div>
-                    </div>
-                
-                    <div style="padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
-                        <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">THANK YOU FOR PLAYING!</div>
-                        <div style="font-size:0.95rem; color:#bbb; line-height:1.6;">
-                            <div style="margin-top:10px; color:#ddd; font-size:0.92rem; line-height:1.5;">We hope you enjoyed Echo Maze 2.0! This game was built with passion for puzzle exploration and strategic thinking.</div>
+                    
+                        <div style="padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
+                            <div style="color:#00f6ff; font-weight:bold; font-size:1rem; margin-bottom:12px;">THANK YOU FOR PLAYING!</div>
+                            <div style="font-size:0.95rem; color:#bbb; line-height:1.6;">
+                                <div style="margin-top:10px; color:#ddd; font-size:0.92rem; line-height:1.5;">We hope you enjoyed Echo Maze 2.0! This game was built with passion for puzzle exploration and strategic thinking.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
             
                 <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.2);">
-                    <button id="creditsCloseBtn" type="button">Close</button>
+                    <button id="creditsCloseBtn" type="button">Main Menu</button>
                 </div>
             </div>
         </div>
+
+    <!-- Keybinds Customization Overlay -->
+    <div id="keybindsOverlay" class="overlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2100;">
+        <div class="overlay-panel" style="max-width: 600px; width: 90%;">
+            <h2 style="color:#00f6ff; margin-bottom:20px;">Customize Keybinds</h2>
+            <div id="keybindsContainer" style="margin-bottom:20px;">
+                <!-- Keybinds UI will be dynamically inserted here -->
+            </div>
+            <button id="keybindsCloseBtn" type="button">Close</button>
+        </div>
+    </div>
 
     <div id="endlessOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2050;">
         <div class="overlay-panel" style="min-width: 480px;">
@@ -613,69 +653,133 @@
 
     <!-- Settings Overlay -->
     <div id="settingsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.85); justify-content:center; align-items:center; z-index:2100;">
-        <div class="overlay-panel" style="min-width: 420px; text-align:left;">
-            <h2>Settings</h2>
-            <div style="margin:12px 0;">
-                <label style="display:flex; align-items:center; gap:10px; margin:10px 0;">
-                    <input id="movementAudioChk" type="checkbox" checked />
-                    <span>Movement Audio</span>
-                </label>
-                <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement step sounds are muted. Other sounds still play.</div>
-                
-                <!-- Master Volume Slider -->
-                <div style="margin:16px 0;">
-                    <label style="display:flex; align-items:center; gap:10px;">
-                        <span>Master Volume:</span>
-                        <input id="masterVolumeSlider" type="range" min="0" max="100" value="100" style="flex:1; accent-color:#00f6ff;" />
-                        <span id="masterVolumeLabel" style="min-width:40px; text-align:right; color:#00f6ff; font-weight:bold;">100%</span>
+        <div class="overlay-panel" style="min-width: 420px; max-width: 1100px; max-height:85vh; overflow:hidden; text-align:left; display:flex; flex-direction:column;">
+            <h2 style="margin-bottom:10px;">Settings</h2>
+            <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; overflow-y:auto; padding-right:8px;">
+                <div style="flex:1 1 340px; min-width:320px; background:rgba(0,0,0,0.25); border:1px solid rgba(0,246,255,0.25); border-radius:12px; padding:16px;">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:10px; font-size:0.95rem;">Audio & Controls</div>
+                    <label style="display:flex; align-items:center; gap:10px; margin:10px 0;">
+                        <input id="movementAudioChk" type="checkbox" checked />
+                        <span>Movement Audio</span>
                     </label>
-                    <div style="color:#888; font-size:0.9rem; margin-left:30px; margin-top:4px;">Adjust the volume of all game sounds</div>
-                </div>
-                
-                <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
-                    <input id="autoMovementChk" type="checkbox" checked />
-                    <span id="autoMovementLabel">Auto-Movement</span>
-                </label>
-                <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
-                <!-- Energy Blaster Mode toggle (unlocks via secret code in Skins) -->
-                <div id="energyBlasterSection" style="display:none; margin-top:16px; padding:14px; background: linear-gradient(135deg, rgba(0,246,255,0.12), rgba(0,246,255,0.06)); border: 2px solid rgba(0,246,255,0.45); border-radius:12px; box-shadow: 0 0 20px rgba(0,246,255,0.18), 0 0 40px rgba(0,246,255,0.08) inset;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-                        <div>
-                            <div style="color:#00f6ff; font-weight:bold;">Energy Blaster Mode</div>
-                            <div id="energyBlasterStatus" style="color:#88d7ff; font-size:0.9rem;">Locked — redeem the secret code in Skins.</div>
-                        </div>
-                        <label style="display:flex; align-items:center; gap:8px;">
-                            <input id="energyBlasterChk" type="checkbox" />
-                            <span style="font-weight:bold;">Enable</span>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement step sounds are muted. Other sounds still play.</div>
+
+                    <div style="margin:16px 0;">
+                        <label style="display:flex; align-items:center; gap:10px;">
+                            <span>Master Volume:</span>
+                            <input id="masterVolumeSlider" type="range" min="0" max="100" value="100" style="flex:1; accent-color:#00f6ff;" />
+                            <span id="masterVolumeLabel" style="min-width:40px; text-align:right; color:#00f6ff; font-weight:bold;">100%</span>
                         </label>
+                        <div style="color:#888; font-size:0.9rem; margin-left:30px; margin-top:4px;">Adjust the volume of all game sounds</div>
                     </div>
-                    <div style="color:#9cdcff; font-size:0.9rem; margin-top:8px;">Play with regenerating blaster ammo and destructible walls. Unlock via the Skins menu secret code.</div>
+
+                    <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+                        <input id="autoMovementChk" type="checkbox" checked />
+                        <span id="autoMovementLabel">Auto-Movement</span>
+                    </label>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px;">When OFF, movement triggers once per key press (no continuous stepping).</div>
                 </div>
-                <!-- Level 11 Access Section (unlocks via secret on win screen) -->
-                <div id="level11Section" style="display:none; margin-top:20px; padding:16px; background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.08)); border: 2px solid rgba(255,215,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,215,0,0.3), 0 0 40px rgba(255,215,0,0.1) inset;">
-                    <div style="text-align:center; margin-bottom:10px;">
-                        <span style="font-size:1.6rem; text-shadow: 0 0 10px rgba(255,215,0,0.8);">🔓</span>
-                        <div style="color:#ffd700; font-weight:bold; font-size:1.05rem; text-shadow: 0 0 8px rgba(255,215,0,0.6); margin-top:4px;">LEVEL 11 ACCESS</div>
-                        <div id="level11Status" style="color:#ffe066; font-size:0.9rem; margin-top:4px;">Locked — discover the secret after defeating the boss.</div>
+
+                <div style="flex:1 1 340px; min-width:320px; background:rgba(0,0,0,0.25); border:1px solid rgba(0,246,255,0.25); border-radius:12px; padding:16px;">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:12px; font-size:0.95rem;">♿ Accessibility</div>
+                    <label style="display:flex; align-items:center; gap:10px; margin:10px 0;">
+                        <input id="reducedMotionChk" type="checkbox" />
+                        <span>Reduce Motion</span>
+                    </label>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px;">Minimizes animations, particle effects, and screen shake</div>
+
+                    <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+                        <input id="highContrastChk" type="checkbox" />
+                        <span>High Contrast</span>
+                    </label>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px;">Increases contrast for better visibility</div>
+
+                    <div style="margin:16px 0;">
+                        <label style="display:block; margin-bottom:8px;">
+                            <span>UI Text Size:</span>
+                        </label>
+                        <div style="display:flex; gap:8px; margin-left:30px; flex-wrap:wrap;">
+                            <button id="textSizeSmallBtn" type="button" class="text-size-btn" style="padding:6px 12px; font-size:0.85rem;">Small</button>
+                            <button id="textSizeNormalBtn" type="button" class="text-size-btn active" style="padding:6px 12px; font-size:1rem; border-color:#00f6ff;">Normal</button>
+                            <button id="textSizeLargeBtn" type="button" class="text-size-btn" style="padding:6px 12px; font-size:1.15rem;">Large</button>
+                        </div>
                     </div>
-                    <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
-                        <button id="level11PlayBtn" type="button" style="border-color:#ffd700; color:#ffd700;" disabled>Play Level 11</button>
+
+                    <div style="margin:16px 0;">
+                        <label style="display:block; margin-bottom:8px;">
+                            <span>Colorblind Mode:</span>
+                        </label>
+                        <select id="colorblindModeSelect" style="width:100%; padding:8px; background:#1a1a1a; border:2px solid #00f6ff; border-radius:6px; color:#fff; font-size:0.95rem;">
+                            <option value="none">None (Default Colors)</option>
+                            <option value="protanopia">Protanopia (Red-Blind)</option>
+                            <option value="deuteranopia">Deuteranopia (Green-Blind)</option>
+                            <option value="tritanopia">Tritanopia (Blue-Blind)</option>
+                        </select>
+                        <div style="color:#888; font-size:0.9rem; margin-top:4px;">Adjusts colors for different types of color vision</div>
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+                        <input id="screenReaderHintsChk" type="checkbox" />
+                        <span>Screen Reader Hints</span>
+                    </label>
+                    <div style="color:#888; font-size:0.9rem; margin-left:30px;">Adds descriptive text for screen readers</div>
+                </div>
+
+                <div style="flex:1 1 340px; min-width:320px; background:rgba(0,0,0,0.25); border:1px solid rgba(0,246,255,0.25); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:14px;">
+                    <div style="color:#00f6ff; font-weight:bold; font-size:0.95rem;">Special Modes</div>
+                    <div id="energyBlasterSection" style="display:none; padding:12px; background: linear-gradient(135deg, rgba(0,246,255,0.12), rgba(0,246,255,0.06)); border: 2px solid rgba(0,246,255,0.45); border-radius:12px; box-shadow: 0 0 20px rgba(0,246,255,0.18), 0 0 40px rgba(0,246,255,0.08) inset;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                            <div>
+                                <div style="color:#00f6ff; font-weight:bold;">Energy Blaster Mode</div>
+                                <div id="energyBlasterStatus" style="color:#88d7ff; font-size:0.9rem;">Locked — redeem the secret code in Skins.</div>
+                            </div>
+                            <label style="display:flex; align-items:center; gap:8px;">
+                                <input id="energyBlasterChk" type="checkbox" />
+                                <span style="font-weight:bold;">Enable</span>
+                            </label>
+                        </div>
+                        <div style="color:#9cdcff; font-size:0.9rem; margin-top:8px;">Play with regenerating blaster ammo and destructible walls. Unlock via the Skins menu secret code.</div>
+                    </div>
+                    <div id="level11Section" style="display:none; padding:14px; background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.08)); border: 2px solid rgba(255,215,0,0.6); border-radius:12px; box-shadow: 0 0 20px rgba(255,215,0,0.3), 0 0 40px rgba(255,215,0,0.1) inset;">
+                        <div style="text-align:center; margin-bottom:10px;">
+                            <span style="font-size:1.6rem; text-shadow: 0 0 10px rgba(255,215,0,0.8);">🔓</span>
+                            <div style="color:#ffd700; font-weight:bold; font-size:1.05rem; text-shadow: 0 0 8px rgba(255,215,0,0.6); margin-top:4px;">LEVEL 11 ACCESS</div>
+                            <div id="level11Status" style="color:#ffe066; font-size:0.9rem; margin-top:4px;">Locked — discover the secret after defeating the boss.</div>
+                        </div>
+                        <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
+                            <button id="level11PlayBtn" type="button" style="border-color:#ffd700; color:#ffd700;" disabled>Play Level 11</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:center;">
+                        <button id="viewCreditsBtn" type="button" style="display:none; border-color:#00f6ff;">View Credits</button>
                     </div>
                 </div>
-                <div style="display:flex; justify-content:center; margin-top:16px;">
-                    <button id="viewCreditsBtn" type="button" style="display:none; border-color:#00f6ff;">View Credits</button>
+
+                <div style="flex:1 1 340px; min-width:320px; background:rgba(0,0,0,0.25); border:1px solid rgba(0,246,255,0.25); border-radius:12px; padding:16px;">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:12px; font-size:0.95rem;">Player Stats & Controls</div>
+                    <div id="playerStatsDisplay" style="color:#fff; font-size:0.9rem; margin-bottom:14px; line-height:1.6;">
+                        <div>Deaths: <span id="statDeaths">0</span></div>
+                        <div>Playtime: <span id="statPlaytime">0s</span></div>
+                        <div>Levels Completed: <span id="statLevels">0</span></div>
+                        <div>Endless Best Wave: <span id="statEndless">0</span></div>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button id="customizeKeybindsBtn" type="button" style="font-size:0.9rem;">Customize Keybinds</button>
+                        <button id="exportStatsBtn" type="button" style="font-size:0.9rem;">Export Stats</button>
+                        <button id="importStatsBtn" type="button" style="font-size:0.9rem;">Import Stats</button>
+                    </div>
                 </div>
-                
-                <!-- Reset Buttons Section -->
-                <div style="margin-top:24px; padding-top:16px; border-top:1px solid rgba(0,246,255,0.3);">
-                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:12px; font-size:0.95rem;">RESET DATA</div>
-                    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+
+                <div style="flex:1 1 340px; min-width:320px; background:rgba(0,0,0,0.25); border:1px solid rgba(0,246,255,0.25); border-radius:12px; padding:16px;">
+                    <div style="color:#00f6ff; font-weight:bold; margin-bottom:12px; font-size:0.95rem;">Reset Data</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-start;">
                         <button id="resetAchievementsBtn" type="button" style="border-color:#ff6b6b; color:#ff6b6b; padding:8px 12px; font-size:0.9rem;">Reset Achievements</button>
                         <button id="resetSkinsBtn" type="button" style="border-color:#ff6b6b; color:#ff6b6b; padding:8px 12px; font-size:0.9rem;">Reset Skins</button>
+                        <button id="resetStatsBtn" type="button" style="border-color:#ff6b6b; color:#ff6b6b; padding:8px 12px; font-size:0.9rem;">Reset Stats</button>
                     </div>
                 </div>
             </div>
-            <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:12px; padding-top:6px; border-top:1px solid rgba(0,246,255,0.2);">
                 <button id="settingsBackBtn" type="button">Back</button>
             </div>
         </div>
@@ -712,10 +816,10 @@
     </div>
 
     <!-- Achievements Overlay -->
-    <div id="achievementsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.9); justify-content:center; align-items:center; z-index:2300;">
-        <div class="overlay-panel" style="min-width: 700px; max-width:90vw; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
-            <h2 style="text-align:center; margin-bottom:16px; color:#FFD700; text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);">🏆 Achievements</h2>
-            <div id="achievementsList" style="flex:1; overflow-y:auto; padding:8px 0;"></div>
+    <div id="achievementsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.9); justify-content:center; align-items:center; z-index:2300; overflow-y: auto; padding: 20px;">
+        <div class="overlay-panel" style="min-width: 700px; max-width:90vw; max-height:85vh; overflow:hidden; display:flex; flex-direction:column; margin: auto;">
+            <h2 style="text-align:center; margin-bottom:20px; padding-bottom:12px; border-bottom:2px solid rgba(255,215,0,0.3); color:#FFD700; text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);">🏆 Achievements</h2>
+            <div id="achievementsList" style="flex:1; overflow-y:auto; overflow-x: hidden; padding:16px 12px 8px;"></div>
             <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; padding-top:12px; border-top:2px solid rgba(0,246,255,0.3);">
                 <button id="achievementsCloseBtn" type="button">Close</button>
             </div>
@@ -725,12 +829,26 @@
     <!-- Skins Overlay -->
     <div id="skinsOverlay" style="display:none; position: fixed; top:0; left:0; width:100vw; height:100vh; background-color: rgba(0,0,0,0.9); justify-content:center; align-items:center; z-index:2300;">
         <div class="overlay-panel" style="min-width: 700px; max-width:90vw; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
-            <h2 style="text-align:center; margin-bottom:16px; color:#FF69B4; text-shadow: 0 0 15px rgba(255, 105, 180, 0.6);">🎨 Skins</h2>
+            <h2 style="text-align:center; margin-bottom:16px; color:#FF69B4; text-shadow: 0 0 15px rgba(255, 105, 180, 0.6);">🎨 Skins & Themes</h2>
+            
+            <!-- Theme Selector Section - COMPACT -->
+            <div style="margin-bottom:12px; padding:10px; background:rgba(0,246,255,0.05); border:1px solid rgba(0,246,255,0.2); border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="color:#00f6ff; font-size:0.9rem; font-weight:bold;">Themes:</span>
+                    <div id="themeSelector" style="display:flex; gap:8px; flex-wrap:wrap; flex:1;">
+                        <!-- Theme buttons will be inserted here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Secret Code Input -->
             <div style="display:flex; gap:12px; margin-bottom:16px; padding:12px; background:rgba(0,0,0,0.3); border-radius:8px;">
                 <input id="skinCodeInput" type="text" placeholder="Enter secret code..." style="flex:1; padding:10px 14px; background:#1a1a1a; border:2px solid #FF69B4; border-radius:8px; color:#fff; font-size:1rem;"/>
                 <button id="skinCodeSubmit" type="button" style="padding:10px 20px; background:#FF69B4; color:#000; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem;">Redeem</button>
             </div>
             <div id="skinCodeStatus" style="color:#FFD700; font-size:0.95rem; min-height:24px; margin-bottom:12px; text-align:center;"></div>
+            
+            <!-- Skins List -->
             <div id="skinsList" style="flex:1; overflow-y:auto; padding:8px 0;"></div>
             <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; padding-top:12px; border-top:2px solid rgba(0,246,255,0.3);">
                 <button id="skinsCloseBtn" type="button">Close</button>
@@ -971,7 +1089,7 @@
         </div>
     </div>
 
-    <div id="versionTag">Version 1.0</div>
+    <div id="versionTag">Version 1.2.1</div>
 
     <script>
         // Lightweight error surface to help diagnose loading issues
@@ -1013,13 +1131,27 @@
     <script type="module" src="js/maze.js?ver=v20251212a"></script>
     <script type="module" src="js/endless-progression.js?ver=v20251212a"></script>
     <script type="module" src="js/endless-ui.js?ver=v20251212a"></script>
-    <script type="module" src="js/state.js?ver=v20251212a"></script>
-    <script type="module" src="js/renderer.js?ver=v20251212a"></script>
+    <script type="module" src="js/state.js?ver=v20250112c"></script>
+    <script type="module" src="js/renderer.js?ver=v20251212b"></script>
     <script type="module" src="js/input.js?ver=v20251212a"></script>
-    <script type="module" src="js/achievements.js?ver=v20251212a"></script>
-    <script type="module" src="js/skins.js?ver=v20251212a"></script>
-    <script type="module" src="js/ui-notifications.js?ver=v20251212a"></script>
-    <script type="module" src="js/ui-panels.js?ver=v20251212a"></script>
-    <script type="module" src="js/main.js?ver=v20251212a"></script>
+    <script type="module" src="js/achievement-conditions.js?ver=v20250112b"></script>
+    <script type="module" src="js/achievements.js?ver=v20250112c"></script>
+    <script type="module" src="js/theme-manager.js?ver=v20250112d"></script>
+    <script type="module" src="js/skins.js?ver=v20250112b"></script>
+    <script type="module" src="js/level11.js?ver=v20250110e"></script>
+    <script type="module" src="js/ui-notifications.js?ver=v20250109f"></script>
+    <script type="module" src="js/ui-panels.js?ver=v20250112e"></script>
+    <script type="module" src="js/dev-panel.js?ver=v20250112c"></script>
+        <script type="module" src="js/loading-screen.js?ver=v20250112a"></script>
+        <script type="module" src="js/accessibility.js?ver=v20250112a"></script>
+        <!-- Polish & Enhancement Modules -->
+        <script src="js/ui-polish.js?ver=v20250113a"></script>
+        <script src="js/ui-sounds.js?ver=v20250113a"></script>
+        <script src="js/menu-particles.js?ver=v20250113a"></script>
+        <script type="module" src="js/player-stats.js?ver=v20250113a"></script>
+        <script src="js/quick-restart.js?ver=v20250113a"></script>
+        <script src="js/keybinds.js?ver=v20250113a"></script>
+        <script src="js/skin-stats.js?ver=v20250113a"></script>
+    <script type="module" src="js/main.js?ver=v20250113a"></script>
 </body>
 </html>

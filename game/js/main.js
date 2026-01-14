@@ -1,4 +1,5 @@
 // main.js - Game loop and initialization
+// version v20250112f - Added loading screens and accessibility features
 // Game belongs to Hoodie and Scott Efiel, no one else.
 
 import { initGame as initializeGameState, gameState, updateStaminaCooldown, updateBazookaAmmo, updateBlock, updateGeneratorProgress, updateSkillCheck, updateEnemies, closeGeneratorInterface, updateTeleportPads, updateCollisionShield, triggerEnemiesThaw, getBestTimeMs, startBossTransition, exitTerminalRoom, updateLevel11EndingDialog } from './state.js';
@@ -8,11 +9,12 @@ import { LEVEL_COUNT, getUnlockedLevel, setUnlockedLevel, resetProgress, resetLe
 import { render } from './renderer.js';
 import { setupInputHandlers, processMovement, setupMobileInput } from './input.js';
 import { loadSprites } from './sprites.js';
-import { initAchievements, checkAchievements, resetAchievements } from './achievements.js';
+import { unlockAchievement, fireAchievementEvent, initAchievements, resetAchievements } from './achievements.js';
 import { initSkins, resetSkins } from './skins.js';
-import { initNotifications } from './ui-notifications.js';
+import { showAchievementUnlocked, initNotifications } from './ui-notifications.js';
 import { initAchievementsSkinsUI } from './ui-panels.js';
 import { updateLevel11, initLevel11 } from './level11.js';
+import { initDevPanel, wireUpDevPanel } from './dev-panel.js';
 import { loadEndlessProgress, saveEndlessProgress, getEndlessProgression, startEndlessRun as startProgressionRun, completeEndlessRoom, endEndlessRun, purchaseUpgrade, resetUpgrades, hasAbility, applyPermanentUpgrades } from './endless-progression.js';
 import { generateMaze, GENERATOR_COUNT } from './maze.js';
 
@@ -78,6 +80,11 @@ const terminalPuzzles = [
 window.gameState = gameState;
 
 // Custom bottom alert function
+/**
+ * Display a temporary alert message at the bottom of the screen
+ * @param {string} message - The message to display
+ * @param {number} [duration=3000] - How long to show the message in milliseconds
+ */
 function showBottomAlert(message, duration = 3000) {
     // Get current level color for dynamic theming
     const levelColor = getLevelColor(gameState.currentLevel || 1);
@@ -130,6 +137,27 @@ function showBottomAlert(message, duration = 3000) {
     alertBox._timeout = setTimeout(() => {
         alertBox.style.display = 'none';
     }, duration);
+}
+
+/**
+ * Update player stats display in settings menu
+ */
+function updateStatsDisplay() {
+    if (!window.PLAYER_STATS) return;
+    
+    const stats = window.PLAYER_STATS.getStats();
+    const statDeaths = document.getElementById('statDeaths');
+    const statPlaytime = document.getElementById('statPlaytime');
+    const statLevels = document.getElementById('statLevels');
+    const statEndless = document.getElementById('statEndless');
+    
+    if (statDeaths) statDeaths.textContent = stats.totalDeaths.toString();
+    if (statPlaytime) statPlaytime.textContent = stats.formattedPlaytime;
+    if (statLevels) {
+        const completed = Object.keys(stats.levelsCompleted).length;
+        statLevels.textContent = completed.toString();
+    }
+    if (statEndless) statEndless.textContent = stats.endlessBestWave.toString();
 }
 
 // Apply UI styling based on simplified UI setting
@@ -471,6 +499,10 @@ if (typeof window !== 'undefined') {
 }
 
 // Update canvas border color to match level theme
+/**
+ * Update the canvas border and glow color based on current level
+ * Uses purple for endless mode, level-specific colors otherwise
+ */
 function updateCanvasBorderColor() {
     const canvas = document.getElementById('canvas');
     if (!canvas) return;
@@ -534,9 +566,100 @@ let gameRunning = false;
 let lastFrameTime = 0;
 let animationFrameId = null;
 
+function getActiveChallenge() {
+    const ch = window.__CHALLENGE;
+    return ch && ch.active ? ch : null;
+}
+
+function unlockAchievementSafe(id) {
+    try {
+        import('./achievements.js').then(mod => mod.unlockAchievement && mod.unlockAchievement(id)).catch(() => {});
+    } catch {}
+}
+
+function failChallenge(reason = 'failed') {
+    const ch = getActiveChallenge();
+    if (!ch) return;
+    ch.active = false;
+    ch.failed = true;
+    ch.failReason = reason;
+    window.__CHALLENGE = ch;
+    updateChallengeStopwatch(); // Hide stopwatch on failure
+}
+
+function handleChallengeWin() {
+    const ch = getActiveChallenge();
+    if (!ch) return;
+    if (gameState.mode !== 'level' || typeof gameState.currentLevel !== 'number') return;
+    const now = performance.now();
+    if (!ch.startedAt) ch.startedAt = now;
+    ch.levelsCompleted = (ch.levelsCompleted || 0) + 1;
+    ch.totalTimeMs = now - ch.startedAt;
+    window.__CHALLENGE = ch;
+
+    const finishedRun = gameState.currentLevel >= 10;
+    if (finishedRun) {
+        if (ch.type === 'deathless') {
+            unlockAchievementSafe('deathless_game');
+        }
+        if (ch.type === 'speedrun10') {
+            if (ch.totalTimeMs <= 600000) unlockAchievementSafe('speedrun_game_10m');
+            if (ch.totalTimeMs <= 1200000) unlockAchievementSafe('speedrun_game_20m');
+        }
+        ch.active = false;
+        window.__CHALLENGE = ch;
+        updateChallengeStopwatch(); // Hide stopwatch when done
+        return;
+    }
+
+    // Auto-advance to next level with fresh hearts
+    setTimeout(() => {
+        if (window.__START_LEVEL) {
+            const next = Number(gameState.currentLevel || 1) + 1;
+            window.__START_LEVEL(next);
+        }
+    }, 300);
+}
+
+function updateChallengeStopwatch() {
+    const stopwatch = document.getElementById('challengeStopwatch');
+    const timeDisplay = document.getElementById('challengeStopwatchTime');
+    const labelDisplay = document.getElementById('challengeStopwatchLabel');
+    
+    if (!stopwatch || !timeDisplay) return;
+    
+    const ch = getActiveChallenge();
+    
+    if (!ch || ch.failed) {
+        stopwatch.style.display = 'none';
+        return;
+    }
+    
+    stopwatch.style.display = 'block';
+    
+    const elapsed = performance.now() - ch.startedAt;
+    const totalSeconds = Math.floor(elapsed / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    
+    timeDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    
+    if (labelDisplay) {
+        const label = ch.type === 'deathless' ? 'Deathless Challenge' : 'Speedrun Challenge';
+        labelDisplay.textContent = label;
+    }
+}
+
 export function initGame() {
     console.log('Initializing game...');
     initializeGameState();
+    // Refresh hearts each level during challenge runs
+    if (getActiveChallenge() && gameState.mode === 'level') {
+        gameState.lives = 3;
+    }
+    // DEV MODE DISABLED - Uncomment to enable dev panel
+    // initDevPanel();
+    // wireUpDevPanel();
     console.log('Game state initialized:', gameState.maze ? 'Maze created' : 'No maze!', 'Generators:', gameState.generators.length);
     // Ensure runtime settings are applied to gameState immediately
     try { gameState.settings = { ...getSettings() }; } catch {}
@@ -622,47 +745,123 @@ export function initGame() {
                 }
                 gameState.isPaused = true;
                 const po = document.getElementById('pauseOverlay');
-                if (po) po.style.display = 'flex';
+                if (po) {
+                    // Customize buttons based on challenge mode
+                    const challenge = getActiveChallenge();
+                    const panel = po.querySelector('.overlay-panel');
+                    if (!panel) {
+                        console.error('Pause overlay panel not found');
+                        po.style.display = 'flex';
+                        return;
+                    }
+                    
+                    const btnContainer = panel.querySelector('div[style*="display:flex"]') || 
+                                        panel.querySelector('div[style*="display: flex"]');
+                    
+                    if (!btnContainer) {
+                        console.error('Button container not found in pause overlay');
+                        po.style.display = 'flex';
+                        return;
+                    }
+                    
+                    if (challenge) {
+                        // Show challenge-specific buttons: Resume, Restart, Abort
+                        btnContainer.innerHTML = `
+                            <button id="challengeResumeBtn" type="button">Resume</button>
+                            <button id="challengeRestartBtn" type="button">Restart Challenge</button>
+                            <button id="challengeAbortBtn" type="button">Abort Challenge</button>
+                        `;
+                        
+                        // Wire challenge buttons - use setTimeout to ensure DOM is updated
+                        setTimeout(() => {
+                            const resumeBtn = document.getElementById('challengeResumeBtn');
+                            const restartBtn = document.getElementById('challengeRestartBtn');
+                            const abortBtn = document.getElementById('challengeAbortBtn');
+                            
+                            if (resumeBtn) {
+                                resumeBtn.addEventListener('click', () => {
+                                    gameState.isPaused = false;
+                                    po.style.display = 'none';
+                                    triggerEnemiesThaw(performance.now());
+                                });
+                            }
+                            
+                            if (restartBtn) {
+                                restartBtn.addEventListener('click', () => {
+                                    // Restart challenge from Level 1
+                                    if (window.__CHALLENGE) {
+                                        window.__CHALLENGE.levelsCompleted = 0;
+                                        window.__CHALLENGE.startedAt = performance.now();
+                                        window.__CHALLENGE.failed = false;
+                                    }
+                                    po.style.display = 'none';
+                                    gameState.isPaused = false;
+                                    if (window.__START_LEVEL) {
+                                        window.__START_LEVEL(1);
+                                    }
+                                });
+                            }
+                            
+                            if (abortBtn) {
+                                abortBtn.addEventListener('click', () => {
+                                    // Abort challenge and return to menu
+                                    if (window.__CHALLENGE) {
+                                        window.__CHALLENGE.active = false;
+                                        window.__CHALLENGE.failed = true;
+                                    }
+                                    po.style.display = 'none';
+                                    gameState.isPaused = false;
+                                    gameState.customLevelActive = false;
+                                    showMenu();
+                                });
+                            }
+                        }, 0);
+                    } else {
+                        // Show normal buttons: Unpause, Retry, Main Menu
+                        btnContainer.innerHTML = `
+                            <button id="unpauseBtn" type="button">Unpause</button>
+                            <button id="retryBtn" type="button">Retry</button>
+                            <button id="returnMenuBtn" type="button">Main Menu</button>
+                        `;
+                        
+                        // Wire normal buttons - use setTimeout to ensure DOM is updated
+                        setTimeout(() => {
+                            const unpauseBtn = document.getElementById('unpauseBtn');
+                            const retryBtn = document.getElementById('retryBtn');
+                            const returnMenuBtn = document.getElementById('returnMenuBtn');
+                            
+                            if (unpauseBtn) {
+                                unpauseBtn.addEventListener('click', () => {
+                                    gameState.isPaused = false;
+                                    po.style.display = 'none';
+                                    triggerEnemiesThaw(performance.now());
+                                });
+                            }
+                            
+                            if (retryBtn) {
+                                retryBtn.addEventListener('click', () => {
+                                    po.style.display = 'none';
+                                    gameState.isPaused = false;
+                                    initGame();
+                                    triggerEnemiesThaw(performance.now());
+                                });
+                            }
+                            
+                            if (returnMenuBtn) {
+                                returnMenuBtn.addEventListener('click', () => {
+                                    po.style.display = 'none';
+                                    gameState.isPaused = false;
+                                    gameState.customLevelActive = false;
+                                    showMenu();
+                                });
+                            }
+                        }, 0);
+                    }
+                    
+                    po.style.display = 'flex';
+                }
             });
             pauseBtn._wired = true;
-        }
-
-        const unpauseBtn = document.getElementById('unpauseBtn');
-        if (unpauseBtn && !unpauseBtn._wired) {
-            unpauseBtn.addEventListener('click', () => {
-                gameState.isPaused = false;
-                const po = document.getElementById('pauseOverlay');
-                if (po) po.style.display = 'none';
-                // Ease enemies back to life over 2s after unpausing
-                triggerEnemiesThaw(performance.now());
-            });
-            unpauseBtn._wired = true;
-        }
-
-        const retryBtn = document.getElementById('retryBtn');
-        if (retryBtn && !retryBtn._wired) {
-            retryBtn.addEventListener('click', () => {
-                const po = document.getElementById('pauseOverlay');
-                if (po) po.style.display = 'none';
-                gameState.isPaused = false;
-                // Act like a death/retry: start a fresh level
-                initGame();
-                // Thaw is set in initGame, but reinforce here for clarity
-                triggerEnemiesThaw(performance.now());
-            });
-            retryBtn._wired = true;
-        }
-
-        const returnMenuBtn = document.getElementById('returnMenuBtn');
-        if (returnMenuBtn && !returnMenuBtn._wired) {
-            returnMenuBtn.addEventListener('click', () => {
-                const po = document.getElementById('pauseOverlay');
-                if (po) po.style.display = 'none';
-                gameState.isPaused = false;
-                gameState.customLevelActive = false;
-                showMenu();
-            });
-            returnMenuBtn._wired = true;
         }
 
         // Lose overlay buttons
@@ -697,6 +896,10 @@ export function initGame() {
     gameLoop(performance.now());
 }
 
+/**
+ * Main game loop - updates game state and renders every frame
+ * @param {number} currentTime - High-resolution timestamp from requestAnimationFrame
+ */
 function gameLoop(currentTime) {
     const deltaTime = currentTime - lastFrameTime;
         gameRunning = true;
@@ -747,6 +950,9 @@ function gameLoop(currentTime) {
 
     // Render
     render(currentTime);
+    
+    // Update challenge stopwatch display
+    updateChallengeStopwatch();
     // Post-frame checks (win handling)
     postFrameChecks(currentTime);
 
@@ -857,7 +1063,11 @@ function buildMenu() {
     }
 }
 
-function showMenu() {
+/**
+ * Return to main menu and reset all game state
+ * Stops game loop, clears enemies/bosses, hides overlays, and starts menu particles
+ */
+export function showMenu() {
     console.log('[showMenu] Showing main menu, customLevelActive=', gameState.customLevelActive);
     
     // If a custom level is active AND the game is still playing, don't show the menu
@@ -921,18 +1131,14 @@ function showMenu() {
     const winOverlay = document.getElementById('winOverlay');
     const loseOverlay = document.getElementById('loseOverlay');
     const creditsOverlay = document.getElementById('creditsOverlay');
-    const bossHealthBar = document.getElementById('bossHealthBarContainer');
     if (winOverlay) winOverlay.style.display = 'none';
     if (loseOverlay) loseOverlay.style.display = 'none';
     if (creditsOverlay) creditsOverlay.style.display = 'none';
-    if (bossHealthBar) bossHealthBar.style.display = 'none';
-    
-    // Remove any leftover dialogs/overlays (featured levels, power prompts, etc.)
-    const powerPrompt = document.getElementById('power-prompt-overlay');
-    if (powerPrompt) powerPrompt.remove();
-    // Remove any featured levels or other dynamic backdrops
-    document.querySelectorAll('body > div').forEach(el => {
-        const style = el.getAttribute('style') || '';
+
+    // Remove stray overlays (failsafe)
+    const overlays = document.querySelectorAll('.overlay');
+    overlays.forEach(el => {
+        const style = (el.getAttribute('style') || '').toLowerCase();
         if (style.includes('position: fixed') && style.includes('z-index: 10000') && el !== menu) {
             el.remove();
         }
@@ -1102,8 +1308,26 @@ async function continueEndlessRoom() {
     }
 }
 
+/**
+ * Start a specific level or endless mode
+ * @param {number|string} level - Level number (1-11) or 'endless' for endless progression mode
+ */
 function startLevel(level) {
+        // Show loading screen
+        if (window.LOADING) {
+            if (level === 11) {
+                window.LOADING.show('Loading Level 11', 'The final challenge awaits...');
+            } else if (level === 'endless') {
+                window.LOADING.show('Endless Mode', 'Preparing infinite rooms...');
+            } else if (level === 'custom') {
+                window.LOADING.show('Custom Level', 'Loading your creation...');
+            } else {
+                window.LOADING.show(`Loading Level ${level}`, 'Generating maze...');
+            }
+        }
+
     if (level === 11 && !isLevel11Unlocked()) {
+            if (window.LOADING) window.LOADING.hide();
         alert('Level 11 is locked. Enter the password in Settings to unlock.');
         return;
     }
@@ -1156,6 +1380,11 @@ function startLevel(level) {
         console.log('[startLevel] applyUIStyle() completed');
         updateCanvasBorderColor();
         console.log('[startLevel] Custom level started successfully!');
+        
+                // Hide loading screen after a brief delay
+                if (window.LOADING) {
+                    setTimeout(() => window.LOADING.hide(), 500);
+                }
         return;
     }
     
@@ -1180,6 +1409,17 @@ function startLevel(level) {
 
         // Mobile: Show controls when game starts
         loadMobileControls().then(m => m.showMobileControls());
+        
+        // Stop menu particles when entering game
+        if (window.MENU_PARTICLES) {
+            window.MENU_PARTICLES.stop();
+        }
+        
+        // Enable quick restart for endless mode
+        if (window.QUICK_RESTART) {
+            window.QUICK_RESTART.setCurrentLevel('endless');
+            window.QUICK_RESTART.setInGame(true);
+        }
 
         // Check if this is a fresh run (room 0) or continuing (room > 0)
         const progression = getEndlessProgression();
@@ -1218,6 +1458,11 @@ function startLevel(level) {
         applyUIStyle();
         
         // Update canvas border color to purple
+        
+                // Hide loading screen after a brief delay
+                if (window.LOADING) {
+                    setTimeout(() => window.LOADING.hide(), 500);
+                }
         updateCanvasBorderColor();
         
         return;
@@ -1225,6 +1470,22 @@ function startLevel(level) {
     
     gameState.currentLevel = level;
     gameState.mode = 'level';
+    
+    // Stop menu particles when entering game
+    if (window.MENU_PARTICLES) {
+        window.MENU_PARTICLES.stop();
+    }
+    
+    // Enable quick restart and set current level
+    if (window.QUICK_RESTART) {
+        window.QUICK_RESTART.setCurrentLevel(level);
+        window.QUICK_RESTART.setInGame(true);
+    }
+    
+    // Start level timer for stats
+    if (window.PLAYER_STATS) {
+        window.PLAYER_STATS.startLevel(level);
+    }
     
     // Reset Level 7 jump-only tracking
     if (level === 7) {
@@ -1256,9 +1517,17 @@ function startLevel(level) {
     applyUIStyle();
     
     // Update canvas border color to match level
+    
+        // Hide loading screen after a brief delay
+        if (window.LOADING) {
+            setTimeout(() => window.LOADING.hide(), 500);
+        }
     updateCanvasBorderColor();
     
 }
+
+// Expose for dev panel challenge launcher
+window.__START_LEVEL = startLevel;
 
 
 
@@ -1356,7 +1625,20 @@ function wireMenuUi() {
     }
     if (creditsCloseBtn && !creditsCloseBtn._wired) {
         creditsCloseBtn.addEventListener('click', () => {
-            if (creditsOverlay) creditsOverlay.style.display = 'none';
+            if (creditsOverlay) {
+                // If this was a Level 11 ending, return to menu
+                const isLevel11Ending = creditsOverlay.getAttribute('data-level11-ending');
+                if (isLevel11Ending) {
+                    console.log('[CREDITS] Level 11 ending detected, returning to main menu');
+                    creditsOverlay.removeAttribute('data-level11-ending');
+                    creditsOverlay.style.display = 'none';
+                    // Call showMenu to properly reset everything and show the menu
+                    showMenu();
+                } else {
+                    // Normal close
+                    creditsOverlay.style.display = 'none';
+                }
+            }
         });
         creditsCloseBtn._wired = true;
     }
@@ -1423,6 +1705,8 @@ function wireMenuUi() {
                 if (masterVolumeLabel) masterVolumeLabel.textContent = Math.round(volume) + '%';
             }
             refreshEnergyBlasterUI();
+            // Update stats display
+            updateStatsDisplay();
             // Reveal credits button if unlocked (after beating the game)
             const creditsBtn = document.getElementById('viewCreditsBtn');
             if (creditsBtn) creditsBtn.style.display = isSecretUnlocked() ? 'inline-block' : 'none';
@@ -1525,6 +1809,70 @@ function wireMenuUi() {
         resetSkinsBtn._wired = true;
     }
     
+    // Reset Stats button
+    const resetStatsBtn = document.getElementById('resetStatsBtn');
+    if (resetStatsBtn && !resetStatsBtn._wired) {
+        resetStatsBtn.addEventListener('click', () => {
+            if (window.PLAYER_STATS) {
+                if (window.PLAYER_STATS.reset()) {
+                    updateStatsDisplay();
+                    showBottomAlert('✅ All stats reset!', 3000);
+                }
+            }
+        });
+        resetStatsBtn._wired = true;
+    }
+    
+    // Export Stats button
+    const exportStatsBtn = document.getElementById('exportStatsBtn');
+    if (exportStatsBtn && !exportStatsBtn._wired) {
+        exportStatsBtn.addEventListener('click', () => {
+            if (window.PLAYER_STATS) {
+                window.PLAYER_STATS.export();
+                showBottomAlert('✅ Stats exported!', 2000);
+            }
+        });
+        exportStatsBtn._wired = true;
+    }
+    
+    // Import Stats button
+    const importStatsBtn = document.getElementById('importStatsBtn');
+    if (importStatsBtn && !importStatsBtn._wired) {
+        importStatsBtn.addEventListener('click', () => {
+            if (window.PLAYER_STATS) {
+                window.PLAYER_STATS.import();
+                setTimeout(() => updateStatsDisplay(), 500);
+            }
+        });
+        importStatsBtn._wired = true;
+    }
+    
+    // Customize Keybinds button
+    const customizeKeybindsBtn = document.getElementById('customizeKeybindsBtn');
+    const keybindsOverlay = document.getElementById('keybindsOverlay');
+    const keybindsContainer = document.getElementById('keybindsContainer');
+    const keybindsCloseBtn = document.getElementById('keybindsCloseBtn');
+    
+    if (customizeKeybindsBtn && !customizeKeybindsBtn._wired) {
+        customizeKeybindsBtn.addEventListener('click', () => {
+            if (window.KEYBINDS && keybindsOverlay && keybindsContainer) {
+                // Clear and populate keybinds UI
+                keybindsContainer.innerHTML = '';
+                const ui = window.KEYBINDS.createUI();
+                keybindsContainer.appendChild(ui);
+                keybindsOverlay.style.display = 'flex';
+            }
+        });
+        customizeKeybindsBtn._wired = true;
+    }
+    
+    if (keybindsCloseBtn && !keybindsCloseBtn._wired) {
+        keybindsCloseBtn.addEventListener('click', () => {
+            if (keybindsOverlay) keybindsOverlay.style.display = 'none';
+        });
+        keybindsCloseBtn._wired = true;
+    }
+    
     if (movementAudioChk && !movementAudioChk._wired) {
         movementAudioChk.addEventListener('change', () => {
             const cur = getSettings();
@@ -1589,6 +1937,82 @@ function wireMenuUi() {
             startLevel(11);
         });
         level11PlayBtn._wired = true;
+    }
+
+    // Accessibility settings handlers
+    const reducedMotionChk = document.getElementById('reducedMotionChk');
+    if (reducedMotionChk && !reducedMotionChk._wired && window.ACCESSIBILITY) {
+        const settings = window.ACCESSIBILITY.get();
+        reducedMotionChk.checked = settings.reducedMotion;
+        reducedMotionChk.addEventListener('change', () => {
+            window.ACCESSIBILITY.setReducedMotion(reducedMotionChk.checked);
+        });
+        reducedMotionChk._wired = true;
+    }
+
+    const highContrastChk = document.getElementById('highContrastChk');
+    if (highContrastChk && !highContrastChk._wired && window.ACCESSIBILITY) {
+        const settings = window.ACCESSIBILITY.get();
+        highContrastChk.checked = settings.highContrast;
+        highContrastChk.addEventListener('change', () => {
+            window.ACCESSIBILITY.setHighContrast(highContrastChk.checked);
+        });
+        highContrastChk._wired = true;
+    }
+
+    const textSizeSmallBtn = document.getElementById('textSizeSmallBtn');
+    const textSizeNormalBtn = document.getElementById('textSizeNormalBtn');
+    const textSizeLargeBtn = document.getElementById('textSizeLargeBtn');
+    if (textSizeSmallBtn && textSizeNormalBtn && textSizeLargeBtn && window.ACCESSIBILITY) {
+        const settings = window.ACCESSIBILITY.get();
+        const updateTextSizeButtons = (size) => {
+            textSizeSmallBtn.style.opacity = size === 'small' ? '1' : '0.6';
+            textSizeNormalBtn.style.opacity = size === 'normal' ? '1' : '0.6';
+            textSizeLargeBtn.style.opacity = size === 'large' ? '1' : '0.6';
+        };
+        updateTextSizeButtons(settings.textSize);
+    
+        if (!textSizeSmallBtn._wired) {
+            textSizeSmallBtn.addEventListener('click', () => {
+                window.ACCESSIBILITY.setTextSize('small');
+                updateTextSizeButtons('small');
+            });
+            textSizeSmallBtn._wired = true;
+        }
+        if (!textSizeNormalBtn._wired) {
+            textSizeNormalBtn.addEventListener('click', () => {
+                window.ACCESSIBILITY.setTextSize('normal');
+                updateTextSizeButtons('normal');
+            });
+            textSizeNormalBtn._wired = true;
+        }
+        if (!textSizeLargeBtn._wired) {
+            textSizeLargeBtn.addEventListener('click', () => {
+                window.ACCESSIBILITY.setTextSize('large');
+                updateTextSizeButtons('large');
+            });
+            textSizeLargeBtn._wired = true;
+        }
+    }
+
+    const colorblindModeSelect = document.getElementById('colorblindModeSelect');
+    if (colorblindModeSelect && !colorblindModeSelect._wired && window.ACCESSIBILITY) {
+        const settings = window.ACCESSIBILITY.get();
+        colorblindModeSelect.value = settings.colorblindMode;
+        colorblindModeSelect.addEventListener('change', () => {
+            window.ACCESSIBILITY.setColorblindMode(colorblindModeSelect.value);
+        });
+        colorblindModeSelect._wired = true;
+    }
+
+    const screenReaderHintsChk = document.getElementById('screenReaderHintsChk');
+    if (screenReaderHintsChk && !screenReaderHintsChk._wired && window.ACCESSIBILITY) {
+        const settings = window.ACCESSIBILITY.get();
+        screenReaderHintsChk.checked = settings.screenReaderHints;
+        screenReaderHintsChk.addEventListener('change', () => {
+            window.ACCESSIBILITY.setScreenReaderHints(screenReaderHintsChk.checked);
+        });
+        screenReaderHintsChk._wired = true;
     }
     
     // Settings: View Credits button opens the Credits overlay
@@ -1870,13 +2294,24 @@ function launchConfetti() {
 function stopConfetti() { cancelAnimationFrame(confettiAnimId); confettiAnimId = 0; }
 
 function showWinOverlay() {
+    // Record level completion in stats
+    if (window.PLAYER_STATS && gameState.currentLevel) {
+        window.PLAYER_STATS.completeLevel(gameState.currentLevel);
+    }
+
+    // Update active challenge run (auto chaining levels)
+    handleChallengeWin();
+    
+    // Play notification sound for win
+    if (window.UI_SOUNDS) {
+        window.UI_SOUNDS.playNotification();
+    }
+    
     // Check for Level 7 jump-only achievement (no WASD movement used)
     if (gameState.currentLevel === 7 && !gameState.level7HasWASDMovement) {
         try {
             import('./achievements.js').then(mod => {
-                if (mod.checkAchievements) {
-                    mod.checkAchievements('achievement_event', { eventType: 'level7_only_jumps' });
-                }
+                // Level 7 only jumps achievement removed
             }).catch(() => {});
         } catch {}
     }
@@ -1938,6 +2373,12 @@ function showWinOverlay() {
                 if (pwd.trim().toLowerCase() === 'echomaze') {
                     setLevel11Unlocked(true);
                     setUnlockedLevel(Math.max(getUnlockedLevel(), 11));
+                    // Fire achievement for unlocking Level 11
+                    import('./achievements.js').then(mod => {
+                        if (mod.unlockAchievement) {
+                            mod.unlockAchievement('level11_unlock');
+                        }
+                    }).catch(() => {});
                     alert('Password accepted! Check Settings to play Level 11.');
                     if (window.__refreshLevel11UI) window.__refreshLevel11UI();
                     closeAndMenu();
@@ -2074,7 +2515,7 @@ function postFrameChecks(currentTime) {
             
             // Fire endless_wave achievement event
             try {
-                checkAchievements('endless_wave', { wave: streak, perfectWave: false });
+                fireAchievementEvent(`endless_wave_${streak}`, { wave: streak, perfectWave: false });
             } catch (e) {
                 console.error('Achievement endless_wave event error:', e);
             }
@@ -2113,9 +2554,22 @@ function postFrameChecks(currentTime) {
     if (gameState.gameStatus === 'lost' && !postFrameChecks._handledLose) {
         postFrameChecks._handledLose = true;
         
+        // Record death in stats
+        if (window.PLAYER_STATS) {
+            window.PLAYER_STATS.recordDeath();
+        }
+        
+        // Play death sound and screen shake
+        if (window.UI_SOUNDS) {
+            window.UI_SOUNDS.playDeath();
+        }
+        if (window.UI_POLISH) {
+            window.UI_POLISH.addDeathShake();
+        }
+        
         // Fire death achievement event
         try {
-            checkAchievements('death', { deathCause: gameState.deathCause, gameState });
+            fireAchievementEvent('first_death', { deathCause: gameState.deathCause, gameState });
         } catch (e) {
             console.error('Achievement event error:', e);
         }
@@ -2132,6 +2586,9 @@ function postFrameChecks(currentTime) {
                 const showSecretHint = Math.random() < 0.05;
                 
                 if (showSecretHint) {
+
+                // Mark challenge failed on death
+                failChallenge('death');
                     tip.textContent = 'That code in the credits is pretty weird... maybe try putting it into the secret code area in the settings..?';
                 } else {
                     const cause = gameState.deathCause || 'enemy';

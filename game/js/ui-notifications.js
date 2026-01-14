@@ -1,328 +1,273 @@
-// ui-notifications.js - Flashy popup notifications for achievements and skin unlocks
+/**
+ * Achievement Notifications - Beautiful, polished UI
+ * 
+ * Features:
+ * - Smooth animations
+ * - Color-coded by tier
+ * - Custom achievement sound
+ * - Responsive design
+ */
 
-let notificationQueue = [];
-let isShowingNotification = false;
+const TIER_COLORS = {
+    bronze: '#CD7F32',
+    silver: '#C0C0C0',
+    gold: '#FFD700',
+    // Match toned down platinum used in panels
+    platinum: '#9FA6B2',
+    diamond: '#00CED1'
+};
 
-// Show achievement unlocked notification
+const TIER_GRADIENTS = {
+    bronze: 'linear-gradient(135deg, #8B4513, #CD7F32)',
+    silver: 'linear-gradient(135deg, #808080, #C0C0C0)',
+    gold: 'linear-gradient(135deg, #FFD700, #FFA500)',
+    platinum: 'linear-gradient(135deg, #9FA6B2, #7C8796)',
+    diamond: 'linear-gradient(135deg, #00CED1, #00BFFF)'
+};
+
+/**
+ * Show achievement unlock notification - ULTRA COOL VERSION
+ */
 export function showAchievementUnlocked(achievement) {
-    notificationQueue.push({ type: 'achievement', data: achievement });
-    processQueue();
-}
+    const container = document.getElementById('achievementNotificationContainer');
+    if (!container) createNotificationContainer();
 
-// Show skin unlocked notification
-export function showSkinUnlocked(skin) {
-    notificationQueue.push({ type: 'skin', data: skin });
-    processQueue();
-}
-
-// Process notification queue (one at a time)
-function processQueue() {
-    if (isShowingNotification || notificationQueue.length === 0) return;
+    const notification = document.createElement('div');
+    notification.className = 'achievement-notification';
+    const tierColor = TIER_COLORS[achievement.tier] || '#CD7F32';
     
-    const notification = notificationQueue.shift();
-    isShowingNotification = true;
-    
-    if (notification.type === 'achievement') {
-        displayAchievementNotification(notification.data);
-    } else if (notification.type === 'skin') {
-        displaySkinNotification(notification.data);
-    }
-}
-
-// Display achievement notification with fancy animation
-function displayAchievementNotification(achievement) {
-    const container = createNotificationContainer();
-    
-    // Tier colors
-    const tierColors = {
-        bronze: { primary: '#CD7F32', glow: 'rgba(205, 127, 50, 0.6)' },
-        silver: { primary: '#C0C0C0', glow: 'rgba(192, 192, 192, 0.6)' },
-        gold: { primary: '#FFD700', glow: 'rgba(255, 215, 0, 0.6)' },
-        platinum: { primary: '#E5E4E2', glow: 'rgba(229, 228, 226, 0.6)' },
-        diamond: { primary: '#00D9FF', glow: 'rgba(0, 217, 255, 0.9)' }
-    };
-    
-    const colors = tierColors[achievement.tier] || tierColors.bronze;
-    
-    container.innerHTML = `
-        <div class="notification-content achievement-notification">
-            <div class="notification-icon achievement-icon">
-                <div class="trophy-icon" style="color: ${colors.primary}; text-shadow: 0 0 20px ${colors.glow};">
-                    🏆
-                </div>
+    notification.innerHTML = `
+        <div class="achievement-pop">
+            <div class="achievement-icon-circle">🏆</div>
+            <div class="achievement-content">
+                <div class="achievement-unlock-label">★ ACHIEVEMENT UNLOCKED ★</div>
+                <div class="achievement-title">${achievement.name}</div>
+                <div class="achievement-description">${achievement.desc}</div>
+                ${achievement.unlockSkin ? `<div class="achievement-skin">🎨 +${formatSkinName(achievement.unlockSkin)} Skin</div>` : ''}
             </div>
-            <div class="notification-text">
-                <div class="notification-title">Achievement Unlocked!</div>
-                <div class="notification-subtitle">${achievement.name}</div>
-                <div class="notification-desc">${achievement.desc}</div>
+            <div class="achievement-tier-badge" data-tier="${achievement.tier}">
+                <div>${achievement.tier.toUpperCase()}</div>
             </div>
         </div>
     `;
-    
-    document.body.appendChild(container);
-    
-    // Play sound effect
-    playNotificationSound('achievement');
-    
+
+    // Apply tier styling with glow effects
+    notification.style.background = TIER_GRADIENTS[achievement.tier];
+    notification.style.borderColor = tierColor;
+    notification.style.boxShadow = `0 0 30px ${tierColor}60, 0 0 60px ${tierColor}30, inset 0 0 20px rgba(255,255,255,0.1)`;
+
+    // Add to container
+    const notificationContainer = document.getElementById('achievementNotificationContainer');
+    notificationContainer.appendChild(notification);
+
     // Animate in
     requestAnimationFrame(() => {
-        container.classList.add('show');
+        notification.classList.add('show');
     });
-    
-    // Auto-hide after 4 seconds
+
+    // Auto-remove after 5 seconds
     setTimeout(() => {
-        container.classList.remove('show');
-        container.classList.add('hide');
-        setTimeout(() => {
-            container.remove();
-            isShowingNotification = false;
-            processQueue();
-        }, 500);
-    }, 4000);
-    
-    // Click to dismiss
-    container.addEventListener('click', () => {
-        container.classList.remove('show');
-        container.classList.add('hide');
-        setTimeout(() => {
-            container.remove();
-            isShowingNotification = false;
-            processQueue();
-        }, 500);
-    });
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 400);
+    }, 4700);
 }
 
-// Display skin unlocked notification
-function displaySkinNotification(skin) {
-    const container = createNotificationContainer();
-    
-    const rgb = `rgb(${skin.color.r}, ${skin.color.g}, ${skin.color.b})`;
-    const glow = `rgba(${skin.color.r}, ${skin.color.g}, ${skin.color.b}, 0.6)`;
-    
-    container.innerHTML = `
-        <div class="notification-content skin-notification">
-            <div class="notification-icon skin-icon">
-                <div class="skin-preview" style="background: ${rgb}; box-shadow: 0 0 20px ${glow}, 0 0 40px ${glow} inset;">
-                </div>
-            </div>
-            <div class="notification-text">
-                <div class="notification-title">New Skin Unlocked!</div>
-                <div class="notification-subtitle">${skin.name}</div>
-                <div class="notification-desc">${skin.desc}</div>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(container);
-    
-    // Play sound effect
-    playNotificationSound('skin');
-    
-    // Animate in
-    requestAnimationFrame(() => {
-        container.classList.add('show');
-    });
-    
-    // Auto-hide after 4 seconds
-    setTimeout(() => {
-        container.classList.remove('show');
-        container.classList.add('hide');
-        setTimeout(() => {
-            container.remove();
-            isShowingNotification = false;
-            processQueue();
-        }, 500);
-    }, 4000);
-    
-    // Click to dismiss
-    container.addEventListener('click', () => {
-        container.classList.remove('show');
-        container.classList.add('hide');
-        setTimeout(() => {
-            container.remove();
-            isShowingNotification = false;
-            processQueue();
-        }, 500);
-    });
-}
-
-// Create notification container
 function createNotificationContainer() {
     const container = document.createElement('div');
-    container.className = 'unlock-notification';
-    return container;
+    container.id = 'achievementNotificationContainer';
+    container.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        pointer-events: none;
+        font-family: 'Courier New', monospace;
+    `;
+    document.body.appendChild(container);
 }
 
-// Play notification sound (placeholder - can be enhanced with actual audio)
-function playNotificationSound(type) {
-    try {
-        // Web Audio API chime
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        if (type === 'achievement') {
-            // Rising chime
-            oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5
-            oscillator.frequency.exponentialRampToValueAtTime(783.99, audioContext.currentTime + 0.1); // G5
-            oscillator.frequency.exponentialRampToValueAtTime(1046.50, audioContext.currentTime + 0.2); // C6
-        } else {
-            // Sparkle chime
-            oscillator.frequency.setValueAtTime(1046.50, audioContext.currentTime); // C6
-            oscillator.frequency.exponentialRampToValueAtTime(1318.51, audioContext.currentTime + 0.1); // E6
-        }
-        
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.3);
-    } catch (e) {
-        // Silently fail if Web Audio API not available
-    }
-}
+// Inject styles
+function injectAchievementStyles() {
+    const styleId = 'achievement-styles';
+    if (document.getElementById(styleId)) return;
 
-// Inject notification styles into document
-function injectNotificationStyles() {
-    if (document.getElementById('notification-styles')) return;
-    
     const style = document.createElement('style');
-    style.id = 'notification-styles';
+    style.id = styleId;
     style.textContent = `
-        .unlock-notification {
-            position: fixed;
-            top: 80px;
-            right: -400px;
-            width: 380px;
-            z-index: 9999;
-            transition: right 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            cursor: pointer;
-        }
-        
-        .unlock-notification.show {
-            right: 20px;
-        }
-        
-        .unlock-notification.hide {
-            right: -400px;
-        }
-        
-        .notification-content {
+        .achievement-notification {
             display: flex;
             align-items: center;
-            gap: 20px;
-            background: linear-gradient(135deg, rgba(10, 10, 20, 0.98), rgba(30, 10, 40, 0.98));
-            backdrop-filter: blur(12px);
-            border: 3px solid #00f6ff;
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 
-                0 0 40px rgba(0, 246, 255, 0.5),
-                0 0 80px rgba(0, 246, 255, 0.3),
-                inset 0 0 40px rgba(0, 246, 255, 0.1);
-            animation: notification-pulse 2s ease-in-out infinite;
+            gap: 16px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            border: 3px solid;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4), 0 0 40px rgba(255, 255, 255, 0.1) inset;
+            min-width: 320px;
+            max-width: 420px;
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            transform: translateX(450px) translateY(-20px) scale(0.8);
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: auto;
+            color: #FFF;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 8px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
         }
-        
-        @keyframes notification-pulse {
-            0%, 100% {
-                box-shadow: 
-                    0 0 40px rgba(0, 246, 255, 0.5),
-                    0 0 80px rgba(0, 246, 255, 0.3),
-                    inset 0 0 40px rgba(0, 246, 255, 0.1);
-            }
-            50% {
-                box-shadow: 
-                    0 0 60px rgba(0, 246, 255, 0.7),
-                    0 0 120px rgba(0, 246, 255, 0.5),
-                    inset 0 0 60px rgba(0, 246, 255, 0.2);
-            }
+
+        .achievement-notification::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 50%);
+            pointer-events: none;
         }
-        
-        .notification-icon {
+
+        .achievement-notification.show {
+            opacity: 1;
+            transform: translateX(0) translateY(0) scale(1);
+        }
+
+        .achievement-pop {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .achievement-icon-circle {
+            font-size: 48px;
+            animation: achievementPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             flex-shrink: 0;
-            width: 80px;
-            height: 80px;
+            filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6));
+        }
+
+        .achievement-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .achievement-unlock-label {
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            opacity: 0.85;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .achievement-title {
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            line-height: 1.2;
+            text-transform: uppercase;
+        }
+
+        .achievement-description {
+            font-size: 13px;
+            opacity: 0.85;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+
+        .achievement-skin {
+            font-size: 12px;
+            opacity: 0.9;
+            color: #FF69B4;
+            font-weight: bold;
+            margin-top: 4px;
+            padding: 4px 8px;
+            background: rgba(255, 105, 180, 0.15);
+            border-radius: 4px;
+            width: fit-content;
+        }
+
+        .achievement-tier-badge {
+            flex-shrink: 0;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            background: rgba(0, 0, 0, 0.3);
+            text-transform: uppercase;
             display: flex;
             align-items: center;
             justify-content: center;
+            min-width: 70px;
+            box-shadow: 0 0 12px rgba(0, 0, 0, 0.4) inset;
         }
-        
-        .trophy-icon {
-            font-size: 3.5rem;
-            animation: trophy-bounce 1s ease-in-out infinite;
-        }
-        
-        @keyframes trophy-bounce {
-            0%, 100% { transform: translateY(0) scale(1); }
-            50% { transform: translateY(-10px) scale(1.1); }
-        }
-        
-        .skin-preview {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            border: 3px solid #00f6ff;
-            animation: skin-spin 3s linear infinite;
-        }
-        
-        @keyframes skin-spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        .notification-text {
-            flex: 1;
-            color: white;
-        }
-        
-        .notification-title {
-            font-size: 1.4rem;
-            font-weight: bold;
-            color: #00f6ff;
-            text-shadow: 0 0 10px rgba(0, 246, 255, 0.8);
-            margin-bottom: 5px;
-        }
-        
-        .notification-subtitle {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #fff;
-            margin-bottom: 5px;
-        }
-        
-        .notification-desc {
-            font-size: 0.95rem;
-            color: #aaa;
-            line-height: 1.3;
-        }
-        
-        @media (max-width: 768px) {
-            .unlock-notification {
-                width: calc(100% - 40px);
-                right: -100%;
+
+        @keyframes achievementPop {
+            0% {
+                transform: scale(0) rotate(-180deg);
+                opacity: 0;
             }
-            
-            .unlock-notification.show {
-                right: 20px;
+            60% {
+                transform: scale(1.25) rotate(10deg);
             }
-            
-            .unlock-notification.hide {
-                right: -100%;
+            100% {
+                transform: scale(1) rotate(0);
+            }
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 480px) {
+            .achievement-notification {
+                min-width: 280px;
+                max-width: 320px;
+                padding: 14px 16px;
+                gap: 12px;
+            }
+
+            .achievement-icon-circle {
+                font-size: 40px;
+            }
+
+            .achievement-title {
+                font-size: 16px;
+            }
+
+            .achievement-description {
+                font-size: 12px;
+            }
+
+            .achievement-tier-badge {
+                font-size: 10px;
+                padding: 6px 10px;
+                min-width: 60px;
             }
         }
     `;
-    
     document.head.appendChild(style);
 }
 
-// Initialize notifications system
-export function initNotifications() {
-    injectNotificationStyles();
-    console.log('[ui-notifications] Notification system initialized');
+// Call on import
+injectAchievementStyles();
+
+function formatSkinName(skinId) {
+    return skinId
+        .split('_')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
 }
 
-// Initialize on module load
-injectNotificationStyles();
+/**
+ * Initialize notifications system (no-op, system initializes on import)
+ */
+export function initNotifications() {
+    // Styles are already injected on import
+    // This is kept for backward compatibility
+    console.log('[NOTIFICATIONS] System initialized');
+}

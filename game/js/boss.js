@@ -256,9 +256,8 @@ export function spawnBossArena(currentTime) {
     doorFadeStartAt: 0,
     doorFadeUntil: 0,
     cutsceneStarted: false,
-    postEscapeStarted: false,
-    // Survival timer for achievement
-    survivalStartAt: now,
+    postEscapeStarted: false
+    ,
     // Virus monologue state
     virusDialogueActive: false,
     virusDialogueFinished: false,
@@ -291,18 +290,6 @@ export function spawnBossArena(currentTime) {
 export function updateBoss(currentTime) {
   const b = gameState.boss;
   if (!b) return;
-  
-  // Check survival timer achievement (5 minutes = 300000 ms in boss arena)
-  if (b.survivalStartAt && !b.survivalAchievementFired && currentTime - b.survivalStartAt >= 300000) {
-    b.survivalAchievementFired = true;
-    try {
-      import('./achievements.js').then(mod => {
-        if (mod.checkAchievements) {
-          mod.checkAchievements('achievement_event', { eventType: 'level10_survival_5min' });
-        }
-      }).catch(() => {});
-    } catch {}
-  }
   
   // Allow defeat timeline even after active=false; and prevent any further spawns while defeated
   if (b.defeated) {
@@ -444,6 +431,16 @@ export function updateBoss(currentTime) {
     // Screen shake
     try { import('./state.js').then(m=> m.triggerScreenShake && m.triggerScreenShake(9, 3000, currentTime)); } catch {}
     console.log('[boss] defeat flags set, coreFadeUntil:', b.coreFadeUntil);
+    
+    // Fire level10_clear achievement
+    try {
+      import('./achievements.js').then(mod => {
+        if (mod.fireAchievementEvent) {
+          mod.fireAchievementEvent('level_complete', { level: 10 });
+        }
+      });
+    } catch {}
+    
     return; // Exit immediately after setting defeat state
   }
 
@@ -779,12 +776,6 @@ export function updateBoss(currentTime) {
         if (!gameState.bazooka) gameState.bazooka = { has: true, ammo: 0, maxAmmo: BAZOOKA_MAX_AMMO };
         const give = 10; // each case gives 10
         gameState.bazooka.ammo = Math.min(gameState.bazooka.maxAmmo || 10, (gameState.bazooka.ammo || 0) + give);
-        // Fire bazooka_reload achievement event
-        try {
-          import('./achievements.js').then(mod => {
-            if (mod.checkAchievements) mod.checkAchievements('bazooka_reload');
-          });
-        } catch {}
         // pickup consumed; skip adding to keep
       } else {
         keep.push(a);
@@ -846,15 +837,17 @@ export function tryMountPig(currentTime) {
         gameState.mountedPigStart = currentTime;
         gameState.mountedPigUntil = currentTime + 4000; // 4s mount duration
         gameState.mountedPigId = e.id;
-        // Fire pig_mounted achievement event
-        try {
-          import('./achievements.js').then(mod => {
-            if (mod.checkAchievements) mod.checkAchievements('pig_mounted');
-          });
-        } catch {}
         // remove pig entity; you are now riding it
         gameState.enemies.splice(i,1);
   try { import('./state.js').then(m=> m.setStatusMessage && m.setStatusMessage('Mounted pig! 4s to blast the Core.', 1200)); } catch {}
+        // Track achievement progress for pig mounting
+        try { 
+          import('./achievements.js').then(mod => {
+            if (mod.incrementAchievementProgress) {
+              mod.incrementAchievementProgress('pigsMounted', 1);
+            }
+          });
+        } catch {}
         return true;
       }
     }

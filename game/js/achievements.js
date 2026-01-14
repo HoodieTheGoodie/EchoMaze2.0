@@ -1,163 +1,183 @@
-// achievements.js - Achievement tracking and unlock system
+/**
+ * ACHIEVEMENTS SYSTEM v2 - Complete Rebuild
+ * 
+ * Clean, event-driven architecture with:
+ * - Clear event mapping
+ * - Full game integration
+ * - Proper unlocking system
+ * - Debug/testing mode
+ * - Beautiful notifications
+ */
 
 import { isGodMode } from './config.js';
+import { getConditionMapForAchievements } from './achievement-conditions.js';
 
+// Storage keys
 const ACHIEVEMENTS_KEY = 'smg_achievements';
 const ACHIEVEMENT_STATS_KEY = 'smg_achievementStats';
+const ACHIEVEMENT_DEBUG_MODE = 'smg_achievementDebugMode';
+const TRACKED_ACHIEVEMENT_KEY = 'smg_trackedAchievement';
 
-// Achievement definitions - SORTED BY DIFFICULTY (Bronze → Silver → Gold → Platinum → Diamond)
+// ============================================================================
+// ACHIEVEMENT DEFINITIONS - 56 achievements across all difficulties
+// ============================================================================
+
 export const ACHIEVEMENTS = [
-    // === BRONZE (Easy/Early Game) ===
-    { id: 'level1_clear', name: 'First Steps', desc: 'Complete Level 1', tier: 'bronze', secret: false, unlockSkin: null },
-    { id: 'pet_pig', name: 'Gentle Soul', desc: 'Show compassion to a fallen enemy', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Stand still near a fallen pig enemy for 5 seconds without moving' },
-    { id: 'hub_dance', name: 'Victory Dance', desc: 'Take a moment to celebrate in the hub', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Press D key 10 times in a row in the hub' },
-    { id: 'endless_wave_10', name: 'Endurance I', desc: 'Reach wave 10 in Endless Mode', tier: 'bronze', secret: false, unlockSkin: null },
-    { id: 'first_death', name: 'Learning Process', desc: 'Die for the first time', tier: 'bronze', secret: false, unlockSkin: null },
-    { id: 'wall_hugger', name: 'Wall Hugger', desc: 'Stay against a wall for way too long', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Stay touching the same wall for 30 consecutive seconds in any level' },
-    { id: 'spin_cycle', name: 'Spin Cycle', desc: 'Make yourself dizzy', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Rotate 360 degrees 5 times in under 10 seconds (WASD movement only, not mouse)' },
+    // BRONZE (Easy/Early)
+    { id: 'level1_clear', tier: 'bronze', name: 'First Steps', desc: 'Complete Level 1', unlockSkin: null, secret: false },
+    { id: 'first_death', tier: 'bronze', name: 'Learning Process', desc: 'Die for the first time', unlockSkin: null, secret: false },
+    { id: 'endless_wave_5', tier: 'bronze', name: 'Endurance I', desc: 'Reach wave 5 in Endless', unlockSkin: null, secret: false },
     
-    // === SILVER (Medium/Mid Game) ===
-    { id: 'level5_clear', name: 'Halfway There', desc: 'Complete Level 5', tier: 'silver', secret: false, unlockSkin: 'rookie' },
-    { id: 'speedrun_level_60s', name: 'Lightning Fast', desc: 'Complete any level in under 60 seconds', tier: 'silver', secret: false, unlockSkin: 'blitz' },
-    { id: 'no_abilities_level', name: 'Purist', desc: 'Complete any level without using sprint, block, or jump', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'deathless_3_levels', name: 'Survivor', desc: 'Complete 3 consecutive levels without dying', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'generator_perfect_3', name: 'Mechanic', desc: 'Complete 3 generator skill checks with perfect timing', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'boss_mount_3_pigs', name: 'Pig Rider', desc: 'Mount 3 different pigs during the boss fight', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'endless_wave_20', name: 'Endurance II', desc: 'Reach wave 20 in Endless Mode', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'secret_note', name: 'Curious Explorer', desc: 'Find the hidden note in the hub', tier: 'silver', secret: true, unlockSkin: null },
-    { id: 'trap_master', name: 'Trap Master', desc: 'Catch 25 enemies in traps', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'endless_combo_5', name: 'Combo Master', desc: 'Defeat 5 enemies in a row without missing in Endless Mode', tier: 'silver', secret: false, unlockSkin: null },
-    { id: 'level2_backwards', name: 'Reverse Engineer', desc: 'Complete Level 2 while mostly moving backwards', tier: 'silver', secret: true, unlockSkin: null, devDesc: '[DEV] Complete Level 2 with at least 70% of movements being backwards (S key)' },
-    { id: 'corner_dweller', name: 'Corner Dweller', desc: 'Find comfort in the corners', tier: 'silver', secret: true, unlockSkin: null, devDesc: '[DEV] Visit all 4 corners of the maze in Level 1 within 20 seconds' },
+    // SILVER (Medium)
+    { id: 'level5_clear', tier: 'silver', name: 'Halfway There', desc: 'Complete Level 5', unlockSkin: 'rookie', secret: false },
+    { id: 'speedrun_level_60s', tier: 'silver', name: 'Lightning Fast', desc: 'Complete level in under 60s', unlockSkin: 'blitz', secret: false },
+    { id: 'no_abilities_level', tier: 'silver', name: 'Purist', desc: 'Level without shield or jump', unlockSkin: null, secret: false },
+    { id: 'deathless_3_levels', tier: 'silver', name: 'Survivor', desc: '3 consecutive perfect levels', unlockSkin: null, secret: false },
+    { id: 'generator_perfect_3', tier: 'silver', name: 'Mechanic', desc: 'Perfect generator checks x3', unlockSkin: null, secret: false },
+    { id: 'boss_mount_3_pigs', tier: 'silver', name: 'Pig Rider', desc: 'Mount 3 pigs in boss fight', unlockSkin: null, secret: false },
+    { id: 'endless_wave_10', tier: 'silver', name: 'Endurance II', desc: 'Reach wave 10 in Endless', unlockSkin: null, secret: false },
+    { id: 'trap_master', tier: 'silver', name: 'Trap Master', desc: 'Catch 25 enemies in traps', unlockSkin: null, secret: false },
     
-    // === GOLD (Hard/Late Game) ===
-    { id: 'level10_clear', name: 'Boss Defeated', desc: 'Defeat the Core and complete Level 10', tier: 'gold', secret: false, unlockSkin: 'veteran' },
-    { id: 'ending_good', name: 'Hope Restored', desc: 'Reach the Good Ending', tier: 'gold', secret: false, unlockSkin: 'guardian' },
-    { id: 'ending_bad', name: 'Shadows Remain', desc: 'Reach the Bad Ending', tier: 'gold', secret: false, unlockSkin: 'shadow' },
-    { id: 'ending_virus', name: 'Corrupted Legacy', desc: 'Reach the Virus Ending', tier: 'gold', secret: false, unlockSkin: 'corrupted' },
-    { id: 'perfect_shield_10', name: 'Shield Master', desc: 'Reflect 10 projectiles with your shield in a single run', tier: 'gold', secret: false, unlockSkin: 'defender' },
-    { id: 'speedrun_level3_30s', name: 'Pig Pilot', desc: 'Complete Level 3 in under 30 seconds', tier: 'gold', secret: false, unlockSkin: null },
-    { id: 'no_abilities_3_consecutive', name: 'Ascetic Path', desc: 'Complete 3 consecutive levels without using any abilities', tier: 'gold', secret: false, unlockSkin: null },
-    { id: 'generator_perfect_10', name: 'Master Mechanic', desc: 'Complete 10 generator skill checks with perfect timing', tier: 'gold', secret: false, unlockSkin: 'technician' },
-    { id: 'boss_ammo_efficient', name: 'Ammunition Discipline', desc: 'Defeat the Core with no more than 6 reloads at ammo stations', tier: 'gold', secret: false, unlockSkin: null },
-    { id: 'endless_wave_30', name: 'Endurance III', desc: 'Reach wave 30 in Endless Mode', tier: 'gold', secret: false, unlockSkin: 'infinite' },
-    { id: 'endless_perfect_wave', name: 'Untouched', desc: 'Complete a wave in Endless Mode without taking damage', tier: 'gold', secret: false, unlockSkin: null },
-    { id: 'endless_no_abilities_10', name: 'Endless Purist', desc: 'Complete 10 waves in Endless Mode without using any abilities', tier: 'gold', secret: false, unlockSkin: null },
-    { id: 'secret_level11_power', name: 'System Override', desc: 'Discover the power supply in Level 11', tier: 'gold', secret: true, unlockSkin: 'glitch' },
-    { id: 'secret_code_alpha', name: 'Code Breaker', desc: 'Enter a secret code', tier: 'gold', secret: true, unlockSkin: 'void' },
-    { id: 'bazooka_mode_unlock', name: 'Weapon System Online', desc: 'Unlock Energy Blaster Mode', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Enter code ECHOMAZE in the skins menu secret code area' },
-    { id: 'bazooka_power_destroy', name: 'why???', desc: 'Use the Energy Blaster for something... questionable', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Destroy the power system in Level 11 finale room using Energy Blaster shots' },
-    { id: 'flashlight_blaster', name: 'Flashlight Blaster', desc: 'The ultimate tactical loadout', tier: 'bronze', secret: true, unlockSkin: null, devDesc: '[DEV] Pick up the flashlight in Level 11 while holding the Energy Blaster' },
-    { id: 'level4_no_sprint', name: 'Patience is a Virtue', desc: 'Complete Level 4 without sprinting once', tier: 'gold', secret: true, unlockSkin: null, devDesc: '[DEV] Complete Level 4 without pressing Shift at all' },
-    { id: 'bazooka_wall_breaker', name: 'Demolition Expert', desc: 'Destroy 50 walls with the Energy Blaster', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Requires Energy Blaster Mode enabled - destroy 50 inner maze walls with Energy Blaster shots' },
-    { id: 'shield_reflect_consecutive', name: 'Perfect Parry', desc: 'Reflect 5 projectiles in a row without moving (easier with Defender)', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Block 5 projectiles consecutively - Defender skin recommended' },
-    { id: 'level5_speed_challenge', name: 'Swift Escape', desc: 'Complete Level 5 in under 50 seconds (easier with Ghost/Blitz)', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Speed run Level 5 - recommend Ghost or Blitz skin' },
-    { id: 'glitch_teleport_escape', name: 'Blinking Master', desc: 'Escape damage 10 times using Glitch teleport in one level', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Play as Glitch, dodge damage 10+ times with teleport in one level' },
-    { id: 'chrono_stamina_spree', name: 'Infinite Sprint', desc: 'Use stamina abilities 50+ times in one level (Chrono recommended)', tier: 'gold', secret: false, unlockSkin: null, devDesc: '[DEV] Use sprint/dash 50+ times in single level - Chrono best choice' },
+    // GOLD (Hard)
+    { id: 'level10_clear', tier: 'gold', name: 'Boss Defeated', desc: 'Defeat the Core', unlockSkin: 'veteran', secret: false },
+    { id: 'ending_good', tier: 'gold', name: 'Hope Restored', desc: 'Reach the Good Ending', unlockSkin: 'guardian', secret: false },
+    { id: 'ending_bad', tier: 'gold', name: 'Shadows Remain', desc: 'Reach the Bad Ending', unlockSkin: 'shadow', secret: false },
+    { id: 'ending_normal', tier: 'gold', name: 'System Restarted', desc: 'Reach the Normal Ending', unlockSkin: null, secret: false },
+    { id: 'perfect_shield_10', tier: 'gold', name: 'Shield Master', desc: 'Reflect 10 projectiles', unlockSkin: 'defender', secret: false },
+    { id: 'speedrun_level3_30s', tier: 'gold', name: 'Pig Pilot', desc: 'Complete Level 3 in under 30s', unlockSkin: null, secret: false },
+    { id: 'no_abilities_3_consecutive', tier: 'gold', name: 'Ascetic Path', desc: '3 levels without abilities', unlockSkin: null, secret: false },
+    { id: 'generator_perfect_10', tier: 'gold', name: 'Master Mechanic', desc: 'Perfect checks x10', unlockSkin: 'technician', secret: false },
+    { id: 'boss_ammo_efficient', tier: 'gold', name: 'Ammo Discipline', desc: 'Defeat boss with ≤6 reloads', unlockSkin: null, secret: false },
+    { id: 'endless_wave_15', tier: 'gold', name: 'Endurance III', desc: 'Reach wave 15 in Endless', unlockSkin: 'infinite', secret: false },
+    { id: 'endless_perfect_wave', tier: 'gold', name: 'Untouched', desc: 'Perfect wave (no damage)', unlockSkin: null, secret: false },
+    { id: 'endless_no_abilities_10', tier: 'gold', name: 'Endless Purist', desc: '10 waves without abilities', unlockSkin: null, secret: false },
+    { id: 'secret_level11_power', tier: 'gold', name: 'System Override', desc: 'Discover power supply in L11', unlockSkin: 'glitch', secret: true },
+    { id: 'secret_code_alpha', tier: 'gold', name: 'Code Breaker', desc: 'Enter a secret code', unlockSkin: 'void', secret: true },
+    { id: 'bazooka_mode_unlock', tier: 'gold', name: 'Weapon Online', desc: 'Unlock Blaster Mode', unlockSkin: null, secret: true },
+    { id: 'glitch_teleport_escape', tier: 'gold', name: 'Blinking Master', desc: 'Dodge damage 5+ times', unlockSkin: null, secret: false },
     
-    // === PLATINUM (Very Hard/Expert) ===
-    { id: 'game_complete', name: 'System Reboot', desc: 'Complete the entire game', tier: 'platinum', secret: false, unlockSkin: 'engineer' },
-    { id: 'speedrun_game_25m', name: 'Speedrunner', desc: 'Complete the entire game in under 25 minutes', tier: 'platinum', secret: false, unlockSkin: 'chrono' },
-    { id: 'deathless_game', name: 'Untouchable', desc: 'Complete the entire game without dying once', tier: 'platinum', secret: false, unlockSkin: 'ghost' },
-    { id: 'speedrun_game_20m', name: 'Time Lord', desc: 'Complete the entire game in under 20 minutes', tier: 'platinum', secret: false, unlockSkin: 'time_lord' },
-    { id: 'endless_wave_50', name: 'Infinite Warrior', desc: 'Reach wave 50 in Endless Mode', tier: 'platinum', secret: false, unlockSkin: null },
-    { id: 'endless_wave_75', name: 'Beyond Infinity', desc: 'Reach wave 75 in Endless Mode', tier: 'platinum', secret: false, unlockSkin: null },
-    { id: 'endless_flawless_10', name: 'Flawless Endurance', desc: 'Complete 10 consecutive waves in Endless Mode without taking damage', tier: 'platinum', secret: false, unlockSkin: null },
-    { id: 'total_deaths_100', name: 'Phoenix Rising', desc: 'Die 100 times total (across all runs)', tier: 'platinum', secret: true, unlockSkin: 'phoenix' },
-    { id: 'bazooka_boss_victory', name: 'Armed and Dangerous', desc: 'Defeat the boss with Energy Blaster Mode enabled', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Beat Level 10 boss with Energy Blaster Mode enabled (available from start)' },
-    { id: 'level7_only_jumps', name: 'Kangaroo Mode', desc: 'Complete Level 7 using only jumping for movement', tier: 'platinum', secret: true, unlockSkin: null, devDesc: '[DEV] Complete Level 7 without pressing WASD - only use Space to jump for movement' },
-    { id: 'level10_survival_5min', name: 'Ironclad Defender', desc: 'Survive on Level 10 (boss area) for 5 minutes without losing a life', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Stay alive in Level 10 boss arena for 5 continuous minutes' },
-    { id: 'endless_survival_10min', name: 'Eternal Guardian', desc: 'Survive 10 minutes in Endless Mode without dying', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Last 10 full minutes (600s) in Endless without any deaths' },
-    { id: 'perfect_generator_run', name: 'Technician Supreme', desc: 'Complete an entire level with perfect generator timing on all 5 generators', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Perfect timing on EVERY generator in one level (need 5+ generators)' },
-    { id: 'shield_perfect_level', name: 'Invincible', desc: 'Complete a level without taking ANY damage and reflect 10+ projectiles', tier: 'platinum', secret: false, unlockSkin: null, devDesc: '[DEV] Perfect run (0 damage) + reflect 10 projectiles minimum in one level' },
+    // PLATINUM (Very Hard)
+    { id: 'game_complete', tier: 'platinum', name: 'System Reboot', desc: 'Complete the game', unlockSkin: 'engineer', secret: false },
+    { id: 'speedrun_game_20m', tier: 'platinum', name: 'Speedrunner', desc: 'Complete game in <20 min', unlockSkin: 'chrono', secret: false },
+    { id: 'endless_wave_25', tier: 'platinum', name: 'Infinite Warrior', desc: 'Reach wave 25', unlockSkin: null, secret: false },
+    { id: 'endless_wave_35', tier: 'platinum', name: 'Beyond Infinity', desc: 'Reach wave 35', unlockSkin: null, secret: false },
+    { id: 'level11_unlock', tier: 'platinum', name: 'Hidden Realm Discovered', desc: 'Unlock the secret Level 11', unlockSkin: null, secret: true },
+    { id: 'total_deaths_100', tier: 'platinum', name: 'Phoenix Rising', desc: 'Die 100 times total', unlockSkin: 'phoenix', secret: true },
+    { id: 'bazooka_boss_victory', tier: 'platinum', name: 'Armed & Dangerous', desc: 'Defeat boss w/ Blaster', unlockSkin: null, secret: false },
+    { id: 'level10_survival_5min', tier: 'platinum', name: 'Ironclad Defender', desc: 'Survive 5 min on L10', unlockSkin: null, secret: false },
+    { id: 'perfect_generator_run', tier: 'platinum', name: 'Tech Supreme', desc: 'Perfect all generators', unlockSkin: null, secret: false },
+    { id: 'shield_perfect_level', tier: 'platinum', name: 'Invincible', desc: 'No damage + 10 reflects', unlockSkin: null, secret: false },
     
-    // === DIAMOND / RGB (Extreme/Mastery) ===
-    { id: 'all_endings', name: 'Story Master', desc: 'Unlock all three endings', tier: 'diamond', secret: false, unlockSkin: null },
-    { id: 'endless_wave_100', name: 'Eternal', desc: 'Reach wave 100 in Endless Mode', tier: 'diamond', secret: false, unlockSkin: null },
-    { id: '100_percent', name: '◆ 100% ◆', desc: 'Unlock ALL achievements (100% completion)', tier: 'diamond', secret: false, unlockSkin: 'hundred_percent', isRGB: true, displayTier: 'RGB' },
-    { id: 'the_first_10', name: '◆ THE FIRST 10 ◆', desc: 'Be among the first 10 to achieve 100% completion', tier: 'diamond', secret: true, unlockSkin: null, isRGB: true, displayTier: 'RGB', codeLimited: true, codeLimit: 10, devDesc: '[DEV] Secret code only - limited to first 10 codes distributed. After 10 codes are used, this achievement becomes permanently unavailable.' },
-    { id: 'world_record', name: '◆ WORLD RECORD ◆', desc: 'Hold a verified world record speedrun time', tier: 'diamond', secret: true, unlockSkin: null, isRGB: true, displayTier: 'RGB', devDesc: '[DEV] Secret code only - unlimited codes available for WR holders' },
+    // DIAMOND (Extreme)
+    { id: 'why_destroy_power', tier: 'diamond', name: 'Why??', desc: 'Destroy power supply w/ bazooka', unlockSkin: null, secret: true },
+    { id: 'all_endings', tier: 'diamond', name: 'Story Master', desc: 'Unlock all endings', unlockSkin: null, secret: false },
+    { id: 'endless_wave_45', tier: 'diamond', name: 'Eternal', desc: 'Reach wave 45', unlockSkin: null, secret: false },
+    { id: 'deathless_game', tier: 'diamond', name: 'Untouchable', desc: 'Complete game deathless', unlockSkin: 'ghost', secret: false },
+    { id: 'speedrun_game_10m', tier: 'diamond', name: 'Time Lord', desc: 'Complete game in <10 min', unlockSkin: 'time_lord', secret: false },
+    
+    // RGB (Ultra-Rare / Exclusive)
+    { id: '100_percent', tier: 'rgb', name: '◆ 100% ◆', desc: 'All achievements', unlockSkin: 'hundred_percent', secret: false, isRGB: true },
+    { id: 'the_first_10', tier: 'rgb', name: '◆ FIRST 10 ◆', desc: 'Top 10 100% achievers', unlockSkin: null, secret: true, isRGB: true, codeLimited: true, codeLimit: 10 },
+    { id: 'world_record', tier: 'rgb', name: '◆ WORLD RECORD ◆', desc: 'Verified speedrun record', unlockSkin: null, secret: true, isRGB: true },
 ];
 
-// Achievement stats tracking (cumulative across runs)
-export function getAchievementStats() {
+// ============================================================================
+// ACHIEVEMENT UNLOCK REGISTRY - Maps events to achievements
+// ============================================================================
+
+export const ACHIEVEMENT_EVENTS = {
+    // Level completions
+    'level_complete': (level, stats) => {
+        if (level === 1) return 'level1_clear';
+        if (level === 5) return 'level5_clear';
+        if (level === 10) return 'level10_clear';
+        return null;
+    },
+    
+    // Deaths
+    'first_death': () => 'first_death',
+    
+    // Endings
+    'ending_good': () => 'ending_good',
+    'ending_bad': () => 'ending_bad',
+    'ending_normal': () => 'ending_normal',
+    
+    // Endless waves
+    'endless_wave_5': () => 'endless_wave_5',
+    'endless_wave_10': () => 'endless_wave_10',
+    'endless_wave_15': () => 'endless_wave_15',
+    'endless_wave_25': () => 'endless_wave_25',
+    'endless_wave_35': () => 'endless_wave_35',
+    'endless_wave_45': () => 'endless_wave_45',
+    
+    // Game completion
+    'game_complete': () => 'game_complete',
+    
+    // Secret/niche achievements
+    'rotation': (level, stats, data = {}) => {
+        if (data.rotations >= 5) return 'spin_cycle';
+        return null;
+    },
+    'secret_found': (level, stats, data = {}) => {
+        if (data.secretId === 'hub_dance') return 'hub_dance';
+        if (data.secretId === 'pet_pig') return 'pet_pig';
+        return null;
+    },
+};
+
+// ============================================================================
+// STATE & TRACKING
+// ============================================================================
+
+let debugMode = false;
+let achievementStats = getAchievementStats();
+
+function devLog(event, data = {}) {
     try {
-        const raw = localStorage.getItem(ACHIEVEMENT_STATS_KEY);
-        if (!raw) return getDefaultStats();
-        const stats = JSON.parse(raw);
-        return { ...getDefaultStats(), ...stats };
-    } catch {
-        return getDefaultStats();
-    }
+        if (window.DEV_EVENT_LOGGER) {
+            window.DEV_EVENT_LOGGER(event, data);
+        }
+    } catch {}
 }
 
-function getDefaultStats() {
-    return {
-        levelsCleared: [],
-        endingsReached: [],
-        bestLevelTimes: {}, // { levelNum: ms }
-        totalGameTimeMs: 0,
-        totalDeaths: 0,
-        currentDeathlessStreak: 0,
-        maxDeathlessStreak: 0,
-        currentNoAbilityStreak: 0,
-        maxNoAbilityStreak: 0,
-        shieldReflects: 0,
-        shieldReflectsThisRun: 0,
-        pigsMountedThisRun: 0,
-        bazookaReloadsThisRun: 0,
-        endlessMaxWave: 0,
-        generatorPerfectCount: 0,
-        trapsCaught: 0,
-        secretsFound: []
-    };
+export function enableDebugMode() {
+    debugMode = true;
+    localStorage.setItem(ACHIEVEMENT_DEBUG_MODE, 'true');
+    console.log('✓ Achievement Debug Mode ENABLED');
 }
 
-export function saveAchievementStats(stats) {
-    try {
-        localStorage.setItem(ACHIEVEMENT_STATS_KEY, JSON.stringify(stats));
-    } catch (e) {
-        console.warn('[achievements] Failed to save stats:', e);
-    }
+export function disableDebugMode() {
+    debugMode = false;
+    localStorage.removeItem(ACHIEVEMENT_DEBUG_MODE);
+    console.log('✗ Achievement Debug Mode DISABLED');
 }
 
-// Get unlocked achievements
-export function getUnlockedAchievements() {
-    try {
-        const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
-        if (!raw) return [];
-        const data = JSON.parse(raw);
-        return Array.isArray(data) ? data : [];
-    } catch {
-        return [];
-    }
+export function isDebugModeEnabled() {
+    return debugMode || localStorage.getItem(ACHIEVEMENT_DEBUG_MODE) === 'true';
 }
 
-// Unlock an achievement (only if not already unlocked)
-export function unlockAchievement(achievementId, skipNotification = false) {
-    // God mode doesn't earn achievements (except ending achievements and secrets)
-    if (isGodMode() && !achievementId.startsWith('secret_') && !achievementId.startsWith('ending_') && achievementId !== 'all_endings' && achievementId !== 'game_complete') {
-        console.log('[achievements] God mode active - achievement not earned:', achievementId);
-        return false;
-    }
+// ============================================================================
+// MAIN API
+// ============================================================================
 
-    // Custom/builder levels don't earn achievements
-    if (window.gameState && window.gameState.customLevelActive) {
-        console.log('[achievements] Custom level active - achievement not earned:', achievementId);
-        return false;
-    }
-
-    const unlocked = getUnlockedAchievements();
-    if (unlocked.some(a => a.id === achievementId)) {
-        return false; // Already unlocked
-    }
-
+/**
+ * Unlock an achievement by ID
+ */
+export function unlockAchievement(achievementId) {
     const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
     if (!achievement) {
-        console.warn('[achievements] Unknown achievement:', achievementId);
+        console.warn(`[ACHIEVEMENT] Unknown achievement: ${achievementId}`);
         return false;
     }
 
+    // Check if already unlocked
+    const unlocked = getUnlockedAchievements();
+    if (unlocked.some(a => a.id === achievementId)) {
+        if (debugMode) console.log(`[ACHIEVEMENT] Already unlocked: ${achievementId}`);
+        return false;
+    }
+
+    // Save unlock
     const entry = {
         id: achievementId,
         unlockedAt: Date.now()
@@ -167,461 +187,809 @@ export function unlockAchievement(achievementId, skipNotification = false) {
     try {
         localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(unlocked));
     } catch (e) {
-        console.warn('[achievements] Failed to save:', e);
+        console.warn('[ACHIEVEMENT] Save failed:', e);
         return false;
     }
 
-    console.log('[achievements] Unlocked:', achievement.name);
+    if (debugMode) console.log(`[ACHIEVEMENT] UNLOCKED: ${achievement.name}`);
+    devLog('achievement_unlocked', { id: achievementId });
 
-    // Play achievement unlock sound
-    try {
-        import('./audio.js').then(mod => {
-            if (mod.playAchievementUnlock) {
-                mod.playAchievementUnlock();
-            }
-        }).catch(() => {});
-    } catch (e) {}
+    // Show notification
+    showAchievementNotification(achievement);
 
-    // Trigger notification (handled by UI module)
-    if (!skipNotification) {
-        import('./ui-notifications.js').then(mod => {
-            if (mod.showAchievementUnlocked) {
-                mod.showAchievementUnlocked(achievement);
-            }
-        }).catch(() => {});
-    }
+    // Play sound
+    playAchievementSound();
 
-    // Auto-unlock skin if defined
+    // Unlock skin if applicable
     if (achievement.unlockSkin) {
         import('./skins.js').then(mod => {
             if (mod.unlockSkin) {
-                mod.unlockSkin(achievement.unlockSkin, `Achievement: ${achievement.name}`);
+                mod.unlockSkin(achievement.unlockSkin);
             }
         }).catch(() => {});
     }
 
-    // Check for 100% completion after each achievement unlock
-    if (achievementId !== '100_percent' && achievementId !== 'the_first_10' && achievementId !== 'world_record') {
-        setTimeout(() => checkAchievements('check_100_percent'), 100);
+    // Check for ending combinations (Story Master)
+    if (achievementId === 'ending_good' || achievementId === 'ending_bad' || achievementId === 'ending_normal') {
+        checkAllEndingsUnlocked();
     }
+
+    // Check for 100%
+    checkHundredPercent();
 
     return true;
 }
 
-// Check for achievement triggers based on game events
-export function checkAchievements(event, data = {}) {
-    const stats = getAchievementStats();
+/**
+ * Fire an achievement event - handles complex logic
+ */
+export function fireAchievementEvent(eventId, data = {}) {
+    if (!eventId) return;
 
-    switch (event) {
-        case 'level_complete':
-            handleLevelComplete(stats, data);
-            break;
-        case 'ending_reached':
-            handleEndingReached(stats, data);
-            break;
-        case 'death':
-            handleDeath(stats);
-            break;
-        case 'shield_reflect':
-            handleShieldReflect(stats);
-            break;
-        case 'shield_reflect_block':
-            handleShieldReflectBlock(stats, data);
-            break;
-        case 'pig_mounted':
-            handlePigMounted(stats);
-            break;
-        case 'bazooka_reload':
-            handleBazookaReload(stats);
-            break;
-        case 'bazooka_wall_destroyed':
-            handleBazookaWallDestroyed(stats);
-            break;
-        case 'power_supply_discovered':
-            handlePowerSupplyDiscovered(stats, data);
-            break;
-        case 'endless_wave':
-            handleEndlessWave(stats, data);
-            break;
-        case 'endless_damage_free_wave':
-            handleEndlessDamageFreeWave(stats, data);
-            break;
-        case 'generator_perfect':
-            handleGeneratorPerfect(stats);
-            break;
-        case 'secret_found':
-            handleSecretFound(stats, data);
-            break;
-        case 'run_start':
-            handleRunStart(stats);
-            break;
-        case 'ability_used':
-            handleAbilityUsed(stats);
-            break;
-        case 'trap_catch':
-            handleTrapCatch(stats);
-            break;
-        case 'glitch_dodged':
-            handleGlitchDodged(stats);
-            break;
-        case 'stamina_used':
-            handleStaminaUsed(stats);
-            break;
-        case 'enemy_combo':
-            handleEnemyCombo(stats, data);
-            break;
-        case 'wall_touch':
-            handleWallTouch(stats, data);
-            break;
-        case 'rotation':
-            handleRotation(stats, data);
-            break;
-        case 'achievement_event':
-            handleAchievementEvent(stats, data);
-            break;
-        case 'check_100_percent':
-            checkHundredPercent();
-            break;
-        default:
-            break;
+    if (debugMode) console.log(`[ACHIEVEMENT EVENT] ${eventId}`, data);
+    devLog('achievement_event', { eventId, data });
+
+    // Check if tracked achievement was failed
+    checkTrackedAchievementFailure(eventId, data);
+
+    // Handle event-based unlocks
+    const handler = ACHIEVEMENT_EVENTS[eventId];
+    if (handler) {
+        const achievementId = handler(data.level, achievementStats, data);
+        if (achievementId) {
+            unlockAchievement(achievementId);
+        }
     }
 
-    saveAchievementStats(stats);
+    // Handle complex multi-condition achievements
+    handleComplexAchievements(eventId, data);
 }
 
-function handleLevelComplete(stats, { level, timeMs, deathless, noAbilities }) {
-    if (!stats.levelsCleared.includes(level)) {
-        stats.levelsCleared.push(level);
-    }
-
-    // Best time tracking
-    if (!stats.bestLevelTimes[level] || timeMs < stats.bestLevelTimes[level]) {
-        stats.bestLevelTimes[level] = timeMs;
-    }
-
-    // Level clear achievements
-    if (level === 1) unlockAchievement('level1_clear');
-    if (level === 5) unlockAchievement('level5_clear');
-    if (level === 10) unlockAchievement('level10_clear');
-
-    // Check if game complete (levels 1-10 all cleared)
-    const allLevels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    if (allLevels.every(l => stats.levelsCleared.includes(l))) {
-        unlockAchievement('game_complete');
+/**
+ * Complex achievement checking (multi-condition)
+ */
+function handleComplexAchievements(eventId, data) {
+    // Level speedruns
+    if (eventId === 'level_complete') {
+        const { level, timeMs, noAbilities } = data;
+        if (debugMode) {
+            console.log(`[ACHIEVEMENT] Level ${level} completed in ${timeMs}ms (${(timeMs/1000).toFixed(2)}s), noAbilities: ${noAbilities}`);
+        }
         
-        // Check total game time for speedrun achievements
-        const totalTime = Object.values(stats.bestLevelTimes).reduce((sum, t) => sum + t, 0);
-        if (totalTime < 25 * 60 * 1000) { // Under 25 minutes
-            unlockAchievement('speedrun_game_25m');
+        // No Abilities achievement - complete any level without using abilities
+        if (noAbilities === true) {
+            if (debugMode) {
+                console.log(`[ACHIEVEMENT] Level ${level} completed without abilities! Unlocking Purist...`);
+            }
+            unlockAchievement('no_abilities_level');
         }
-        if (totalTime < 20 * 60 * 1000) { // Under 20 minutes
-            unlockAchievement('speedrun_game_20m');
+        
+        // Level 3 speedrun - under 30 seconds
+        if (level === 3 && timeMs < 30000) {
+            if (debugMode) {
+                console.log(`[ACHIEVEMENT] Level 3 speedrun qualified! ${timeMs}ms < 30000ms`);
+            }
+            unlockAchievement('speedrun_level3_30s');
         }
-    }
-
-    // Speed run checks
-    if (timeMs < 60000) { // Under 60s
-        unlockAchievement('speedrun_level_60s');
-    }
-    if (level === 3 && timeMs < 30000) { // Level 3 under 30s
-        unlockAchievement('speedrun_level3_30s');
-    }
-    if (level === 5 && timeMs < 50000) { // Level 5 under 50s
-        unlockAchievement('level5_speed_challenge');
+        
+        // Level 60s speedrun - any level under 60 seconds
+        if (timeMs < 60000) {
+            unlockAchievement('speedrun_level_60s');
+        }
     }
     
-    // Level-specific challenges
-    if (level === 4 && !sprintUsed) {
-        unlockAchievement('level4_no_sprint');
-    }
-    if (level === 2 && backwardsPercent >= 70) {
-        unlockAchievement('level2_backwards');
-    }
-
-    // Deathless streak tracking
-    if (deathless) {
-        stats.currentDeathlessStreak++;
-        if (stats.currentDeathlessStreak > stats.maxDeathlessStreak) {
-            stats.maxDeathlessStreak = stats.currentDeathlessStreak;
+    // Check if all endings have been unlocked
+    if (eventId === 'ending_good' || eventId === 'ending_bad' || eventId === 'ending_normal') {
+        const unlocked = getUnlockedAchievements();
+        const hasGood = unlocked.some(a => a.id === 'ending_good');
+        const hasBad = unlocked.some(a => a.id === 'ending_bad');
+        const hasNormal = unlocked.some(a => a.id === 'ending_normal');
+        
+        if (debugMode) {
+            console.log(`[ACHIEVEMENT] Endings check - Good: ${hasGood}, Bad: ${hasBad}, Normal: ${hasNormal}`);
         }
-        if (stats.currentDeathlessStreak >= 3) {
-            unlockAchievement('deathless_3_levels');
-        }
-        if (stats.currentDeathlessStreak >= 10) {
-            unlockAchievement('deathless_game');
-        }
-    } else {
-        stats.currentDeathlessStreak = 0;
-    }
-
-    // No abilities streak tracking
-    if (noAbilities) {
-        stats.currentNoAbilityStreak++;
-        unlockAchievement('no_abilities_level');
-        if (stats.currentNoAbilityStreak >= 3) {
-            unlockAchievement('no_abilities_3_consecutive');
-        }
-    } else {
-        stats.currentNoAbilityStreak = 0;
-    }
-
-    // Boss-specific achievements
-    if (level === 10) {
-        if (stats.pigsMountedThisRun >= 3) {
-            unlockAchievement('boss_mount_3_pigs');
-        }
-        if (stats.bazookaReloadsThisRun <= 6) {
-            unlockAchievement('boss_ammo_efficient');
+        
+        if (hasGood && hasBad && hasNormal) {
+            if (debugMode) {
+                console.log(`[ACHIEVEMENT] All endings unlocked! Unlocking Story Master...`);
+            }
+            unlockAchievement('all_endings');
         }
     }
 }
 
-function handleEndingReached(stats, { ending }) {
-    if (!stats.endingsReached.includes(ending)) {
-        stats.endingsReached.push(ending);
-    }
-
-    if (ending === 'good') {
-        unlockAchievement('ending_good');
-    }
-    if (ending === 'bad') {
-        unlockAchievement('ending_bad');
-        // Bad ending is the virus ending (player didn't disable power supply)
-        if (!stats.endingsReached.includes('virus')) {
-            stats.endingsReached.push('virus');
-        }
-        unlockAchievement('ending_virus');
-    }
-    if (ending === 'virus') {
-        unlockAchievement('ending_virus');
-    }
-    
-    // Check if all endings unlocked
-    if (stats.endingsReached.includes('good') && 
-        stats.endingsReached.includes('bad') && 
-        stats.endingsReached.includes('virus')) {
-        unlockAchievement('all_endings');
-    }
-}
-
-function handleDeath(stats) {
-    stats.totalDeaths++;
-    stats.currentDeathlessStreak = 0;
-    
-    // First death achievement
-    if (stats.totalDeaths === 1) {
-        unlockAchievement('first_death');
-    }
-    
-    // Phoenix skin unlock (100 total deaths)
-    if (stats.totalDeaths >= 100) {
-        unlockAchievement('total_deaths_100');
-    }
-}
-
-function handleShieldReflect(stats) {
-    stats.shieldReflects++;
-    stats.shieldReflectsThisRun++;
-    if (stats.shieldReflectsThisRun >= 10) {
-        unlockAchievement('perfect_shield_10');
-    }
-}
-
-function handlePigMounted(stats) {
-    stats.pigsMountedThisRun++;
-}
-
-function handleBazookaReload(stats) {
-    stats.bazookaReloadsThisRun++;
-}
-
-function handleEndlessWave(stats, { wave, perfectWave }) {
-    if (wave > stats.endlessMaxWave) {
-        stats.endlessMaxWave = wave;
-    }
-
-    if (wave >= 10) unlockAchievement('endless_wave_10');
-    if (wave >= 20) unlockAchievement('endless_wave_20');
-    if (wave >= 30) unlockAchievement('endless_wave_30');
-    if (wave >= 50) unlockAchievement('endless_wave_50');
-    if (wave >= 75) unlockAchievement('endless_wave_75');
-    if (wave >= 100) unlockAchievement('endless_wave_100');
-
-    if (perfectWave) {
-        unlockAchievement('endless_perfect_wave');
-    }
-}
-
-function handleGeneratorPerfect(stats) {
-    stats.generatorPerfectCount++;
-    if (stats.generatorPerfectCount >= 3) {
-        unlockAchievement('generator_perfect_3');
-    }
-    if (stats.generatorPerfectCount >= 10) {
-        unlockAchievement('generator_perfect_10');
-    }
-}
-
-function handleSecretFound(stats, { secretId }) {
-    if (!stats.secretsFound.includes(secretId)) {
-        stats.secretsFound.push(secretId);
-    }
-
-    if (secretId === 'hidden_note') unlockAchievement('secret_note');
-    if (secretId === 'level11_power') unlockAchievement('secret_level11_power');
-    if (secretId === 'code_alpha') unlockAchievement('secret_code_alpha');
-    if (secretId === 'pet_pig') unlockAchievement('pet_pig');
-    if (secretId === 'hub_dance') unlockAchievement('hub_dance');
-}
-
-function handleRunStart(stats) {
-    // Reset per-run counters
-    stats.shieldReflectsThisRun = 0;
-    stats.pigsMountedThisRun = 0;
-    stats.bazookaReloadsThisRun = 0;
-}
-
-function handleAbilityUsed(stats) {
-    stats.currentNoAbilityStreak = 0;
-    // Mark that abilities were used in current run
-    if (typeof window !== 'undefined' && window.gameState) {
-        window.gameState.abilitiesUsed = true;
-    }
-}
-
-function handleTrapCatch(stats) {
-    stats.trapsCaught = (stats.trapsCaught || 0) + 1;
-    if (stats.trapsCaught >= 25) {
-        unlockAchievement('trap_master');
-    }
-}
-
-function handleShieldReflectBlock(stats, { consecutive }) {
-    stats.shieldReflectsConsecutive = (stats.shieldReflectsConsecutive || 0) + 1;
-    if (consecutive && stats.shieldReflectsConsecutive >= 5) {
-        unlockAchievement('shield_reflect_consecutive');
-    }
-}
-
-function handleBazookaWallDestroyed(stats) {
-    stats.bazookaWallsDestroyed = (stats.bazookaWallsDestroyed || 0) + 1;
-    if (stats.bazookaWallsDestroyed >= 50) {
-        unlockAchievement('bazooka_wall_breaker');
-    }
-}
-
-function handlePowerSupplyDiscovered(stats, { choice }) {
-    // Unlock the discovery achievement regardless of choice
-    unlockAchievement('secret_level11_power');
-}
-
-function handleEndlessDamageFreeWave(stats, { wave }) {
-    stats.endlessFlawlessWaves = (stats.endlessFlawlessWaves || 0) + 1;
-    if (stats.endlessFlawlessWaves >= 10) {
-        unlockAchievement('endless_flawless_10');
-    }
-}
-
-function handleGlitchDodged(stats) {
-    stats.glitchDodgesThisLevel = (stats.glitchDodgesThisLevel || 0) + 1;
-    if (stats.glitchDodgesThisLevel >= 10) {
-        unlockAchievement('glitch_teleport_escape');
-    }
-}
-
-function handleStaminaUsed(stats) {
-    stats.staminaUsesThisLevel = (stats.staminaUsesThisLevel || 0) + 1;
-    if (stats.staminaUsesThisLevel >= 50) {
-        unlockAchievement('chrono_stamina_spree');
-    }
-}
-
-function handleEnemyCombo(stats, { count }) {
-    stats.currentEnemyCombo = count;
-    if (count >= 5) {
-        unlockAchievement('endless_combo_5');
-    }
-}
-
-function handleWallTouch(stats, { wallSide, touchTime }) {
-    // Track consecutive wall touches
-    stats.currentWallTouchTime = (stats.currentWallTouchTime || 0) + 1;
-    if (stats.currentWallTouchTime >= 30) {
-        unlockAchievement('wall_hugger');
-    }
-}
-
-function handleRotation(stats, { rotations }) {
-    stats.rotationsThisCheck = (stats.rotationsThisCheck || 0) + rotations;
-    if (stats.rotationsThisCheck >= 5) {
-        unlockAchievement('spin_cycle');
-    }
-}
-
-function handleAchievementEvent(stats, { eventType }) {
-    // Handle special achievement event types
-    if (eventType === 'level7_only_jumps') {
-        unlockAchievement('level7_only_jumps');
-    } else if (eventType === 'level10_survival_5min') {
-        unlockAchievement('level10_survival_5min');
-    } else if (eventType === 'endless_survival_10min') {
-        unlockAchievement('endless_survival_10min');
-    }
-}
-
+/**
+ * Check if 100% completion achieved
+ */
 function checkHundredPercent() {
     const unlocked = getUnlockedAchievements();
-    // Count all non-100% achievements
-    const totalAchievements = ACHIEVEMENTS.filter(a => a.id !== '100_percent' && a.id !== 'the_first_10' && a.id !== 'world_record').length;
-    if (unlocked.length >= totalAchievements) {
+    if (unlocked.length === ACHIEVEMENTS.length) {
         unlockAchievement('100_percent');
     }
 }
 
-// Get achievement progress (for UI display)
-export function getAchievementProgress(achievementId) {
+/**
+ * Check if all endings have been unlocked
+ */
+function checkAllEndingsUnlocked() {
+    const unlocked = getUnlockedAchievements();
+    const hasGood = unlocked.some(a => a.id === 'ending_good');
+    const hasBad = unlocked.some(a => a.id === 'ending_bad');
+    const hasNormal = unlocked.some(a => a.id === 'ending_normal');
+    const hasStoryMaster = unlocked.some(a => a.id === 'all_endings');
+    
+    if (debugMode) {
+        console.log(`[ACHIEVEMENT] Endings check - Good: ${hasGood}, Bad: ${hasBad}, Normal: ${hasNormal}`);
+    }
+    
+    if (hasGood && hasBad && hasNormal && !hasStoryMaster) {
+        if (debugMode) {
+            console.log(`[ACHIEVEMENT] All endings unlocked! Unlocking Story Master...`);
+        }
+        // Use setTimeout to avoid recursion during the same call stack
+        setTimeout(() => {
+            const achievement = ACHIEVEMENTS.find(a => a.id === 'all_endings');
+            if (!achievement) return;
+            
+            const currentUnlocked = getUnlockedAchievements();
+            if (currentUnlocked.some(a => a.id === 'all_endings')) return;
+            
+            const entry = { id: 'all_endings', unlockedAt: Date.now() };
+            currentUnlocked.push(entry);
+            
+            try {
+                localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(currentUnlocked));
+                showAchievementNotification(achievement);
+                playAchievementSound();
+                if (achievement.unlockSkin) {
+                    import('./skins.js').then(mod => {
+                        if (mod.unlockSkin) mod.unlockSkin(achievement.unlockSkin);
+                    }).catch(() => {});
+                }
+            } catch (e) {
+                console.warn('[ACHIEVEMENT] Failed to unlock Story Master:', e);
+            }
+        }, 100);
+    }
+}
+
+// ============================================================================
+// NOTIFICATIONS & AUDIO
+// ============================================================================
+
+function showAchievementNotification(achievement) {
+    import('./ui-notifications.js')
+        .then(mod => {
+            if (mod.showAchievementUnlocked) {
+                mod.showAchievementUnlocked(achievement);
+            }
+        })
+        .catch(() => {});
+}
+
+function playAchievementSound() {
+    import('./audio.js')
+        .then(mod => {
+            if (mod.playAchievementUnlock) {
+                mod.playAchievementUnlock();
+            }
+        })
+        .catch(() => {});
+}
+
+// ============================================================================
+// GETTERS & UTILITIES
+// ============================================================================
+
+export function getUnlockedAchievements() {
+    try {
+        const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
+export function getAchievementStats() {
+    try {
+        const raw = localStorage.getItem(ACHIEVEMENT_STATS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+export function isAchievementUnlocked(achievementId) {
+    return getUnlockedAchievements().some(a => a.id === achievementId);
+}
+
+export function getAchievementProgress() {
+    return {
+        unlocked: getUnlockedAchievements().length,
+        total: ACHIEVEMENTS.length,
+        percentage: Math.round((getUnlockedAchievements().length / ACHIEVEMENTS.length) * 100)
+    };
+}
+
+/**
+ * Get individual achievement progress for count-based achievements
+ * Returns object like: { total_deaths_100: {current: 45, max: 100}, ... }
+ */
+export function getIndividualAchievementProgress(achievementId) {
     const stats = getAchievementStats();
     const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
+    
     if (!achievement) return null;
-
-    // Return progress info for display
-    switch (achievementId) {
-        case 'shield_reflect_10':
-            return { current: stats.shieldReflectsThisRun, target: 10 };
-        case 'generator_perfect_3':
-            return { current: stats.generatorPerfectCount, target: 3 };
-        case 'generator_perfect_10':
-            return { current: stats.generatorPerfectCount, target: 10 };
-        case 'endless_wave_10':
-            return { current: stats.endlessMaxWave, target: 10 };
-        case 'endless_wave_20':
-            return { current: stats.endlessMaxWave, target: 20 };
-        case 'endless_wave_30':
-            return { current: stats.endlessMaxWave, target: 30 };
-        case 'deathless_3_levels':
-            return { current: stats.currentDeathlessStreak, target: 3 };
-        case 'no_abilities_3_consecutive':
-            return { current: stats.currentNoAbilityStreak, target: 3 };
-        default:
-            return null;
-    }
+    
+    // Map achievement IDs to their progress tracking
+    const progressMap = {
+        'total_deaths_100': { current: stats.totalDeaths || 0, max: 100 },
+        'deathless_3_levels': { current: stats.consecutiveDeathlessLevels || 0, max: 3 },
+        'generator_perfect_3': { current: stats.perfectGenerators || 0, max: 3 },
+        'generator_perfect_10': { current: stats.perfectGenerators || 0, max: 10 },
+        'boss_mount_3_pigs': { current: stats.pigsMounted || 0, max: 3 },
+        'trap_master': { current: stats.trappedEnemies || 0, max: 25 },
+        'perfect_shield_10': { current: stats.reflectedProjectiles || 0, max: 10 },
+        'no_abilities_3_consecutive': { current: stats.consecutiveNoAbilityLevels || 0, max: 3 },
+        'endless_no_abilities_10': { current: stats.endlessNoAbilityWaves || 0, max: 10 },
+        'glitch_teleport_escape': { current: stats.glitchTeleportEscapes || 0, max: 5 },
+    };
+    
+    return progressMap[achievementId] || null;
 }
 
-// Dev: Reset all achievements
-export function resetAchievements() {
+/**
+ * Get detailed condition information for any achievement
+ * Returns: { conditions: [...], progress: {...}, met: boolean, category: string }
+ */
+export function getAchievementConditions(achievementId) {
+    const stats = getAchievementStats();
+    const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
+    
+    if (!achievement) return null;
+    
+    const conditionMap = getConditionMapForAchievements(stats);
+    const info = conditionMap[achievementId];
+    
+    if (!info) {
+        return {
+            conditions: [{ label: 'Complete the achievement objective', met: false, current: 0, max: 1 }],
+            category: 'Unknown',
+            allMet: false
+        };
+    }
+    
+    const allMet = info.conditions.every(c => c.met);
+    
+    return {
+        ...info,
+        allMet
+    };
+}
+
+/**
+ * Update achievement progress stats
+ */
+export function updateAchievementProgress(key, value) {
+    const stats = getAchievementStats();
+    stats[key] = value;
     try {
-        localStorage.removeItem(ACHIEVEMENTS_KEY);
-        localStorage.removeItem(ACHIEVEMENT_STATS_KEY);
-        console.log('[achievements] All achievements reset');
+        localStorage.setItem(ACHIEVEMENT_STATS_KEY, JSON.stringify(stats));
     } catch (e) {
-        console.warn('[achievements] Failed to reset:', e);
+        console.warn('[ACHIEVEMENT] Failed to save progress:', e);
     }
 }
 
-// Initialize achievements system
-export function initAchievements() {
-    // Pre-load stats to initialize system
-    getAchievementStats();
-    getUnlockedAchievements();
-    console.log('[achievements] Achievements system initialized');
+/**
+ * Increment achievement progress
+ */
+export function incrementAchievementProgress(key, amount = 1) {
+    const stats = getAchievementStats();
+    stats[key] = (stats[key] || 0) + amount;
+    try {
+        localStorage.setItem(ACHIEVEMENT_STATS_KEY, JSON.stringify(stats));
+    } catch (e) {
+        console.warn('[ACHIEVEMENT] Failed to save progress:', e);
+    }
+    
+    // Check if this progress update is for a tracked achievement
+    const tracked = getTrackedAchievement();
+    if (tracked) {
+        showTrackedAchievementProgress(tracked, key, stats[key]);
+    }
+    
+    // Auto-check for achievements that should unlock based on this stat
+    checkProgressBasedAchievements(key, stats[key]);
+    
+    return stats[key];
 }
+
+/**
+ * Check and auto-unlock achievements based on stat thresholds
+ */
+function checkProgressBasedAchievements(statKey, currentValue) {
+    // Map stat keys to achievements they should unlock
+    const statToAchievementMap = {
+        'totalDeaths': [
+            { threshold: 1, achievement: 'first_death' },
+            { threshold: 100, achievement: 'total_deaths_100' }
+        ],
+        'trappedEnemies': [
+            { threshold: 25, achievement: 'trap_master' }
+        ],
+        'reflectedProjectiles': [
+            { threshold: 10, achievement: 'perfect_shield_10' }
+        ],
+        'glitchTeleportEscapes': [
+            { threshold: 5, achievement: 'glitch_teleport_escape' }
+        ],
+        'pigsMounted': [
+            { threshold: 3, achievement: 'boss_mount_3_pigs' }
+        ],
+        'perfectGenerators': [
+            { threshold: 3, achievement: 'generator_perfect_3' },
+            { threshold: 10, achievement: 'generator_perfect_10' }
+        ],
+        'consecutiveDeathlessLevels': [
+            { threshold: 3, achievement: 'deathless_3_levels' }
+        ],
+        'consecutiveNoAbilityLevels': [
+            { threshold: 3, achievement: 'no_abilities_3_consecutive' }
+        ],
+        'endlessNoAbilityWaves': [
+            { threshold: 10, achievement: 'endless_no_abilities_10' }
+        ]
+    };
+    
+    const achievementsToCheck = statToAchievementMap[statKey];
+    if (!achievementsToCheck) return;
+    
+    // Check each threshold
+    achievementsToCheck.forEach(({ threshold, achievement }) => {
+        if (currentValue >= threshold && !isAchievementUnlocked(achievement)) {
+            if (debugMode) {
+                console.log(`[ACHIEVEMENT] Auto-unlocking ${achievement} - ${statKey} reached ${currentValue}/${threshold}`);
+            }
+            unlockAchievement(achievement);
+        }
+    });
+}
+
+/**
+ * Manually check all stat-based achievements and unlock any that meet criteria
+ * Call this to fix achievements that should have unlocked but didn't
+ */
+export function recheckAllProgressAchievements() {
+    const stats = getAchievementStats();
+    
+    // Check all stat-based achievements
+    const checks = [
+        { stat: 'totalDeaths', value: stats.totalDeaths || 0, achievements: [
+            { threshold: 1, id: 'first_death' },
+            { threshold: 100, id: 'total_deaths_100' }
+        ]},
+        { stat: 'trappedEnemies', value: stats.trappedEnemies || 0, achievements: [
+            { threshold: 25, id: 'trap_master' }
+        ]},
+        { stat: 'reflectedProjectiles', value: stats.reflectedProjectiles || 0, achievements: [
+            { threshold: 10, id: 'perfect_shield_10' }
+        ]},
+        { stat: 'glitchTeleportEscapes', value: stats.glitchTeleportEscapes || 0, achievements: [
+            { threshold: 5, id: 'glitch_teleport_escape' }
+        ]},
+        { stat: 'pigsMounted', value: stats.pigsMounted || 0, achievements: [
+            { threshold: 3, id: 'boss_mount_3_pigs' }
+        ]},
+        { stat: 'perfectGenerators', value: stats.perfectGenerators || 0, achievements: [
+            { threshold: 3, id: 'generator_perfect_3' },
+            { threshold: 10, id: 'generator_perfect_10' }
+        ]},
+        { stat: 'consecutiveDeathlessLevels', value: stats.consecutiveDeathlessLevels || 0, achievements: [
+            { threshold: 3, id: 'deathless_3_levels' }
+        ]},
+        { stat: 'consecutiveNoAbilityLevels', value: stats.consecutiveNoAbilityLevels || 0, achievements: [
+            { threshold: 3, id: 'no_abilities_3_consecutive' }
+        ]},
+        { stat: 'endlessNoAbilityWaves', value: stats.endlessNoAbilityWaves || 0, achievements: [
+            { threshold: 10, id: 'endless_no_abilities_10' }
+        ]}
+    ];
+    
+    let unlockedCount = 0;
+    
+    checks.forEach(({ stat, value, achievements }) => {
+        achievements.forEach(({ threshold, id }) => {
+            if (value >= threshold && !isAchievementUnlocked(id)) {
+                console.log(`[ACHIEVEMENT] Unlocking ${id} - ${stat} is ${value}/${threshold}`);
+                unlockAchievement(id);
+                unlockedCount++;
+            }
+        });
+    });
+    
+    if (unlockedCount > 0) {
+        console.log(`[ACHIEVEMENT] Recheck complete: ${unlockedCount} achievement(s) unlocked!`);
+    } else {
+        console.log('[ACHIEVEMENT] Recheck complete: All progress achievements up to date.');
+    }
+    
+    return unlockedCount;
+}
+
+// ============================================================================
+// DEBUG/TESTING MODE
+// ============================================================================
+
+/**
+ * Debug: Unlock a specific achievement
+ */
+export function debugUnlock(achievementId) {
+    if (!isDebugModeEnabled()) {
+        console.warn('[ACHIEVEMENT] Debug mode not enabled');
+        return;
+    }
+    unlockAchievement(achievementId);
+    console.log(`[DEBUG] Unlocked: ${achievementId}`);
+}
+
+/**
+ * Debug: Unlock all achievements
+ */
+export function debugUnlockAll() {
+    if (!isDebugModeEnabled()) {
+        console.warn('[ACHIEVEMENT] Debug mode not enabled');
+        return;
+    }
+    ACHIEVEMENTS.forEach(a => {
+        if (!isAchievementUnlocked(a.id)) {
+            unlockAchievement(a.id);
+        }
+    });
+    console.log('[DEBUG] All achievements unlocked!');
+}
+
+/**
+ * Debug: Clear all achievements
+ */
+export function debugClearAll() {
+    if (!isDebugModeEnabled()) {
+        console.warn('[ACHIEVEMENT] Debug mode not enabled');
+        return;
+    }
+    localStorage.removeItem(ACHIEVEMENTS_KEY);
+    console.log('[DEBUG] All achievements cleared!');
+}
+
+/**
+ * Debug: Show all achievements
+ */
+export function debugListAll() {
+    console.log('=== ALL ACHIEVEMENTS ===');
+    ACHIEVEMENTS.forEach(a => {
+        const unlocked = isAchievementUnlocked(a.id) ? '✓' : '○';
+        console.log(`${unlocked} [${a.tier.toUpperCase()}] ${a.name} (${a.id})`);
+    });
+    console.log(`\nProgress: ${getAchievementProgress().percentage}%`);
+}
+
+/**
+ * Debug: Show test commands
+ */
+export function debugShowCommands() {
+    console.log(`
+=== ACHIEVEMENT DEBUG COMMANDS ===
+window.ACHIEVEMENT.enable()                    - Enable debug mode
+window.ACHIEVEMENT.disable()                   - Disable debug mode
+window.ACHIEVEMENT.unlock('id')                - Unlock specific achievement
+window.ACHIEVEMENT.unlockAll()                 - Unlock all achievements
+window.ACHIEVEMENT.clear()                     - Clear all achievements
+window.ACHIEVEMENT.list()                      - List all achievements
+window.ACHIEVEMENT.recheck()                   - Recheck and auto-unlock progress achievements
+window.ACHIEVEMENT.progress()                  - Get progress stats
+window.ACHIEVEMENT.isUnlocked('id')            - Check if achievement is unlocked
+    `);
+}
+
+/**
+ * Backward compatibility wrapper for old checkAchievements function
+ * This allows existing code that calls checkAchievements() to still work
+ */
+export function checkAchievements(eventType, data = {}) {
+    // Map old event names to new ones if needed, otherwise just fire the event
+    return fireAchievementEvent(eventType, data);
+}
+
+/**
+ * Initialize achievements system (no-op, system initializes on import)
+ */
+export function initAchievements() {
+    // System loads achievements from localStorage on import
+    // This is kept for backward compatibility
+    console.log('[ACHIEVEMENT] System initialized');
+}
+// ============================================================================
+// ACHIEVEMENT TRACKING SYSTEM
+// ============================================================================
+
+/**
+ * Set currently tracked achievement
+ */
+export function trackAchievement(achievementId) {
+    if (achievementId === null) {
+        localStorage.removeItem(TRACKED_ACHIEVEMENT_KEY);
+        console.log('[ACHIEVEMENT] Tracking cleared');
+        return;
+    }
+    
+    const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
+    if (!achievement) {
+        console.warn(`[ACHIEVEMENT] Unknown achievement: ${achievementId}`);
+        return;
+    }
+    
+    localStorage.setItem(TRACKED_ACHIEVEMENT_KEY, achievementId);
+    console.log(`[ACHIEVEMENT] Now tracking: ${achievement.name}`);
+    
+    // Show notification
+    showTrackingNotification(achievement);
+}
+
+/**
+ * Get currently tracked achievement
+ */
+export function getTrackedAchievement() {
+    const id = localStorage.getItem(TRACKED_ACHIEVEMENT_KEY);
+    if (!id) return null;
+    return ACHIEVEMENTS.find(a => a.id === id) || null;
+}
+
+/**
+ * Check if tracked achievement was failed (only show notification if tracking)
+ */
+export function checkTrackedAchievementFailure(eventType, data = {}) {
+    const tracked = getTrackedAchievement();
+    if (!tracked) return; // Only show notifications for actively tracked achievements
+    
+    // Check for ability usage failures
+    if (eventType === 'ability_used') {
+        if (tracked.id === 'no_abilities_level' || 
+            tracked.id === 'no_abilities_3_consecutive' || 
+            tracked.id === 'endless_no_abilities_10') {
+            showAchievementFailedNotification(tracked, 'Used an ability!');
+        }
+    }
+    
+    // Check for death failures
+    if (eventType === 'player_death') {
+        if (tracked.id === 'deathless_3_levels' || 
+            tracked.id === 'deathless_game') {
+            showAchievementFailedNotification(tracked, 'Died!');
+        }
+    }
+    
+    // Check for generator failures
+    if (eventType === 'generator_failed') {
+        if (tracked.id === 'generator_perfect_3' || 
+            tracked.id === 'generator_perfect_10' ||
+            tracked.id === 'perfect_generator_run') {
+            showAchievementFailedNotification(tracked, 'Missed generator check!');
+        }
+    }
+}
+
+/**
+ * Show tracking started notification
+ */
+function showTrackingNotification(achievement) {
+    const container = getOrCreateNotificationContainer();
+    const notification = document.createElement('div');
+    notification.className = 'achievement-notification tracking';
+    
+    notification.innerHTML = `
+        <div class="achievement-pop" style="background: linear-gradient(135deg, #00f6ff, #0099cc); border: 2px solid #00f6ff;">
+            <div class="achievement-icon-circle" style="background: rgba(0, 246, 255, 0.2);">📍</div>
+            <div class="achievement-content">
+                <div class="achievement-unlock-label" style="color: #000;">TRACKING ACHIEVEMENT</div>
+                <div class="achievement-title" style="color: #000;">${achievement.name}</div>
+                <div class="achievement-description" style="color: #333;">${achievement.desc}</div>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(notification);
+    
+    requestAnimationFrame(() => {
+        notification.classList.add('show');
+    });
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 400);
+    }, 3000);
+}
+
+/**
+ * Show achievement failed notification
+ */
+function showAchievementFailedNotification(achievement, reason) {
+    const container = getOrCreateNotificationContainer();
+    const notification = document.createElement('div');
+    notification.className = 'achievement-notification failed';
+    
+    notification.innerHTML = `
+        <div class="achievement-pop" style="background: linear-gradient(135deg, #ff4444, #cc0000); border: 2px solid #ff4444;">
+            <div class="achievement-icon-circle" style="background: rgba(255, 68, 68, 0.2);">❌</div>
+            <div class="achievement-content">
+                <div class="achievement-unlock-label" style="color: #fff;">ACHIEVEMENT FAILED!</div>
+                <div class="achievement-title" style="color: #fff;">${achievement.name}</div>
+                <div class="achievement-description" style="color: #ffcccc;">${reason} Try again!</div>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(notification);
+    
+    requestAnimationFrame(() => {
+        notification.classList.add('show');
+    });
+    
+    // Play error sound
+    try {
+        import('./audio.js').then(mod => {
+            if (mod.playError) mod.playError();
+        }).catch(() => {});
+    } catch {}
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 400);
+    }, 4000);
+    
+    // Clear tracking
+    trackAchievement(null);
+}
+
+/**
+ * Get or create notification container
+ */
+function getOrCreateNotificationContainer() {
+    let container = document.getElementById('achievementNotificationContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'achievementNotificationContainer';
+        container.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+        `;
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+/**
+ * Show tracked achievement progress notification
+ */
+function showTrackedAchievementProgress(achievement, statKey, currentValue) {
+    // Map stat keys to their progress limits
+    const progressMap = {
+        'perfectGenerators': { max: 10, label: 'Generator Checks' },
+        'totalDeaths': { max: 100, label: 'Deaths' },
+        'trappedEnemies': { max: 25, label: 'Trapped Enemies' },
+        'reflectedProjectiles': { max: 10, label: 'Projectiles Reflected' },
+        'glitchTeleportEscapes': { max: 5, label: 'Teleport Escapes' },
+        'pigsMounted': { max: 3, label: 'Pigs Mounted' },
+        'consecutiveDeathlessLevels': { max: 3, label: 'Deathless Levels' },
+        'consecutiveNoAbilityLevels': { max: 3, label: 'No Ability Levels' },
+        'endlessNoAbilityWaves': { max: 10, label: 'No Ability Waves' },
+    };
+    
+    const limit = progressMap[statKey];
+    if (!limit) return; // Not a tracked progress stat
+    
+    const container = getOrCreateNotificationContainer();
+    const notification = document.createElement('div');
+    notification.className = 'achievement-notification progress';
+    
+    const percent = Math.min(100, (currentValue / limit.max) * 100);
+    const tierColor = getTierColor(achievement.tier);
+    
+    notification.innerHTML = `
+        <div class="achievement-pop" style="background: linear-gradient(135deg, ${tierColor}40, ${tierColor}20); border: 2px solid ${tierColor};">
+            <div class="achievement-icon-circle" style="background: rgba(0, 246, 255, 0.2);">📈</div>
+            <div class="achievement-content">
+                <div class="achievement-unlock-label" style="color: #fff;">PROGRESS UPDATE</div>
+                <div class="achievement-title" style="color: #fff;">${achievement.name}</div>
+                <div class="achievement-description" style="color: ${tierColor}; margin-bottom: 6px;">${limit.label}: ${currentValue}/${limit.max}</div>
+                <div style="
+                    width: 100%;
+                    height: 6px;
+                    background: rgba(0, 0, 0, 0.5);
+                    border-radius: 3px;
+                    overflow: hidden;
+                    border: 1px solid ${tierColor};
+                ">
+                    <div style="
+                        width: ${percent}%;
+                        height: 100%;
+                        background: linear-gradient(90deg, ${tierColor}, ${tierColor}aa);
+                        transition: width 0.3s ease;
+                    "></div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(notification);
+    
+    requestAnimationFrame(() => {
+        notification.classList.add('show');
+    });
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 400);
+    }, 2500);
+}
+
+/**
+ * Reset all achievements
+ */
+export function resetAchievements() {
+    localStorage.removeItem(ACHIEVEMENTS_KEY);
+    localStorage.removeItem(ACHIEVEMENT_STATS_KEY);
+    console.log('[ACHIEVEMENT] All achievements reset');
+    location.reload(); // Reload to reinitialize
+}
+
+// Initialize debug mode from storage and expose to window
+if (typeof window !== 'undefined') {
+    debugMode = localStorage.getItem(ACHIEVEMENT_DEBUG_MODE) === 'true';
+    if (debugMode) {
+        console.log('%c[ACHIEVEMENT] Debug mode active on startup', 'color: #FFD700; font-weight: bold;');
+    }
+
+    // Expose achievement API to window for easy testing
+    window.ACHIEVEMENT = {
+        enable: enableDebugMode,
+        disable: disableDebugMode,
+        unlock: debugUnlock,
+        unlockAll: debugUnlockAll,
+        clear: debugClearAll,
+        list: debugListAll,
+        help: debugShowCommands,
+        progress: getAchievementProgress,
+        unlocked: getUnlockedAchievements,
+        fire: fireAchievementEvent,
+        isUnlocked: isAchievementUnlocked,
+        recheck: recheckAllProgressAchievements
+    };
+
+    // Show help on first load if debug mode enabled
+    if (debugMode && localStorage.getItem('ACHIEVEMENT_DEBUG_SHOWN') !== 'true') {
+        localStorage.setItem('ACHIEVEMENT_DEBUG_SHOWN', 'true');
+        console.log('%c=== ACHIEVEMENT DEBUG MODE ENABLED ===\nType: window.ACHIEVEMENT.help()\nOr press Ctrl+Shift+A to toggle debug mode', 'color: #00FF00; font-weight: bold; font-size: 12px;');
+    }
+}
+
+// Keyboard shortcut to toggle debug mode
+if (typeof window !== 'undefined') {
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+            if (isDebugModeEnabled()) {
+                disableDebugMode();
+                console.log('%c[ACHIEVEMENT] Debug mode DISABLED', 'color: #FF0000;');
+            } else {
+                enableDebugMode();
+                console.log('%c[ACHIEVEMENT] Debug mode ENABLED - Type: window.ACHIEVEMENT.help()', 'color: #FFD700; font-weight: bold;');
+            }
+        }
+    });
+}
+

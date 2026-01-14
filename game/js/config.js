@@ -239,11 +239,17 @@ export function hasTerminalAccess(id) {
 }
 
 export function isGodMode() {
-    return false;
+    return localStorage.getItem(KEY_GODMODE) === '1';
 }
 
 export function setGodMode(enabled) {
-    try { localStorage.removeItem(KEY_GODMODE); } catch {}
+    try { 
+        if (enabled) {
+            localStorage.setItem(KEY_GODMODE, '1');
+        } else {
+            localStorage.removeItem(KEY_GODMODE);
+        }
+    } catch {}
 }
 
 export function isDevUnlocked() {
@@ -265,10 +271,16 @@ export function setSkipPreBossEnabled(enabled) {
 // Dev convenience: 10x boss damage
 const KEY_BOSS_DMG_10X = 'smg_boss_dmg_10x';
 export function isBossDamage10x() {
-    return false;
+    return localStorage.getItem(KEY_BOSS_DMG_10X) === '1';
 }
 export function setBossDamage10x(enabled) {
-    try { localStorage.removeItem(KEY_BOSS_DMG_10X); } catch {}
+    try { 
+        if (enabled) {
+            localStorage.setItem(KEY_BOSS_DMG_10X, '1');
+        } else {
+            localStorage.removeItem(KEY_BOSS_DMG_10X);
+        }
+    } catch {}
 }
 
 // --- Endless defaults persistence ---

@@ -452,6 +452,7 @@ function buildMazeRoom() {
  * Build finale cutscene room
  */
 function buildFinaleRoom() {
+    console.log('[Level 11] buildFinaleRoom() called');
     const grid = Array(MAZE_HEIGHT).fill(null).map(() => Array(MAZE_WIDTH).fill(CELL.EMPTY));
     
     // Add border walls
@@ -476,6 +477,7 @@ function buildFinaleRoom() {
     // Sync to gameState for projectile collision in state.js
     gameState.powerSystemPos = level11State.powerSystemPos;
     gameState.powerSystemDestroyed = false;
+    console.log('[Level 11] Power supply set to', gameState.powerSystemPos);
     
     gameState.maze = grid;
     
@@ -542,6 +544,13 @@ function showPowerPrompt() {
         level11State.powerDecisionMade = true;
         level11State.goodEndingNote = true;
         level11State.cutsceneStep = 3; // Good ending path
+        
+        // Show good ending credits (achievement fires when credits display)
+        import('./state.js').then(mod => {
+            if (mod.showGoodEndingCredits) {
+                mod.showGoodEndingCredits();
+            }
+        }).catch(() => {});
     });
 
     const noBtn = document.createElement('button');
@@ -562,6 +571,13 @@ function showPowerPrompt() {
         level11State.powerDecisionMade = true;
         level11State.goodEndingNote = false;
         level11State.cutsceneStep = 4; // Bad ending path
+        
+        // Show bad ending credits (achievement fires when credits display)
+        import('./state.js').then(mod => {
+            if (mod.showBadEndingCredits) {
+                mod.showBadEndingCredits();
+            }
+        }).catch(() => {});
     });
 
     btnContainer.appendChild(yesBtn);
@@ -575,6 +591,7 @@ function showPowerPrompt() {
  * Transition to a new room
  */
 export function transitionToRoom(targetRoom) {
+    console.log('[Level 11] transitionToRoom called:', targetRoom);
     if (level11State.doorTransitioning) return;
     
     level11State.doorTransitioning = true;
@@ -585,19 +602,24 @@ export function transitionToRoom(targetRoom) {
     
     // After fade completes, load new room
     setTimeout(() => {
+        console.log('[Level 11] Loading room:', targetRoom);
         level11State.currentRoom = targetRoom;
         
         switch (targetRoom) {
             case 'hub':
+                console.log('[Level 11] Calling buildHubRoom');
                 buildHubRoom();
                 break;
             case 'puzzle':
+                console.log('[Level 11] Calling buildPuzzleRoom');
                 buildPuzzleRoom();
                 break;
             case 'maze':
+                console.log('[Level 11] Calling buildMazeRoom');
                 buildMazeRoom();
                 break;
             case 'finale':
+                console.log('[Level 11] Calling buildFinaleRoom');
                 buildFinaleRoom();
                 break;
         }
@@ -1158,8 +1180,8 @@ function updateCutscene(currentTime) {
         };
         // Trigger good ending achievement
         import('./achievements.js').then(mod => {
-            if (mod.checkAchievements) {
-                mod.checkAchievements('ending_reached', { ending: 'good' });
+            if (mod.unlockAchievement) {
+                mod.unlockAchievement('ending_good');
             }
         }).catch(() => {});
         
@@ -1176,8 +1198,8 @@ function updateCutscene(currentTime) {
         };
         // Trigger bad ending achievement
         import('./achievements.js').then(mod => {
-            if (mod.checkAchievements) {
-                mod.checkAchievements('ending_reached', { ending: 'bad' });
+            if (mod.unlockAchievement) {
+                mod.unlockAchievement('ending_bad');
             }
         }).catch(() => {});
         
@@ -1201,6 +1223,46 @@ function updateCutscene(currentTime) {
     
     if (level11State.cutsceneStep === 7 && elapsed > 5000) {
         exitLevel11ToCredits();
+    }
+    
+    // Step 8: Why?? cutscene - virus monologue after destroying power supply with bazooka
+    if (level11State.cutsceneStep === 8) {
+        // Lock player input during dialogue
+        gameState.inputLocked = true;
+        
+        const monologue = [
+            { delay: 500, text: 'Why...?', duration: 1500 },
+            { delay: 2500, text: 'Why would you blow up the power supply, you idiot?!', duration: 2000 },
+            { delay: 5000, text: 'Now we BOTH lose.', duration: 1500 },
+            { delay: 7000, text: 'I can\'t even believe your stupidity.', duration: 2000 },
+        ];
+        
+        // Show each line of dialogue using noteOverlay system
+        let dialogueActive = false;
+        for (const line of monologue) {
+            if (elapsed >= line.delay && elapsed < line.delay + line.duration) {
+                level11State.noteOverlay = {
+                    text: line.text,
+                    visible: true,
+                    isVirusMessage: true
+                };
+                dialogueActive = true;
+                break;
+            }
+        }
+        
+        // Clear overlay between dialogue lines
+        if (!dialogueActive) {
+            level11State.noteOverlay = null;
+        }
+        
+        // After monologue ends, unlock player and end cutscene
+        if (elapsed > 9500) {
+            level11State.noteOverlay = null;
+            level11State.cutsceneActive = false;
+            gameState.inputLocked = false;
+            console.log('[Level 11] Virus monologue complete - player can now leave manually (Escape)');
+        }
     }
 }
 
@@ -1265,4 +1327,27 @@ function exitLevel11ToCredits() {
     import('./config.js').then(mod => {
         if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
     }).catch(() => {});
+}
+
+// Dev functions to give keys
+export function devGiveGreenKey() {
+    if (!level11State.active) {
+        console.warn('[Level 11 DEV] Cannot give green key - Level 11 not active');
+        return;
+    }
+    level11State.inventory.greenKey = true;
+    level11State.rooms.puzzle.greenKeyTaken = true;
+    setStatusMessage('DEV: Got green key!');
+    console.log('[Level 11 DEV] Green key given');
+}
+
+export function devGiveYellowKey() {
+    if (!level11State.active) {
+        console.warn('[Level 11 DEV] Cannot give yellow key - Level 11 not active');
+        return;
+    }
+    level11State.inventory.yellowKey = true;
+    level11State.rooms.maze.yellowKeyTaken = true;
+    setStatusMessage('DEV: Got yellow key!');
+    console.log('[Level 11 DEV] Yellow key given');
 }

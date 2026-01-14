@@ -222,7 +222,7 @@ export const SKINS = [
         particle: 'explosion',
         pulseEffect: true,
         ability: 'phoenix_shield',
-        abilityDesc: 'On reaching 1 HP: gain orange shield. First hit breaks shield, +1 life, 7s invincibility.'
+        abilityDesc: 'On reaching 1 HP: gain orange shield. First hit breaks shield, +1 life, 7s invincibility. Activate manually with Shield button (default: Space).'
     },
     { 
         id: 'time_lord', 
@@ -283,6 +283,11 @@ const SECRET_CODES = {
     'SYSTEM': 'corrupted',
     'ECHOMAZE': 'BAZOOKA_MODE',
     'UPUPDOWNDOWNLEFTRIGHTLEFTRIGHTABSTART': 'UNLOCK_ALL_LEVELS',
+    'BUILDERMAN': 'BUILDER_MODE',
+    
+    // Theme unlock codes
+    'ECHO-HERO': 'UNLOCK_HERO_THEME',
+    'ECHO-VIRUS': 'UNLOCK_VIRUS_THEME',
     
     // RGB ACHIEVEMENT CODES - EDIT TO ADD ACTUAL CODES
     // First 10 codes (100% completion winners) - LIMITED TO 10 TOTAL
@@ -409,6 +414,12 @@ export function equipSkin(skinId) {
     try {
         localStorage.setItem(EQUIPPED_SKIN_KEY, skinId);
         console.log('[skins] Equipped:', skinId);
+        
+        // Record skin selection in stats
+        if (window.PLAYER_STATS) {
+            window.PLAYER_STATS.recordSkinStat('lastUsed', Date.now());
+        }
+        
         return true;
     } catch (e) {
         console.warn('[skins] Failed to equip:', e);
@@ -433,6 +444,55 @@ export async function redeemCode(code) {
     
     if (!target) {
         return { success: false, message: 'Invalid code' };
+    }
+    
+    // Special handling for THEME UNLOCKS
+    if (target === 'UNLOCK_HERO_THEME' || target === 'UNLOCK_VIRUS_THEME') {
+        const themeName = target === 'UNLOCK_HERO_THEME' ? 'hero' : 'virus';
+        try {
+            // Unlock the theme in localStorage
+            const unlockedThemes = JSON.parse(localStorage.getItem('smg_unlocked_themes') || '[]');
+            if (!unlockedThemes.includes(themeName)) {
+                unlockedThemes.push(themeName);
+                localStorage.setItem('smg_unlocked_themes', JSON.stringify(unlockedThemes));
+            }
+            
+            // Auto-activate the theme
+            if (window.THEME && window.THEME.set) {
+                window.THEME.set(themeName);
+            }
+            
+            const msg = themeName === 'hero' 
+                ? '🏆 HERO THEME UNLOCKED! The world turns green with victory!'
+                : '🦠 VIRUS THEME UNLOCKED! The world turns red with corruption!';
+            
+            return { 
+                success: true, 
+                message: msg,
+                themeId: themeName,
+                isTheme: true
+            };
+        } catch (e) {
+            console.warn('[skins] Failed to unlock theme:', e);
+            return { success: false, message: 'Error unlocking theme' };
+        }
+    }
+    
+    // Special handling for BUILDER_MODE (builderman code)
+    if (target === 'BUILDER_MODE') {
+        try {
+            const configMod = await import('./config.js');
+            // Unlock level 10 (boss level)
+            configMod.setUnlockedLevel(10);
+            
+            return { 
+                success: true, 
+                message: '🔨 BUILDER MODE UNLOCKED! Level 10 is now accessible!'
+            };
+        } catch (e) {
+            console.warn('[skins] Failed to unlock builder mode:', e);
+            return { success: false, message: 'Error unlocking builder mode' };
+        }
     }
     
     // Special handling for UNLOCK_ALL_LEVELS (Konami code)
@@ -486,8 +546,8 @@ export async function redeemCode(code) {
         
         try {
             const achievementsMod = await import('./achievements.js');
-            if (achievementsMod.checkAchievements) {
-                achievementsMod.checkAchievements('secret_found', { secretId: 'bazooka_mode_unlock' });
+            if (achievementsMod.unlockAchievement) {
+                achievementsMod.unlockAchievement('bazooka_mode_unlock');
             }
         } catch (e) {
             console.warn('[skins] Failed to unlock bazooka secret achievement:', e);
@@ -565,8 +625,8 @@ export async function redeemCode(code) {
     
     try {
         const achievementsMod = await import('./achievements.js');
-        if (achievementsMod.checkAchievements) {
-            achievementsMod.checkAchievements('secret_found', { secretId: 'code_alpha' });
+        if (achievementsMod.unlockAchievement) {
+            achievementsMod.unlockAchievement('secret_code_alpha');
         }
     } catch (e) {
         console.warn('[skins] Failed to unlock code redemption achievement:', e);
@@ -635,5 +695,15 @@ export function initSkins() {
     // Pre-load skins data to initialize system
     getSkins();
     getEquippedSkin();
+    
+    // Expose skins API to window for stats tracking
+    window.SKINS_API = {
+        getEquippedSkin,
+        getCurrentSkin,
+        getSkinById,
+        isSkinUnlocked,
+        equipSkin
+    };
+    
     console.log('[skins] Skins system initialized');
 }

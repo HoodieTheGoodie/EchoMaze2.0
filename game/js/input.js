@@ -1,13 +1,53 @@
 // input.js - Keyboard input handling (+ Mobile integration)
 
 import { gameState, movePlayer, startBlock, stopBlock, setBlockAim, attemptGeneratorInteraction, attemptSkillCheck, closeGeneratorInterface, placeZapTrap, attemptTerminalInteraction, toggleLevel11Flashlight, activatePhoenixShieldAbility } from './state.js';
-import { initGame } from './main.js';
+import { initGame, showMenu } from './main.js';
 import { isBazookaMode } from './config.js';
+
+// Helper to get active challenge (avoid circular dependency)
+function getActiveChallenge() {
+    const ch = window.__CHALLENGE;
+    if (!ch || !ch.active || ch.failed) return null;
+    return ch;
+}
 
 // Key state: store lowercased keys for consistency (e.g., 'a', 'arrowleft')
 const keys = {};
 // Press-latch for single-step movement when auto-movement is OFF
 const keysPressed = {};
+
+// Helper to check if pressed key matches a keybind action
+function isKeyFor(e, action) {
+    if (!window.KEYBINDS) return false;
+    const boundKey = window.KEYBINDS.getKey(action);
+    if (!boundKey) return false;
+    return e.key === boundKey || e.code === boundKey || e.key.toLowerCase() === boundKey.toLowerCase();
+}
+
+// Helper to check if key is a movement key
+function isMovementKey(key) {
+    const KB = window.KEYBINDS;
+    if (KB) {
+        return KB.isMovementKey(key);
+    }
+    // Fallback
+    return ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(key.toLowerCase());
+}
+
+// Helper to get movement direction from key
+function getMovementDir(key) {
+    const KB = window.KEYBINDS;
+    if (KB) {
+        return KB.getMovementDirection(key);
+    }
+    // Fallback
+    const k = key.toLowerCase();
+    if (k === 'arrowup' || k === 'w') return 'up';
+    if (k === 'arrowdown' || k === 's') return 'down';
+    if (k === 'arrowleft' || k === 'a') return 'left';
+    if (k === 'arrowright' || k === 'd') return 'right';
+    return null;
+}
 
 // Movement throttling so a tap only moves one tile
 const MOVE_DELAY = 120; // ms
@@ -74,7 +114,7 @@ function handleMouseMove(e) {
         if (gameState.cumulativeRotation >= Math.PI * 2 * 5) { // 5 full rotations
             try {
                 import('./achievements.js').then(mod => {
-                    if (mod.checkAchievements) mod.checkAchievements('rotation', { rotations: 5 });
+                    // Spin cycle achievement removed
                 }).catch(() => {});
             } catch {}
             gameState.cumulativeRotation = 0;
@@ -133,8 +173,8 @@ function handleKeyDown(e) {
     }
     keys[key] = true;
 
-    // R key: reload at ammo box during gameplay, restart otherwise
-    if (e.code === 'KeyR' || key === 'r') {
+    // Reload key: reload at ammo box during gameplay, restart otherwise
+    if (isKeyFor(e, 'reload') || (e.code === 'KeyR' || key === 'r')) {
         if (gameState.gameStatus === 'playing' && !gameState.isPaused) {
             // Mark a reload attempt for state logic to process (prep or arena)
             gameState.reloadPressedAt = performance.now();
@@ -144,8 +184,8 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Escape: cancel generator UI if open; otherwise toggle Pause
-    if (e.key === 'Escape') {
+    // Pause key: cancel generator UI if open; otherwise toggle Pause
+    if (isKeyFor(e, 'pause') || e.key === 'Escape') {
         if (gameState.isGeneratorUIOpen) {
             closeGeneratorInterface();
             const overlay = document.getElementById('overlay');
@@ -157,7 +197,110 @@ function handleKeyDown(e) {
                 if (po) po.style.display = 'none';
             } else if (gameState.gameStatus === 'playing') {
                 gameState.isPaused = true;
-                if (po) po.style.display = 'flex';
+                if (po) {
+                    // Need to manually set up buttons since we're not going through pauseBtn click handler
+                    const challenge = getActiveChallenge();
+                    const panel = po.querySelector('.overlay-panel');
+                    if (panel) {
+                        const btnContainer = panel.querySelector('div[style*="display:flex"]') || 
+                                            panel.querySelector('div[style*="display: flex"]');
+                        
+                        if (btnContainer) {
+                            if (challenge) {
+                                // Show challenge-specific buttons
+                                btnContainer.innerHTML = `
+                                    <button id="challengeResumeBtn" type="button">Resume</button>
+                                    <button id="challengeRestartBtn" type="button">Restart Challenge</button>
+                                    <button id="challengeAbortBtn" type="button">Abort Challenge</button>
+                                `;
+                                
+                                setTimeout(() => {
+                                    const resumeBtn = document.getElementById('challengeResumeBtn');
+                                    const restartBtn = document.getElementById('challengeRestartBtn');
+                                    const abortBtn = document.getElementById('challengeAbortBtn');
+                                    
+                                    if (resumeBtn) {
+                                        resumeBtn.addEventListener('click', () => {
+                                            gameState.isPaused = false;
+                                            po.style.display = 'none';
+                                            // triggerEnemiesThaw is available on window
+                                            if (window.triggerEnemiesThaw) window.triggerEnemiesThaw(performance.now());
+                                        });
+                                    }
+                                    
+                                    if (restartBtn) {
+                                        restartBtn.addEventListener('click', () => {
+                                            if (window.__CHALLENGE) {
+                                                window.__CHALLENGE.levelsCompleted = 0;
+                                                window.__CHALLENGE.startedAt = performance.now();
+                                                window.__CHALLENGE.failed = false;
+                                            }
+                                            po.style.display = 'none';
+                                            gameState.isPaused = false;
+                                            if (window.__START_LEVEL) {
+                                                window.__START_LEVEL(1);
+                                            }
+                                        });
+                                    }
+                                    
+                                    if (abortBtn) {
+                                        abortBtn.addEventListener('click', () => {
+                                            if (window.__CHALLENGE) {
+                                                window.__CHALLENGE.active = false;
+                                                window.__CHALLENGE.failed = true;
+                                            }
+                                            po.style.display = 'none';
+                                            gameState.isPaused = false;
+                                            gameState.customLevelActive = false;
+                                            showMenu();
+                                        });
+                                    }
+                                }, 0);
+                            } else {
+                                // Show normal buttons
+                                btnContainer.innerHTML = `
+                                    <button id="unpauseBtn" type="button">Unpause</button>
+                                    <button id="retryBtn" type="button">Retry</button>
+                                    <button id="returnMenuBtn" type="button">Main Menu</button>
+                                `;
+                                
+                                setTimeout(() => {
+                                    const unpauseBtn = document.getElementById('unpauseBtn');
+                                    const retryBtn = document.getElementById('retryBtn');
+                                    const returnMenuBtn = document.getElementById('returnMenuBtn');
+                                    
+                                    if (unpauseBtn) {
+                                        unpauseBtn.addEventListener('click', () => {
+                                            gameState.isPaused = false;
+                                            po.style.display = 'none';
+                                            if (window.triggerEnemiesThaw) window.triggerEnemiesThaw(performance.now());
+                                        });
+                                    }
+                                    
+                                    if (retryBtn) {
+                                        retryBtn.addEventListener('click', () => {
+                                            po.style.display = 'none';
+                                            gameState.isPaused = false;
+                                            initGame();
+                                            if (window.triggerEnemiesThaw) window.triggerEnemiesThaw(performance.now());
+                                        });
+                                    }
+                                    
+                                    if (returnMenuBtn) {
+                                        returnMenuBtn.addEventListener('click', () => {
+                                            po.style.display = 'none';
+                                            gameState.isPaused = false;
+                                            gameState.customLevelActive = false;
+                                            showMenu();
+                                        });
+                                    }
+                                }, 0);
+                            }
+                        }
+                    }
+                    
+                    po.style.display = 'flex';
+                }
             }
         }
         return;
@@ -196,8 +339,8 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Space: skill check while repairing OR start blocking otherwise
-    if (e.code === 'Space' || key === ' ') {
+    // Shield key: skill check while repairing OR start blocking otherwise
+    if (isKeyFor(e, 'shield') || e.code === 'Space' || key === ' ') {
         if (gameState.isGeneratorUIOpen && gameState.skillCheckState) {
             e.preventDefault();
             e.stopPropagation();
@@ -214,8 +357,8 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Sprint (Shift)
-    if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    // Dash key (Sprint)
+    if (isKeyFor(e, 'dash') || e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         if (!gameState.isGeneratorUIOpen && gameState.stamina >= 100 && !gameState.isStaminaCoolingDown) {
             if (gameState.isPaused) return;
             gameState.isSprinting = true;
@@ -249,6 +392,22 @@ function handleKeyDown(e) {
         return;
     }
 
+    // Quick Restart keybind (if bound)
+    if (isKeyFor(e, 'quickRestart')) {
+        if (gameState.gameStatus === 'playing') {
+            initGame();
+        }
+        return;
+    }
+
+    // Reload Level keybind (if bound)
+    if (isKeyFor(e, 'reloadLevel')) {
+        if (gameState.gameStatus === 'playing') {
+            initGame();
+        }
+        return;
+    }
+
     // D key: Dance in hub (victory dance achievement) - check if in hub and not blocking
     if ((e.code === 'KeyD' || key === 'd') && !gameState.blockActive && (gameState.currentLevel === 0 || gameState.isHub)) {
         // Track consecutive D presses for dance achievement
@@ -261,7 +420,7 @@ function handleKeyDown(e) {
                 // Victory dance achievement
                 try {
                     import('./achievements.js').then(mod => {
-                        if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'hub_dance' });
+                        // Hub dance removed - achievement was cut
                     }).catch(() => {});
                 } catch {}
                 gameState.dKeyStreak = 0;
@@ -273,13 +432,15 @@ function handleKeyDown(e) {
         return;
     }
 
-    // Aim shield while blocking (WASD/Arrows)
+    // Aim shield while blocking (movement keys)
     if (gameState.blockActive) {
         let adx = 0, ady = 0;
-        if (key === 'arrowleft' || key === 'a') adx = -1;
-        else if (key === 'arrowright' || key === 'd') adx = 1;
-        else if (key === 'arrowup' || key === 'w') ady = -1;
-        else if (key === 'arrowdown' || key === 's') ady = 1;
+        const dir = getMovementDir(key);
+        if (dir === 'left') adx = -1;
+        else if (dir === 'right') adx = 1;
+        else if (dir === 'up') ady = -1;
+        else if (dir === 'down') ady = 1;
+        
         if (adx !== 0 || ady !== 0) {
             setBlockAim(adx, ady);
         }
@@ -291,9 +452,11 @@ function handleKeyDown(e) {
         const auto = !gameState.settings || gameState.settings.autoMovement !== false;
         if (!auto) {
             let mdx = 0, mdy = 0;
-            if (key === 'arrowleft' || key === 'a') mdx = -1;
-            else if (key === 'arrowright' || key === 'd') mdx = 1;
-            else if (key === 'arrowup' || key === 'w') mdy = -1;
+            const dir = getMovementDir(key);
+            if (dir === 'left') mdx = -1;
+            else if (dir === 'right') mdx = 1;
+            else if (dir === 'up') mdy = -1;
+            else if (dir === 'down') mdy = 1;
             else if (key === 'arrowdown' || key === 's') mdy = 1;
             if (mdx !== 0 || mdy !== 0) {
                 // Track WASD movement in Level 7 (breaks jump-only achievement)
@@ -403,17 +566,21 @@ export function processMovement(currentTime) {
 
     let dx = 0, dy = 0;
 
-    // Arrow keys
-    if (keys['arrowleft']) dx = -1;
-    else if (keys['arrowright']) dx = 1;
-    if (keys['arrowup']) dy = -1;
-    else if (keys['arrowdown']) dy = 1;
-
-    // WASD
-    if (keys['a']) dx = -1;
-    else if (keys['d']) dx = 1;
-    if (keys['w']) dy = -1;
-    else if (keys['s']) dy = 1;
+    // Check keybinds for movement
+    const KB = window.KEYBINDS;
+    if (KB) {
+        // Check all bound movement keys
+        if (keys[KB.getKey('moveLeft')?.toLowerCase()] || keys[KB.getKey('moveLeftAlt')?.toLowerCase()]) dx = -1;
+        else if (keys[KB.getKey('moveRight')?.toLowerCase()] || keys[KB.getKey('moveRightAlt')?.toLowerCase()]) dx = 1;
+        if (keys[KB.getKey('moveUp')?.toLowerCase()] || keys[KB.getKey('moveUpAlt')?.toLowerCase()]) dy = -1;
+        else if (keys[KB.getKey('moveDown')?.toLowerCase()] || keys[KB.getKey('moveDownAlt')?.toLowerCase()]) dy = 1;
+    } else {
+        // Fallback to hardcoded if keybinds not loaded
+        if (keys['arrowleft'] || keys['a']) dx = -1;
+        else if (keys['arrowright'] || keys['d']) dx = 1;
+        if (keys['arrowup'] || keys['w']) dy = -1;
+        else if (keys['arrowdown'] || keys['s']) dy = 1;
+    }
 
     // Prevent diagonal movement (prefer horizontal when both pressed)
     if (dx !== 0 && dy !== 0) {

@@ -245,6 +245,7 @@ export const gameState = {
     mazeDirty: false,
     terminalRoomOrigin: null,
     enemyBarriers: [],
+    abilitiesUsed: false,
     settings: {
         nightVisionMode: false  // Dev-only setting: see in darkness with full visibility
     }
@@ -254,19 +255,6 @@ export const gameState = {
 gameState.screenFade = null; // { from, to, startAt, duration }
 gameState.inputLocked = false; // used for brief cutscenes
 gameState.prepPickupLocked = false; // prevent bazooka pickup before lore completes
-
-/**
- * Fire achievement event to trigger any matching achievements
- */
-function fireAchievementEvent(eventType, data = {}) {
-    try {
-        if (typeof checkAchievements === 'function') {
-            checkAchievements(eventType, { ...data, gameState });
-        }
-    } catch (e) {
-        console.error('[state] Achievement event error:', e);
-    }
-}
 
 /**
  * Disable or destroy all active enemies from the current level.
@@ -399,9 +387,6 @@ function triggerPowerDisableSequence() {
     ];
     gameState.level11.endingDialogIndex = 0;
     gameState.level11.endingDialogNextAt = performance.now() + 2500;
-    
-    // Fire achievement event for discovering power supply
-    fireAchievementEvent('power_supply_discovered', { choice: 'disable' });
 }
 
 function triggerBadEndingSequence() {
@@ -416,9 +401,6 @@ function triggerBadEndingSequence() {
     ];
     gameState.level11.endingDialogIndex = 0;
     gameState.level11.endingDialogNextAt = performance.now() + 2500;
-    
-    // Fire achievement event for discovering power supply
-    fireAchievementEvent('power_supply_discovered', { choice: 'keep' });
 }
 
 function showGoodEndingNote() {
@@ -488,75 +470,206 @@ function showGoodEndingNote() {
     document.body.appendChild(overlay);
 }
 
-function showBadEndingCredits() {
+export function showBadEndingCredits() {
     if (!gameState.level11 || gameState.level11.creditsShown) return;
     gameState.level11.creditsShown = true;
     gameState.isPaused = true;
     gameState.inputLocked = true;
+    
+    // Fade to black first
     fadeToBlack(1.2);
+    
     setTimeout(() => {
         const overlay = document.getElementById('creditsOverlay');
-        if (overlay) {
-            const content = overlay.querySelector('.credits-content');
-            if (content) {
-                content.innerHTML = `
-                    <h1 style="color: #ff4455; margin-bottom: 20px;">VERY BAD ENDING</h1>
-                    <p style="line-height: 1.6; margin-bottom: 20px;">
-                        Thank you for playing our game! This was created out of boredom and because my school blocked most games, 
-                        so I thought I would just work on developing my own in my free time.
-                    </p>
-                    <p style="line-height: 1.6; margin-bottom: 20px; color: #ff4455;">
-                        It seems you got the <strong>very bad ending</strong> as you didn't disable the power and let the virus 
-                        transfer itself to other sites to ruin them. How can you fix your mistakes now?
-                    </p>
-                    <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.7;">Secret Code: ECHO-NIGHTMARE</p>
-                `;
-            }
-            overlay.style.display = 'block';
-            overlay.style.opacity = '0';
-            overlay.style.transition = 'opacity 2s ease';
-            setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        if (!overlay) {
+            console.warn('[CREDITS] Credits overlay not found!');
+            return;
         }
+        
+        const content = overlay.querySelector('.credits-content');
+        if (content) {
+            content.innerHTML = `
+                <div style="text-align: center; animation: fadeInUp 1s ease;">
+                    <h1 style="color: #ff4455; margin-bottom: 20px; font-size: 2.5em; text-shadow: 0 0 20px rgba(255,68,85,0.5); letter-spacing: 2px;">⚠️ VIRUS SPREADS ⚠️</h1>
+                    <div style="border: 2px solid #ff4455; border-radius: 10px; padding: 20px; margin-bottom: 20px; background: rgba(255,68,85,0.1);">
+                        <p style="line-height: 1.8; margin: 0 0 15px 0; font-size: 1.1em;">
+                            You failed to disable the power supply...
+                        </p>
+                        <p style="line-height: 1.8; margin: 0 0 15px 0; color: #ff4455; font-weight: bold; font-size: 1.2em;">
+                            The virus has spread to other systems!
+                        </p>
+                        <p style="line-height: 1.6; margin: 0; opacity: 0.9; font-size: 0.95em;">
+                            Your inaction allowed the infection to reach beyond the Core. The damage is done.
+                        </p>
+                    </div>
+                    <p style="line-height: 1.8; margin-bottom: 20px; font-size: 1em;">
+                        Thank you for playing EchoMaze! This game was created out of passion and the desire to learn game development.
+                    </p>
+                    <div style="background: rgba(0,0,0,0.5); border-left: 4px solid #ff4455; padding: 12px; margin-top: 30px; border-radius: 6px;">
+                        <p style="margin: 0; font-size: 0.9em; opacity: 0.8;">Secret Code: <strong>ECHO-VIRUS</strong></p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        overlay.style.display = 'flex';
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 2s ease';
+        setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        
+        // Mark as Level 11 ending credits
+        overlay.setAttribute('data-level11-ending', 'bad');
+        
+        // Update button text
+        const closeBtn = overlay.querySelector('#creditsCloseBtn');
+        if (closeBtn) {
+            closeBtn.textContent = 'Main Menu';
+        }
+        
+        // Unlock bad ending achievement when credits show
+        setTimeout(() => {
+            import('./achievements.js').then(mod => {
+                if (mod.unlockAchievement) {
+                    mod.unlockAchievement('ending_bad');
+                }
+            }).catch(() => {});
+            
+            // Unlock and activate VIRUS theme
+            import('./theme-manager.js').then(mod => {
+                if (mod.unlockTheme) {
+                    mod.unlockTheme('virus');
+                }
+                if (mod.setTheme) {
+                    mod.setTheme('virus');
+                    console.log('🦠 VIRUS THEME UNLOCKED & ACTIVATED - Red corruption spreads!');
+                }
+            }).catch(() => {});
+        }, 500);
     }, 900);
 }
 
-function showGoodEndingCredits() {
+export function showGoodEndingCredits() {
     if (!gameState.level11 || gameState.level11.creditsShown) return;
     gameState.level11.creditsShown = true;
     gameState.isPaused = true;
     gameState.inputLocked = true;
+    
+    // Fade to black first
     fadeToBlack(1.2);
+    
     setTimeout(() => {
         const overlay = document.getElementById('creditsOverlay');
-        if (overlay) {
-            const content = overlay.querySelector('.credits-content');
-            if (content) {
-                content.innerHTML = `
-                    <h1 style="color: #00ff88; margin-bottom: 20px;">BEST SECRET ENDING</h1>
-                    <p style="line-height: 1.6; margin-bottom: 20px;">
-                        Thank you for playing our game! This was created out of boredom and because my school blocked most games, 
-                        so I thought I would just work on developing my own in my free time.
-                    </p>
-                    <p style="line-height: 1.6; margin-bottom: 20px; color: #00ff88;">
-                        <strong>Congrats!</strong> You got the <strong>Best Secret Ending!</strong> You disabled the virus from 
-                        transferring itself to other websites, but the job still isn't finished.
-                    </p>
-                    <p style="line-height: 1.6; margin-bottom: 20px;">
-                        Now is your chance to go defeat the virus once and for all in <strong>EchoMaze 2</strong>, 
-                        set to release hopefully sometime in 2026 on Steam and app stores!
-                    </p>
-                    <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.7;">Secret Code: ECHO-REDEEMED</p>
-                `;
-            }
-            overlay.style.display = 'block';
-            overlay.style.opacity = '0';
-            overlay.style.transition = 'opacity 2s ease';
-            setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        if (!overlay) {
+            console.warn('[CREDITS] Credits overlay not found!');
+            return;
         }
-        import('./config.js').then(mod => {
-            if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
-        }).catch(() => {});
+        
+        const content = overlay.querySelector('.credits-content');
+        if (content) {
+            content.innerHTML = `
+                <div style="text-align: center; animation: fadeInUp 1s ease;">
+                    <h1 style="color: #00ff88; margin-bottom: 20px; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); letter-spacing: 2px;">🏆 VICTORY! 🏆</h1>
+                    <div style="border: 2px solid #00ff88; border-radius: 10px; padding: 20px; margin-bottom: 20px; background: rgba(0,255,136,0.1);">
+                        <p style="line-height: 1.8; margin: 0 0 15px 0; font-size: 1.2em; color: #00ff88; font-weight: bold;">
+                            You disabled the power supply!
+                        </p>
+                        <p style="line-height: 1.8; margin: 0 0 15px 0; font-size: 1.05em;">
+                            The virus has been isolated and contained. The Core is now dormant.
+                        </p>
+                        <p style="line-height: 1.6; margin: 0; opacity: 0.9; font-size: 0.95em;">
+                            Your decision has saved countless systems from infection. You are a hero.
+                        </p>
+                    </div>
+                    <p style="line-height: 1.8; margin-bottom: 15px; font-size: 1em;">
+                        Thank you for playing EchoMaze! This game was created with passion and dedication.
+                    </p>
+                    <p style="line-height: 1.6; margin-bottom: 20px; color: #00ff88; font-size: 0.95em;">
+                        Look forward to <strong>EchoMaze 2</strong>, coming to Steam and app stores in 2026!
+                    </p>
+                    <div style="background: rgba(0,0,0,0.5); border-left: 4px solid #00ff88; padding: 12px; margin-top: 30px; border-radius: 6px;">
+                        <p style="margin: 0; font-size: 0.9em; opacity: 0.8;">Secret Code: <strong>ECHO-HERO</strong></p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        overlay.style.display = 'flex';
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 2s ease';
+        setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+        
+        // Mark as Level 11 ending credits
+        overlay.setAttribute('data-level11-ending', 'good');
+        
+        // Update button text
+        const closeBtn = overlay.querySelector('#creditsCloseBtn');
+        if (closeBtn) {
+            closeBtn.textContent = 'Main Menu';
+        }
+        
+        // Unlock good ending achievement when credits show
+        setTimeout(() => {
+            import('./achievements.js').then(mod => {
+                if (mod.unlockAchievement) {
+                    mod.unlockAchievement('ending_good');
+                }
+            }).catch(() => {});
+            
+            // Unlock and activate HERO theme
+            import('./theme-manager.js').then(mod => {
+                if (mod.unlockTheme) {
+                    mod.unlockTheme('hero');
+                }
+                if (mod.setTheme) {
+                    mod.setTheme('hero');
+                    console.log('🏆 HERO THEME UNLOCKED & ACTIVATED - Green victory shines!');
+                }
+            }).catch(() => {});
+        }, 500);
+        
+        // Unlock guardian skin
+        setTimeout(() => {
+            import('./config.js').then(mod => {
+                if (mod.setSecretUnlocked) mod.setSecretUnlocked(true);
+            }).catch(() => {});
+        }, 500);
     }, 900);
+}
+
+/**
+ * Go back to main menu from credits/ending
+ */
+export function goToMainMenu() {
+    // Hide credits overlay
+    const overlay = document.getElementById('creditsOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+    
+    // Reset game state
+    gameState.inputLocked = false;
+    gameState.isPaused = false;
+    gameState.currentMode = 'menu';
+    
+    // Reset Level 11 state
+    if (gameState.level11) {
+        gameState.level11.creditsShown = false;
+    }
+    
+    // Hide game canvas and show menu
+    const canvas = document.getElementById('gameCanvas');
+    if (canvas) canvas.style.display = 'none';
+    
+    // Show main menu
+    const menuHub = document.getElementById('menuHub');
+    if (menuHub) menuHub.style.display = 'flex';
+    
+    // Remove any overlays
+    const powerPrompt = document.getElementById('power-prompt-overlay');
+    if (powerPrompt) powerPrompt.remove();
+    
+    const noteOverlay = document.getElementById('good-ending-note-overlay');
+    if (noteOverlay) noteOverlay.remove();
 }
 
 function setDialogBarLine(text, color = '#ff4455', border = color) {
@@ -587,6 +700,13 @@ export function updateLevel11EndingDialog(currentTime) {
             gameState.level11.endingDialogActive = false;
             gameState.inputLocked = false;
             setDialogBarLine('');
+            
+            // Check if this was virus dialog (bazooka destroy)
+            if (gameState.level11.isVirusDialog) {
+                gameState.level11.isVirusDialog = false;
+                console.log('[Level 11] Virus dialogue complete - player can now leave manually (Escape)');
+                return; // Don't transition anywhere, just unlock player
+            }
 
             if (gameState.level11.powerSupplyDisabled) {
                 // Good ending: load hub with note spawned as pickup (player must walk to it)
@@ -602,7 +722,8 @@ export function updateLevel11EndingDialog(currentTime) {
 
     if (gameState.level11.endingDialogLines && gameState.level11.endingDialogLines.length) {
         const idx = Math.min(gameState.level11.endingDialogIndex, gameState.level11.endingDialogLines.length - 1);
-        const color = gameState.level11.powerSupplyDisabled ? '#00ff88' : '#ff4455';
+        // Use red color for virus dialog, otherwise green/red based on power state
+        const color = gameState.level11.isVirusDialog ? '#ff0000' : (gameState.level11.powerSupplyDisabled ? '#00ff88' : '#ff4455');
         setDialogBarLine(gameState.level11.endingDialogLines[idx], color, color);
     }
 }
@@ -738,6 +859,13 @@ function loadLevel11Room(name, spawnLabel = 'default', fade = true) {
     gameState.player.x = spawn.x;
     gameState.player.y = spawn.y;
 
+    // CRITICAL: Set power supply position for projectile collision when entering finale room
+    if (name === 'finale' && room.powerSupply) {
+        gameState.powerSystemPos = room.powerSupply;
+        gameState.powerSystemDestroyed = false;
+        console.log('[Level 11] Finale room loaded - power supply at', gameState.powerSystemPos);
+    }
+
     // Handle room-specific setup
     if (name === 'dark') {
         const bats = (room.darkRoom?.bats || []).map((b, idx) => ({
@@ -863,15 +991,6 @@ export const COLLISION_SHIELD_BREAK_FLASH = 220; // ms
 export const SKILL_WINDOW_MIN_START = 90; // degrees
 
 export function initGame() {
-    // Fire run_start event to reset achievement per-run counters
-    try {
-        if (typeof checkAchievements === 'function') {
-            checkAchievements('run_start');
-        }
-    } catch (e) {
-        console.error('[state] Achievement run_start event error:', e);
-    }
-    
     // Level/meta
     gameState.godMode = isGodMode();
     // Clear any boss/bazooka-specific carryover when starting a fresh level
@@ -969,18 +1088,6 @@ export function initGame() {
     }
     gameState.lives = 3;
     gameState.equippedSkin = getEquippedSkin();
-    
-    // Apply endless progression upgrades BEFORE skin abilities
-    if (gameState.mode === 'endless-progression') {
-        try {
-            if (typeof window !== 'undefined' && window.applyPermanentUpgrades) {
-                window.applyPermanentUpgrades();
-            }
-        } catch (e) {
-            console.error('Failed to apply endless upgrades:', e);
-        }
-    }
-    
     gameState.hundred_percentDoubleMove = false; // 100%MAN: default 1-tile; toggle to 2-tiles with T
     gameState.phoenixUsedThisLevel = false; // (legacy flag, unused for new shield ability)
     gameState.phoenixShieldActive = false;
@@ -1011,16 +1118,6 @@ export function initGame() {
     gameState.skillCheckState = null;
     gameState.skillCheckFlash = null;
     gameState.isPaused = false;
-    
-    // Achievement tracking for level challenges
-    gameState.sprintUsedThisLevel = false;
-    gameState.backwardsMovementPercent = 0;
-    gameState.totalMovementsThisLevel = 0;
-    gameState.backwardsMovementsThisLevel = 0;
-    gameState.lastMovementDirection = null;
-    gameState.wallTouchStartTime = null;
-    gameState.wallSideTouched = null;
-    
     // Projectiles reset
     gameState.projectiles = [];
     // Collision Shield state
@@ -1037,8 +1134,6 @@ export function initGame() {
     // Reset speedrun timer per fresh level
     gameState.runActive = false;
     gameState.runStartAt = 0;
-    // Track ability usage for no-ability achievements
-    gameState.abilitiesUsed = false;
     gameState.runTimeMs = 0;
     // Enemies
     gameState.enemies = [];
@@ -1372,6 +1467,14 @@ export function movePlayer(dx, dy, currentTime) {
             break;
         }
         
+        // Level 11: Power supply acts as a wall collision
+        if (gameState.isLevel11 && gameState.powerSystemPos && !gameState.powerSystemDestroyed) {
+            if (nextX === gameState.powerSystemPos.x && nextY === gameState.powerSystemPos.y) {
+                collision = true;
+                break;
+            }
+        }
+        
         // While mounted, ignore walls entirely
         // Wall Phase ability allows walking through walls
         if (cellType === CELL.WALL && !sprintActive && !mountedActive && !canPhaseWalls()) {
@@ -1443,8 +1546,12 @@ export function movePlayer(dx, dy, currentTime) {
                     setTimeout(() => {
                         try { finishRun(performance.now()); } catch {}
                         gameState.gameStatus = 'won';
-                        // Fire achievement event for boss victory
-                        fireAchievementEvent('ending_reached', { ending: 'boss_defeated' });
+                        // Fire achievement event for normal ending
+                        import('./achievements.js').then(mod => {
+                            if (mod.unlockAchievement) {
+                                mod.unlockAchievement('ending_normal');
+                            }
+                        }).catch(() => {});
                     }, 2000);
                     return true;
                 }
@@ -1463,17 +1570,17 @@ export function movePlayer(dx, dy, currentTime) {
                 // Fire level_complete achievement event with full data
                 const timeMs = currentTime - (gameState.runStartAt || currentTime);
                 const deathless = gameState.lives >= 3;
-                const noAbilities = gameState.abilitiesUsed === false; // Track if abilities were disabled
-                const sprintUsed = gameState.sprintUsedThisLevel || false;
-                const backwardsPercent = gameState.backwardsMovementPercent || 0;
-                fireAchievementEvent('level_complete', { 
-                    level: gameState.currentLevel,
-                    timeMs: Math.max(0, timeMs),
-                    deathless,
-                    noAbilities,
-                    sprintUsed,
-                    backwardsPercent
-                });
+                const noAbilities = gameState.abilitiesUsed === false;
+                import('./achievements.js').then(mod => {
+                    if (mod.fireAchievementEvent) {
+                        mod.fireAchievementEvent('level_complete', { 
+                            level: gameState.currentLevel,
+                            timeMs: Math.max(0, timeMs),
+                            deathless,
+                            noAbilities
+                        });
+                    }
+                }).catch(() => {});
             }, 1000);
             return true;
         }
@@ -1578,91 +1685,6 @@ export function movePlayer(dx, dy, currentTime) {
     }
     gameState.player.x = targetX;
     gameState.player.y = targetY;
-    
-    // Check if player is touching a wall (for wall_hugger achievement)
-    const isAgainstWall = (
-        gameState.maze[gameState.player.y]?.[gameState.player.x - 1] === CELL.WALL ||
-        gameState.maze[gameState.player.y]?.[gameState.player.x + 1] === CELL.WALL ||
-        gameState.maze[gameState.player.y - 1]?.[gameState.player.x] === CELL.WALL ||
-        gameState.maze[gameState.player.y + 1]?.[gameState.player.x] === CELL.WALL
-    );
-    
-    if (isAgainstWall) {
-        if (!gameState.lastWallTouchTime) gameState.lastWallTouchTime = currentTime;
-        if (currentTime - gameState.lastWallTouchTime > 30000) { // 30 seconds
-            try {
-                import('./achievements.js').then(mod => {
-                    if (mod.checkAchievements) mod.checkAchievements('wall_touch', { wallSide: 'any', touchTime: currentTime - gameState.lastWallTouchTime });
-                }).catch(() => {});
-            } catch {}
-        }
-    } else {
-        gameState.lastWallTouchTime = null;
-    }
-    
-    // Track proximity to fallen/stunned pigs for pet_pig achievement
-    const nearbyPig = gameState.enemies && gameState.enemies.find(e => 
-        e.type === 'flying_pig' && e.state === 'stunned' &&
-        Math.abs(gameState.player.x - e.x) <= 1 && Math.abs(gameState.player.y - e.y) <= 1
-    );
-    
-    if (nearbyPig) {
-        if (!gameState.lastPigProximityTime) {
-            gameState.lastPigProximityTime = currentTime;
-            gameState.nearbyPigId = nearbyPig.id;
-        } else if (gameState.nearbyPigId === nearbyPig.id && (currentTime - gameState.lastPigProximityTime) > 5000) {
-            // Stood near stunned pig for 5 seconds
-            try {
-                import('./achievements.js').then(mod => {
-                    if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'pet_pig' });
-                }).catch(() => {});
-            } catch {}
-            gameState.lastPigProximityTime = null;
-            gameState.nearbyPigId = null;
-        }
-    } else {
-        gameState.lastPigProximityTime = null;
-        gameState.nearbyPigId = null;
-    }
-    
-    // Track corner visits for corner_dweller achievement (Level 1 only)
-    if (gameState.currentLevel === 1) {
-        if (!gameState.cornerVisitStartTime) {
-            gameState.cornerVisitStartTime = currentTime;
-        }
-        
-        const cornerThreshold = 2; // How close to corner (tiles)
-        const corners = [
-            { name: 'tl', x: cornerThreshold, y: cornerThreshold },
-            { name: 'tr', x: MAZE_WIDTH - 1 - cornerThreshold, y: cornerThreshold },
-            { name: 'bl', x: cornerThreshold, y: MAZE_HEIGHT - 1 - cornerThreshold },
-            { name: 'br', x: MAZE_WIDTH - 1 - cornerThreshold, y: MAZE_HEIGHT - 1 - cornerThreshold }
-        ];
-        
-        gameState.visitedCorners = gameState.visitedCorners || new Set();
-        corners.forEach(corner => {
-            if (Math.abs(gameState.player.x - corner.x) <= cornerThreshold && 
-                Math.abs(gameState.player.y - corner.y) <= cornerThreshold) {
-                gameState.visitedCorners.add(corner.name);
-            }
-        });
-        
-        // Check if visited all 4 corners within 20 seconds
-        if (gameState.visitedCorners.size === 4 && (currentTime - gameState.cornerVisitStartTime) < 20000) {
-            try {
-                import('./achievements.js').then(mod => {
-                    if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'corner_dweller' });
-                }).catch(() => {});
-            } catch {}
-            gameState.visitedCorners = new Set(); // Reset to prevent multiple triggers
-            gameState.cornerVisitStartTime = null;
-        } else if ((currentTime - gameState.cornerVisitStartTime) >= 20000) {
-            // Reset if time expires
-            gameState.visitedCorners = new Set();
-            gameState.cornerVisitStartTime = null;
-        }
-    }
-    
     if (gameState.isLevel11 && gameState.level11 && (dx !== 0 || dy !== 0)) {
         gameState.level11.flashlightDir = { dx: Math.sign(dx), dy: Math.sign(dy) };
     }
@@ -1703,22 +1725,31 @@ export async function performJump(dx, dy, currentTime) {
     if (gameState.level11JumpDisabled) return false;
     
     if (!gameState.isJumpCharging) return false;
-    
+
     const landingX = gameState.player.x + dx * 2;
     const landingY = gameState.player.y + dy * 2;
-    
+
     if (landingX < 0 || landingX >= MAZE_WIDTH || landingY < 0 || landingY >= MAZE_HEIGHT) {
         cancelJumpCharge();
         return false;
     }
-    
+
     const landingCell = gameState.maze[landingY][landingX];
-    
+
     if (landingCell === CELL.WALL || landingCell === CELL.GENERATOR) {
         cancelJumpCharge();
         return false;
     }
-    
+
+    // Fire achievement event for jump ability usage
+    try {
+        gameState.abilitiesUsed = true;
+        const achievements = await import('./achievements.js');
+        if (achievements.fireAchievementEvent) {
+            achievements.fireAchievementEvent('ability_used', { ability: 'jump', time: currentTime });
+        }
+    } catch {}
+
     // Start timer on first successful jump landing
     if (!gameState.runActive) {
         gameState.runActive = true;
@@ -1816,8 +1847,6 @@ export function startJumpCharge(currentTime) {
     }
     
     gameState.isJumpCharging = true;
-    // Track ability usage for no-ability achievements
-    fireAchievementEvent('ability_used');
     const chargeMultiplier = (gameState.mode === 'endless-progression' && gameState.endlessUpgrades)
         ? (gameState.endlessUpgrades.jumpChargeMultiplier || 1)
         : 1;
@@ -1840,6 +1869,7 @@ export function startBossTransition(currentTime) {
     // Start a 1s fade to black (renderer will draw overlay when gameState.screenFade present)
     gameState.screenFade = { from: 0, to: 1, startAt: currentTime, duration: 1000 };
     // After fade completes, load the prep room (use real time scheduling)
+
     setTimeout(() => {
         try {
             // ensure boss module provides loadPrepRoom
@@ -1886,6 +1916,16 @@ export function updateJumpCharge(currentTime) {
 }
 
 export function triggerStaminaCooldown(currentTime) {
+    // Fire achievement event for ability usage tracking
+    try {
+        gameState.abilitiesUsed = true;
+        import('./achievements.js').then(mod => {
+            if (mod.fireAchievementEvent) {
+                mod.fireAchievementEvent('ability_used', { ability: 'shield', time: currentTime });
+            }
+            }).catch(() => {});
+        } catch {}
+    
     // Apply stamina reduction ability multiplier (50% stamina consumed if active)
     const baseStaminaDrain = 100;
     const staminaMultiplier = getStaminaMultiplier();
@@ -1903,9 +1943,6 @@ export function triggerStaminaCooldown(currentTime) {
     gameState.isStaminaCoolingDown = true;
     gameState.staminaCooldownEnd = currentTime + STAMINA_COOLDOWN_TIME;
     gameState.staminaCooldownStartStamina = startStamina; // Track where we started (after drain)
-    
-    // Fire achievement event for stamina use
-    fireAchievementEvent('stamina_used');
     // Open a brief dodge window for special attacks
     gameState.dodgeWindowUntil = Math.max(gameState.dodgeWindowUntil, currentTime + 400);
 }
@@ -1936,8 +1973,6 @@ export function startBlock(currentTime) {
     if (staminaPct <= 0) return;
     const dur = (staminaPct / 100) * BLOCK_MAX_DURATION_MS;
     gameState.blockActive = true;
-    // Track ability usage for no-ability achievements
-    fireAchievementEvent('ability_used');
     gameState.blockStartTime = currentTime; // For pull-out animation
     gameState.blockUntil = currentTime + dur;
     // Reset shield health to dynamic durability value
@@ -1953,6 +1988,15 @@ export function startBlock(currentTime) {
     }
     try { playShieldUp(); } catch {}
     try { playShieldHum(); } catch {}
+
+    // Fire achievement event for ability usage tracking
+    try {
+        import('./achievements.js').then(mod => {
+            if (mod.fireAchievementEvent) {
+                mod.fireAchievementEvent('ability_used', { ability: 'block', time: currentTime });
+            }
+        }).catch(() => {});
+    } catch {}
 }
 
 export function stopBlock() {
@@ -2863,6 +2907,13 @@ export function updateEnemies(currentTime) {
     // Level 11 uses custom bat AI and flashlight rules
     if (gameState.isLevel11) {
         updateLevel11Enemies(currentTime);
+        
+        // Also update new Level 11 cutscene system
+        import('./level11.js').then(mod => {
+            if (mod.updateLevel11 && mod.level11State?.active) {
+                mod.updateLevel11(currentTime);
+            }
+        }).catch(() => {});
     }
 
     // Handle player crash lock (post-pig dismount) to prevent movement while invisible
@@ -2987,6 +3038,11 @@ export function updateEnemies(currentTime) {
 
             // Rocket projectile handling
             if (p.type === 'rocket') {
+                // Sync power system position from level11State in case it desynced
+                if (gameState.isLevel11 && gameState.level11State && gameState.level11State.powerSystemPos && !gameState.powerSystemDestroyed) {
+                    gameState.powerSystemPos = gameState.level11State.powerSystemPos;
+                }
+
                 const bx = gameState.boss && gameState.boss.core ? (gameState.boss.core.x + 0.5) : -999;
                 const by = gameState.boss && gameState.boss.core ? (gameState.boss.core.y + 0.5) : -999;
                 const dc = Math.hypot((bx - p.x), (by - p.y));
@@ -3036,9 +3092,73 @@ export function updateEnemies(currentTime) {
                         continue;
                     }
                 }
+
+                // POWER SUPPLY DESTRUCTION: Any bazooka projectile within 3x3 radius destroys it (only in bazooka mode)
+                if (isBazookaMode() && gameState.powerSystemPos && !gameState.powerSystemDestroyed) {
+                    const psx = gameState.powerSystemPos.x;
+                    const psy = gameState.powerSystemPos.y;
+                    const dx = Math.abs(p.x - (psx + 0.5));
+                    const dy = Math.abs(p.y - (psy + 0.5));
+                    console.log(`[POWER] Proj at (${p.x.toFixed(1)},${p.y.toFixed(1)}) vs Supply at (${psx},${psy}): dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)}`);
+                    // 3x3 radius = 1.5 tiles in each direction
+                    if (dx <= 1.5 && dy <= 1.5) {
+                        console.log('[POWER] HIT DETECTED - DESTROYING POWER SUPPLY');
+                        gameState.powerSystemDestroyed = true;
+                        gameState.powerSystemPos = null;
+
+                        // Sync legacy level11 state so rendering/cutscene stop and prompt hides
+                        if (gameState.level11) {
+                            gameState.level11.powerDecisionMade = true;
+                            gameState.level11.powerSupplyDisabled = true;
+                            gameState.level11.goodEndingNote = false; // no credits path
+                            if (gameState.level11.data?.rooms?.finale?.powerSupply) {
+                                gameState.level11.data.rooms.finale.powerSupply = null; // remove visual
+                            }
+                            
+                            // Trigger virus dialogue using ending dialog system (RED text)
+                            gameState.inputLocked = true;
+                            gameState.level11.endingDialogActive = true;
+                            gameState.level11.endingDialogLines = [
+                                'Why...?',
+                                'Why would you blow up the power supply, you idiot?!',
+                                'Now we BOTH lose.',
+                                'I can\'t even believe your stupidity.'
+                            ];
+                            gameState.level11.endingDialogIndex = 0;
+                            gameState.level11.endingDialogNextAt = performance.now() + 500;
+                            gameState.level11.isVirusDialog = true; // Flag for red color
+                        }
+                        
+                        // Trigger cutscene (will be handled by ending dialog system above)
+                        import('./level11.js').then(mod => {
+                            if (mod.level11State) {
+                                mod.level11State.powerSystemDestroyed = true;
+                                mod.level11State.powerSystemPos = null;
+                                mod.level11State.powerDecisionMade = true;
+                                console.log('[POWER] Virus dialogue activated via ending dialog system');
+                            }
+                        }).catch(err => console.error('[POWER] Failed to sync level11State:', err));
+                        // Unlock achievement if bazooka mode is active
+                        try {
+                            import('./config.js').then(cfg => {
+                                if (cfg.isBazookaMode()) {
+                                    import('./achievements.js').then(mod => { mod.unlockAchievement && mod.unlockAchievement('why_destroy_power'); });
+                                }
+                            });
+                        } catch {}
+                        gameState.lastExplosionSource = 'rocket';
+                        bossExplosion(psx, psy, 2, now);
+                        try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                        const idx = gameState.projectiles.indexOf(p);
+                        if (idx >= 0) gameState.projectiles.splice(idx, 1);
+                        p.resolved = true;
+                        continue;
+                    }
+                }
                 // Tile collision into wall -> explode
                 const gx = Math.floor(p.x), gy = Math.floor(p.y);
                 const mountedActive = !!(gameState.mountedPigUntil && now < gameState.mountedPigUntil);
+
                 if (!mountedActive && gx>0 && gx<MAZE_WIDTH-1 && gy>0 && gy<MAZE_HEIGHT-1 && gameState.maze[gy][gx] === CELL.WALL) {
                     // SECRET: Bazooka Mode allows destroying inner walls (not outer ring, generators, or exit)
                     const isOuterRing = (gx === 0 || gx === MAZE_WIDTH-1 || gy === 0 || gy === MAZE_HEIGHT-1);
@@ -3056,8 +3176,6 @@ export function updateEnemies(currentTime) {
                             gameState.maze[gy][gx] = CELL.EMPTY;
                             gameState.wallHealth[wallKey] = 0; // Keep track of destroyed walls
                             console.log('[bazooka mode] destroyed inner wall at', gx, gy);
-                            // Fire achievement event for bazooka wall destruction
-                            fireAchievementEvent('bazooka_wall_destroyed');
                         } else {
                             console.log('[bazooka mode] damaged wall at', gx, gy, '- health:', gameState.wallHealth[wallKey]);
                         }
@@ -3080,16 +3198,22 @@ export function updateEnemies(currentTime) {
                 if (gameState.isLevel11 && gameState.powerSystemPos && !gameState.powerSystemDestroyed) {
                     const psx = gameState.powerSystemPos.x;
                     const psy = gameState.powerSystemPos.y;
-                    const pdist = Math.hypot(p.x - psx, p.y - psy);
-                    if (pdist < 0.8) {
+                    // Use rounded positions and a simple box hit to catch edge cases
+                    const dx = Math.abs(Math.round(p.x) - psx);
+                    const dy = Math.abs(Math.round(p.y) - psy);
+                    const hitPower = (dx <= 1 && dy <= 1); // 3x3 tile area centered on power supply
+                    if (hitPower) {
                         // Rocket hit the power system
                         gameState.powerSystemDestroyed = true;
+                            gameState.powerSystemPos = null; // Clear position so it doesn't render
                         
                         // Sync to level11State
                         if (gameState.level11State) {
                             gameState.level11State.powerSystemDestroyed = true;
+                                gameState.level11State.powerSystemPos = null; // Clear visual
                             gameState.level11State.powerDecisionMade = true;
-                            gameState.level11State.goodEndingNote = true;
+                            gameState.level11State.cutsceneStep = 8; // Special virus dialogue cutscene
+                            gameState.level11State.cutsceneStartTime = performance.now();
                         }
                         
                         // Award achievement only if bazooka mode is active
@@ -3101,8 +3225,8 @@ export function updateEnemies(currentTime) {
                                 if (bazookaModeActive) {
                                     import('./achievements.js').then(mod => {
                                         if (mod.unlockAchievement) {
-                                            mod.unlockAchievement('bazooka_power_destroy');
-                                            console.log('[Level 11] why??? achievement unlocked (bazooka mode active)');
+                                            mod.unlockAchievement('why_destroy_power');
+                                            console.log('[Level 11] Why?? achievement unlocked (bazooka mode active)');
                                         }
                                     });
                                 } else {
@@ -3114,6 +3238,23 @@ export function updateEnemies(currentTime) {
                         gameState.lastExplosionSource = 'rocket';
                         bossExplosion(psx, psy, 2, now);
                         try { import('./audio.js').then(a=>a.playRocketExplosion && a.playRocketExplosion()); } catch {}
+                        // Visual pop for power supply destruction
+                        try {
+                            import('./particles.js').then(p => {
+                                const cx = (psx + 0.5) * CELL_SIZE;
+                                const cy = (psy + 0.5) * CELL_SIZE;
+                                // Bright core burst
+                                if (p.spawn) p.spawn('generator', cx, cy, 32, { color: 'rgba(255, 255, 128, 0.9)', spread: 1.2, speed: 2.0 });
+                                // Outer shock ring
+                                if (p.spawn) p.spawn('shockwave', cx, cy, 1, { radius: CELL_SIZE * 1.6, color: 'rgba(255, 80, 20, 0.35)', lineWidth: 6 });
+                                // Debris sparks
+                                if (p.spawn) p.spawn('spark', cx, cy, 20, { color: 'rgba(255, 180, 80, 0.9)', speed: 3.0, gravity: 0.15 });
+                            }).catch(() => {});
+                        } catch {}
+                        
+                        // Remove projectile
+                        const idx = gameState.projectiles.indexOf(p);
+                        if (idx >= 0) gameState.projectiles.splice(idx, 1);
                         p.resolved = true;
                         console.log('[Level 11] Power system destroyed by rocket!');
                         continue;
@@ -3148,25 +3289,9 @@ export function updateEnemies(currentTime) {
                                 p.trail = []; // Clear trail on reflection
                                 p.spawnTime = now; // Reset for fresh glow
                                 try { playShieldReflect(); } catch {}
-                                // Fire shield reflect achievement event
-                                fireAchievementEvent('shield_reflect');
-                                // Track for shield_reflect_consecutive (block without moving)
-                                if (!gameState.lastPlayerPosForBlock) {
-                                    gameState.lastPlayerPosForBlock = { x: gameState.player.x, y: gameState.player.y };
-                                    gameState.consecutiveBlocksNoMove = 0;
-                                }
-                                if (gameState.lastPlayerPosForBlock.x === gameState.player.x && gameState.lastPlayerPosForBlock.y === gameState.player.y) {
-                                    gameState.consecutiveBlocksNoMove = (gameState.consecutiveBlocksNoMove || 0) + 1;
-                                    if (gameState.consecutiveBlocksNoMove >= 5) {
-                                        try {
-                                            import('./achievements.js').then(mod => {
-                                                if (mod.checkAchievements) mod.checkAchievements('shield_reflect_block', { consecutive: true });
-                                            }).catch(() => {});
-                                        } catch {}
-                                    }
-                                } else {
-                                    gameState.consecutiveBlocksNoMove = 0;
-                                    gameState.lastPlayerPosForBlock = { x: gameState.player.x, y: gameState.player.y };
+                                // Track achievement progress for reflections
+                                if (mod.incrementAchievementProgress) {
+                                    mod.incrementAchievementProgress('reflectedProjectiles', 1);
                                 }
                                 // Spectacular reflection burst
                                 const reflectX = (gameState.player.x + 0.5) * CELL_SIZE;
@@ -3367,8 +3492,6 @@ export function updateEnemies(currentTime) {
                     if (!gameState.bazooka) gameState.bazooka = { has: false, ammo: 0, maxAmmo: 10 };
                     const max = gameState.bazooka.maxAmmo || 10;
                     gameState.bazooka.ammo = max;
-                    // Fire bazooka_reload achievement event
-                    fireAchievementEvent('bazooka_reload');
                     try { import('./audio.js').then(a=>a.playReload && a.playReload()); } catch {}
                     console.log('[prep] Reloaded to max. Ammo=', gameState.bazooka.ammo);
                     gameState.reloadPressedAt = 0;
@@ -3490,6 +3613,10 @@ export function updateEnemies(currentTime) {
         trap.flashUntil = currentTime + 200;
         try { playZapTrigger(); } catch {}
         checkAchievements('trap_catch');
+        // Track achievement progress for trapped enemies
+        if (mod.incrementAchievementProgress) {
+            mod.incrementAchievementProgress('trappedEnemies', 1);
+        }
         // Non-stacking: only set timers if not already within an active stun window
         if (!(e._zapStunUntil && currentTime < e._zapStunUntil)) {
             e._zapStunUntil = currentTime + 2000;
@@ -4883,12 +5010,6 @@ function attemptLevel11Interaction(currentTime) {
             if (notePos && at(notePos)) {
                 showGoodEndingNote();
                 gameState.level11.goodEndingNote = false;
-                // Fire achievement event for finding the secret note
-                try {
-                    import('./achievements.js').then(mod => {
-                        if (mod.checkAchievements) mod.checkAchievements('secret_found', { secretId: 'hidden_note' });
-                    }).catch(() => {});
-                } catch {}
                 return true;
             }
         }
@@ -4948,9 +5069,14 @@ function attemptLevel11Interaction(currentTime) {
 
     if (gameState.level11.currentRoom === 'finale') {
         const ps = room.powerSupply;
-        if (ps && at(ps) && !gameState.level11.powerDecisionMade) {
-            showPowerSupplyPrompt();
-            return true;
+        // Check if player is within 3x3 area of power supply (if not destroyed)
+        if (ps && !gameState.level11.powerDecisionMade && !gameState.powerSystemDestroyed) {
+            const dx = Math.abs(gameState.player.x - ps.x);
+            const dy = Math.abs(gameState.player.y - ps.y);
+            if (dx <= 1.5 && dy <= 1.5) {
+                showPowerSupplyPrompt();
+                return true;
+            }
         }
         setStatusMessage('The power supply hums ominously.');
         return true;
@@ -5086,19 +5212,10 @@ export function attemptSkillCheck() {
     // Success if pointer is within the window size
     const success = relativeAngle <= windowSize;
     
-    // Check for perfect timing (within first 5 degrees of window start)
-    const isPerfectTiming = success && relativeAngle <= 5;
-    
     if (success) {
         gameState.completedSkillChecks.push(gameState.skillCheckState.index);
         setStatusMessage('Skill check success!', 1500);
         playSkillSuccess();
-        
-        // Fire generator_perfect achievement event if perfect timing
-        if (isPerfectTiming) {
-            fireAchievementEvent('generator_perfect');
-        }
-        
         gameState.skillCheckFlash = { type: 'success', until: performance.now() + 220 };
         gameState.skillCheckState = null;
         if (gameState.skillCheckTimeout) {
@@ -5318,6 +5435,13 @@ export function completeGenerator() {
     const completedCount = gameState.generators.filter(g => g.completed).length;
     setStatusMessage(`Generator repaired (${completedCount}/${gameState.generators.length})`);
 
+    // Increment generator progress for achievements
+    import('./achievements.js').then(mod => {
+        if (mod.incrementAchievementProgress) {
+            mod.incrementAchievementProgress('perfectGenerators', 1);
+        }
+    }).catch(() => {});
+
     // Reward: grant Zap Traps from Level 2 onward (and in Endless)
     if (gameState.mode === 'endless' || (gameState.currentLevel && gameState.currentLevel >= 2)) {
         let zapReward = 1;
@@ -5520,6 +5644,12 @@ export function applyPlayerDamage(source = 'unknown', currentTime = performance.
             // First hit triggers teleport - blocks all damage
             gameState.glitchTeleportUsedAt = currentTime;
             if (teleportGlitchRandomly(currentTime)) {
+                                // Track achievement progress for glitch teleport escapes
+                                import('./achievements.js').then(mod => {
+                                    if (mod.incrementAchievementProgress) {
+                                        mod.incrementAchievementProgress('glitchTeleportEscapes', 1);
+                                    }
+                                }).catch(() => {});
                 // Gain 2s invincibility after teleport
                 gameState.playerInvincibleUntil = Math.max(gameState.playerInvincibleUntil || 0, currentTime + 2000);
                 return false; // No damage taken
@@ -5551,8 +5681,16 @@ export function applyPlayerDamage(source = 'unknown', currentTime = performance.
     if (gameState.lives <= 0) {
         gameState.lives = 0;
         gameState.gameStatus = 'lost';
-        // Only fire death achievement when player actually dies (lives reach 0)
+        
+        // Fire death event and increment death counter for achievements
         checkAchievements('death');
+        checkAchievements('player_death');
+        
+        import('./achievements.js').then(mod => {
+            if (mod.incrementAchievementProgress) {
+                mod.incrementAchievementProgress('totalDeaths', 1);
+            }
+        }).catch(() => {});
     }
     
     return true;
