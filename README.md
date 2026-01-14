@@ -1,4 +1,4 @@
-PLAY GAME HERE "echomaze2.me"
+PLAY GAME HERE: echomaze2.me
 
 
 WARNING: This is still a work in progress game so there may be many bugs and glitchs If you find any feel free to let Either Developer know and we will work on fixing them
