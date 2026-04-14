@@ -5,6 +5,7 @@
  */
 
 import { setSprintActive } from './mobile-controls.js';
+import { gameState } from './state.js';
 
 // Track active touches for each button
 const activeTouches = new Map();
@@ -41,6 +42,48 @@ export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
     setupTouchButton(controls.actions.interact, 'e', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.trap, 'f', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.reload, 'r', keyDownHandler, keyUpHandler);
+
+    setupCanvasTapMovement(keyDownHandler, keyUpHandler);
+}
+
+function setupCanvasTapMovement(keyDownHandler, keyUpHandler) {
+    const canvas = document.getElementById('canvas');
+    if (!canvas || canvas.dataset.mobileTapMoveBound === 'true') return;
+    canvas.dataset.mobileTapMoveBound = 'true';
+
+    canvas.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse') return;
+        if (!gameState || gameState.gameStatus !== 'playing' || gameState.isPaused || gameState.isGeneratorUIOpen) return;
+
+        // Let the existing canvas handler own blaster shots.
+        if (gameState.bazooka && gameState.bazooka.has && gameState.bazooka.ammo > 0) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const tapX = e.clientX - rect.left;
+        const tapY = e.clientY - rect.top;
+        const cellSize = rect.width / 30;
+        const playerX = (gameState.player.x + 0.5) * cellSize;
+        const playerY = (gameState.player.y + 0.5) * cellSize;
+        const dx = tapX - playerX;
+        const dy = tapY - playerY;
+
+        if (Math.hypot(dx, dy) < cellSize * 0.65) return;
+
+        const key = Math.abs(dx) > Math.abs(dy)
+            ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+            : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const fakeDownEvent = createKeyboardEvent('keydown', key);
+        keyDownHandler(fakeDownEvent);
+
+        setTimeout(() => {
+            const fakeUpEvent = createKeyboardEvent('keyup', key);
+            keyUpHandler(fakeUpEvent);
+        }, 10);
+    }, { passive: false });
 }
 
 /**
@@ -234,7 +277,8 @@ function getKeyCode(key) {
         ' ': 'Space',
         'Shift': 'ShiftLeft',
         'e': 'KeyE',
-        'f': 'KeyF'
+        'f': 'KeyF',
+        'r': 'KeyR'
     };
     return keyCodeMap[key] || key;
 }

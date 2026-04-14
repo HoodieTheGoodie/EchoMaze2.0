@@ -28,12 +28,8 @@ export function updateCanvasSize() {
     const isMobile = window.innerWidth <= 768;
 
     if (isMobile) {
-        // Portrait mode: fit canvas to screen
-        const maxSize = Math.min(
-            window.innerWidth - 20,  // Leave 10px margin on each side
-            window.innerHeight - 400 // Leave room for title + UI + controls
-        );
-        const targetSize = Math.min(maxSize, 500); // Cap at 500px
+        // Mobile layout handles vertical scrolling; keep the board square and width-first.
+        const targetSize = Math.max(240, Math.min(window.innerWidth - 8, 600));
 
         // Update canvas size (guard against negative/zero)
         if (targetSize > 0) {
