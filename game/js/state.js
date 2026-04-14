@@ -7,7 +7,7 @@ import { stopPreBossMusic } from './audio.js';
 import { playSkillSpawn, playSkillSuccess, playSkillFail, playPigTelegraph, playPigDash, playShieldUp, playShieldReflect, playShieldBreak, playShieldRecharge, playPigHit, playChaserTelegraph, playChaserJump, playStep, playSeekerAlert, playSeekerBeep, playZapPlace, playZapTrigger, playZapExpire, playBatterRage, playBatterFlee, playShieldHum, playShieldShatter, playMortarWarning, playMortarFire, playMortarExplosion, playMortarSelfDestruct, playEnemyHit, playWallHit, playExplosion } from './audio.js';
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
-import { checkAchievements } from './achievements.js';
+import { checkAchievements, incrementAchievementProgress } from './achievements.js';
 import { hasSkinAbility, getSkinAbility, getEquippedSkin } from './skins.js';
 import { isAbilityActive, canPhaseWalls, checkDamageProtection, consumeExtraLife, getStaminaMultiplier, updateStatusEffects, initializeRunAbilities, activateTimedAbility } from './abilities.js';
 
@@ -1975,6 +1975,10 @@ export function startBlock(currentTime) {
     gameState.blockActive = true;
     gameState.blockStartTime = currentTime; // For pull-out animation
     gameState.blockUntil = currentTime + dur;
+    if (typeof gameState.blockAngle !== 'number') {
+        gameState.blockAngle = 0;
+        gameState.blockTargetAngle = 0;
+    }
     // Reset shield health to dynamic durability value
     gameState.shieldHealth = getShieldDurability();
     // Movement lock is based on shield activity; no timer needed
@@ -2009,7 +2013,7 @@ export function setBlockAim(dx, dy) {
     const targetAngle = Math.atan2(dy, dx);
     
     // Store target angle for smooth animation
-    if (!gameState.blockTargetAngle) {
+    if (gameState.blockTargetAngle === undefined) {
         gameState.blockTargetAngle = targetAngle;
         gameState.blockAngle = targetAngle;
     } else {
@@ -3290,9 +3294,7 @@ export function updateEnemies(currentTime) {
                                 p.spawnTime = now; // Reset for fresh glow
                                 try { playShieldReflect(); } catch {}
                                 // Track achievement progress for reflections
-                                if (mod.incrementAchievementProgress) {
-                                    mod.incrementAchievementProgress('reflectedProjectiles', 1);
-                                }
+                                incrementAchievementProgress('reflectedProjectiles', 1);
                                 // Spectacular reflection burst
                                 const reflectX = (gameState.player.x + 0.5) * CELL_SIZE;
                                 const reflectY = (gameState.player.y + 0.5) * CELL_SIZE;
@@ -3614,9 +3616,7 @@ export function updateEnemies(currentTime) {
         try { playZapTrigger(); } catch {}
         checkAchievements('trap_catch');
         // Track achievement progress for trapped enemies
-        if (mod.incrementAchievementProgress) {
-            mod.incrementAchievementProgress('trappedEnemies', 1);
-        }
+        incrementAchievementProgress('trappedEnemies', 1);
         // Non-stacking: only set timers if not already within an active stun window
         if (!(e._zapStunUntil && currentTime < e._zapStunUntil)) {
             e._zapStunUntil = currentTime + 2000;

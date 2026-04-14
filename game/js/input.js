@@ -49,6 +49,27 @@ function getMovementDir(key) {
     return null;
 }
 
+function getHeldMovementVector() {
+    let dx = 0;
+    let dy = 0;
+    const KB = window.KEYBINDS;
+    if (KB) {
+        if (keys[KB.getKey('moveLeft')?.toLowerCase()] || keys[KB.getKey('moveLeftAlt')?.toLowerCase()]) dx = -1;
+        else if (keys[KB.getKey('moveRight')?.toLowerCase()] || keys[KB.getKey('moveRightAlt')?.toLowerCase()]) dx = 1;
+        if (keys[KB.getKey('moveUp')?.toLowerCase()] || keys[KB.getKey('moveUpAlt')?.toLowerCase()]) dy = -1;
+        else if (keys[KB.getKey('moveDown')?.toLowerCase()] || keys[KB.getKey('moveDownAlt')?.toLowerCase()]) dy = 1;
+    } else {
+        if (keys['arrowleft'] || keys['a']) dx = -1;
+        else if (keys['arrowright'] || keys['d']) dx = 1;
+        if (keys['arrowup'] || keys['w']) dy = -1;
+        else if (keys['arrowdown'] || keys['s']) dy = 1;
+    }
+
+    // Prevent diagonal aiming to match the game's cardinal movement style.
+    if (dx !== 0 && dy !== 0) dy = 0;
+    return { dx, dy };
+}
+
 // Movement throttling so a tap only moves one tile
 const MOVE_DELAY = 120; // ms
 let lastMoveAt = 0;
@@ -557,7 +578,11 @@ export function processMovement(currentTime) {
         return;
     }
 
-    // While blocking, the player cannot move; movement resumes when shield ends/breaks
+    if (gameState.blockActive) {
+        const { dx, dy } = getHeldMovementVector();
+        if (dx !== 0 || dy !== 0) setBlockAim(dx, dy);
+        return;
+    }
 
     // Auto-Movement OFF: no continuous movement here; handled on keydown
     if (gameState.settings && gameState.settings.autoMovement === false) {
@@ -566,21 +591,7 @@ export function processMovement(currentTime) {
 
     let dx = 0, dy = 0;
 
-    // Check keybinds for movement
-    const KB = window.KEYBINDS;
-    if (KB) {
-        // Check all bound movement keys
-        if (keys[KB.getKey('moveLeft')?.toLowerCase()] || keys[KB.getKey('moveLeftAlt')?.toLowerCase()]) dx = -1;
-        else if (keys[KB.getKey('moveRight')?.toLowerCase()] || keys[KB.getKey('moveRightAlt')?.toLowerCase()]) dx = 1;
-        if (keys[KB.getKey('moveUp')?.toLowerCase()] || keys[KB.getKey('moveUpAlt')?.toLowerCase()]) dy = -1;
-        else if (keys[KB.getKey('moveDown')?.toLowerCase()] || keys[KB.getKey('moveDownAlt')?.toLowerCase()]) dy = 1;
-    } else {
-        // Fallback to hardcoded if keybinds not loaded
-        if (keys['arrowleft'] || keys['a']) dx = -1;
-        else if (keys['arrowright'] || keys['d']) dx = 1;
-        if (keys['arrowup'] || keys['w']) dy = -1;
-        else if (keys['arrowdown'] || keys['s']) dy = 1;
-    }
+    ({ dx, dy } = getHeldMovementVector());
 
     // Prevent diagonal movement (prefer horizontal when both pressed)
     if (dx !== 0 && dy !== 0) {

@@ -12,6 +12,10 @@ const activeTouches = new Map();
 // Debounce map to prevent duplicate rapid events on same button
 const lastEventTime = new Map();
 
+// Sprint auto-release timer for mobile (tap to activate sprint for brief period)
+let sprintAutoReleaseTimer = null;
+let sprintKeyUpHandler = null;
+
 /**
  * Initialize touch event handlers for mobile controls
  * @param {Object} controls - Control elements from mobile-controls.js
@@ -21,6 +25,9 @@ const lastEventTime = new Map();
 export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
     if (!controls) return;
 
+    // Store keyUpHandler for sprint auto-release
+    sprintKeyUpHandler = keyUpHandler;
+
     // Setup D-Pad buttons (use tap mode for single-step movement)
     setupTouchButton(controls.dpad.up, 'ArrowUp', keyDownHandler, keyUpHandler, true);
     setupTouchButton(controls.dpad.down, 'ArrowDown', keyDownHandler, keyUpHandler, true);
@@ -29,16 +36,69 @@ export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
 
     // Setup Action buttons
     setupTouchButton(controls.actions.shield, ' ', keyDownHandler, keyUpHandler); // Space
-    setupTouchButton(controls.actions.sprint, 'Shift', keyDownHandler, keyUpHandler);
+    // Sprint uses special mobile-friendly tap-to-activate mode
+    setupSprintButton(controls.actions.sprint, keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.interact, 'e', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.trap, 'f', keyDownHandler, keyUpHandler);
     setupTouchButton(controls.actions.reload, 'r', keyDownHandler, keyUpHandler);
+}
 
-    // Special handling for sprint button visual feedback (using pointer events)
-    controls.actions.sprint.addEventListener('pointerdown', () => setSprintActive(true), { passive: false });
-    controls.actions.sprint.addEventListener('pointerup', () => setSprintActive(false), { passive: false });
-    controls.actions.sprint.addEventListener('pointercancel', () => setSprintActive(false), { passive: false });
-    controls.actions.sprint.addEventListener('pointerleave', () => setSprintActive(false), { passive: false });
+/**
+ * Special setup for sprint button with mobile-friendly tap-to-activate mode
+ * Tapping sprint activates it for 1.5 seconds, giving time to tap a direction
+ * @param {HTMLElement} button - The sprint button element
+ * @param {Function} keyDownHandler - Handler for key down
+ * @param {Function} keyUpHandler - Handler for key up
+ */
+function setupSprintButton(button, keyDownHandler, keyUpHandler) {
+    if (!button) return;
+
+    button.style.pointerEvents = 'auto';
+    button.style.cursor = 'pointer';
+    button.style.touchAction = 'none';
+
+    button.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Debounce
+        const now = performance.now();
+        const lastTime = lastEventTime.get(button) || 0;
+        if (now - lastTime < 100) {
+            return;
+        }
+        lastEventTime.set(button, now);
+
+        // Clear any existing auto-release timer
+        if (sprintAutoReleaseTimer) {
+            clearTimeout(sprintAutoReleaseTimer);
+            sprintAutoReleaseTimer = null;
+        }
+
+        // Activate sprint
+        const fakeEvent = createKeyboardEvent('keydown', 'Shift');
+        keyDownHandler(fakeEvent);
+
+        // Visual feedback
+        setSprintActive(true);
+        button.dataset.sprintActive = 'true';
+
+        // Auto-release sprint after 1.5 seconds (enough time to tap a direction)
+        sprintAutoReleaseTimer = setTimeout(() => {
+            if (button.dataset.sprintActive === 'true') {
+                const fakeUpEvent = createKeyboardEvent('keyup', 'Shift');
+                keyUpHandler(fakeUpEvent);
+                setSprintActive(false);
+                button.dataset.sprintActive = 'false';
+            }
+            sprintAutoReleaseTimer = null;
+        }, 1500); // 1.5 second window to use sprint
+    });
+
+    // Prevent context menu
+    button.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
 }
 
 /**
@@ -188,5 +248,20 @@ export function releaseAllTouches(keyUpHandler) {
         keyUpHandler(fakeEvent);
     });
     activeTouches.clear();
+
+    // Clear sprint auto-release timer
+    if (sprintAutoReleaseTimer) {
+        clearTimeout(sprintAutoReleaseTimer);
+        sprintAutoReleaseTimer = null;
+    }
+
+    // Release sprint if active
+    const sprintBtn = document.querySelector('.action-sprint');
+    if (sprintBtn && sprintBtn.dataset.sprintActive === 'true') {
+        const fakeEvent = createKeyboardEvent('keyup', 'Shift');
+        keyUpHandler(fakeEvent);
+        sprintBtn.dataset.sprintActive = 'false';
+    }
+
     setSprintActive(false);
 }

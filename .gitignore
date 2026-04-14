@@ -125,3 +125,6 @@ dist
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# LS Games Strategy Documents (Private Planning)
+LS_GAMES_MONETIZATION_STRATEGY.md
