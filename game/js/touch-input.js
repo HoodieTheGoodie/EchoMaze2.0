@@ -17,6 +17,13 @@ const lastEventTime = new Map();
 let sprintAutoReleaseTimer = null;
 let sprintKeyUpHandler = null;
 
+const MOVEMENT_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const MOVE_TAP_INTERVAL_MS = 125;
+const MAX_QUEUED_MOVES = 5;
+const movementTapQueue = [];
+let movementTapTimer = null;
+let lastQueuedMoveAt = 0;
+
 /**
  * Initialize touch event handlers for mobile controls
  * @param {Object} controls - Control elements from mobile-controls.js
@@ -76,14 +83,42 @@ function setupCanvasTapMovement(keyDownHandler, keyUpHandler) {
         e.preventDefault();
         e.stopPropagation();
 
+        queueMovementTap(key, keyDownHandler, keyUpHandler);
+    }, { passive: false });
+}
+
+function queueMovementTap(key, keyDownHandler, keyUpHandler) {
+    if (!MOVEMENT_KEYS.has(key)) return;
+
+    if (movementTapQueue.length >= MAX_QUEUED_MOVES) {
+        movementTapQueue.shift();
+    }
+
+    movementTapQueue.push(key);
+    processMovementTapQueue(keyDownHandler, keyUpHandler);
+}
+
+function processMovementTapQueue(keyDownHandler, keyUpHandler) {
+    if (movementTapTimer || movementTapQueue.length === 0) return;
+
+    const now = performance.now();
+    const wait = Math.max(0, MOVE_TAP_INTERVAL_MS - (now - lastQueuedMoveAt));
+
+    movementTapTimer = setTimeout(() => {
+        movementTapTimer = null;
+        const key = movementTapQueue.shift();
+        if (!key) return;
+
         const fakeDownEvent = createKeyboardEvent('keydown', key);
         keyDownHandler(fakeDownEvent);
 
         setTimeout(() => {
             const fakeUpEvent = createKeyboardEvent('keyup', key);
             keyUpHandler(fakeUpEvent);
-        }, 10);
-    }, { passive: false });
+            lastQueuedMoveAt = performance.now();
+            processMovementTapQueue(keyDownHandler, keyUpHandler);
+        }, 16);
+    }, wait);
 }
 
 /**
@@ -164,6 +199,27 @@ function setupTouchButton(button, key, keyDownHandler, keyUpHandler, tapMode = f
     button.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
+
+        if (tapMode && MOVEMENT_KEYS.has(key)) {
+            if (gameState.blockActive) {
+                const fakeEvent = createKeyboardEvent('keydown', key);
+                keyDownHandler(fakeEvent);
+                const fakeUpEvent = createKeyboardEvent('keyup', key);
+                keyUpHandler(fakeUpEvent);
+                return;
+            }
+
+            queueMovementTap(key, keyDownHandler, keyUpHandler);
+            button.style.opacity = '1';
+            button.dataset.pointerActive = 'queued';
+            setTimeout(() => {
+                if (button.dataset.pointerActive === 'queued') {
+                    button.style.opacity = '';
+                    button.dataset.pointerActive = 'false';
+                }
+            }, 80);
+            return;
+        }
 
         // Debounce: prevent duplicate events within 100ms
         const now = performance.now();
@@ -292,6 +348,12 @@ export function releaseAllTouches(keyUpHandler) {
         keyUpHandler(fakeEvent);
     });
     activeTouches.clear();
+    movementTapQueue.length = 0;
+
+    if (movementTapTimer) {
+        clearTimeout(movementTapTimer);
+        movementTapTimer = null;
+    }
 
     // Clear sprint auto-release timer
     if (sprintAutoReleaseTimer) {

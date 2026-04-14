@@ -44,6 +44,10 @@
         order: 1 !important;
     }
 
+    #game-container > #ui-panel {
+        order: 2 !important;
+    }
+
     #game-container > #mobile-controls {
         order: 3 !important;
     }
@@ -55,9 +59,50 @@
         padding: 2px 0 !important;
     }
 
-    /* Hide the legacy desktop HUD on mobile. Mobile status lives underneath the board. */
-    #ui-panel {
+    /* Hide the simplified UI side panel that becomes a top artifact on mobile. */
+    #ui-left-panel {
         display: none !important;
+    }
+
+    /* Keep the main status panel under the board on mobile. */
+    #ui-panel {
+        position: relative !important;
+        inset: auto !important;
+        transform: none !important;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 6px !important;
+        width: min(100%, 600px) !important;
+        padding: 0 4px !important;
+        font-size: 0.78rem !important;
+        justify-content: stretch !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        margin: 0 auto !important;
+        order: 2 !important;
+        flex-shrink: 0;
+        overflow: visible !important;
+    }
+
+    #ui-panel .ui-section {
+        display: flex !important;
+        min-height: 40px;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px !important;
+        padding: 8px 9px;
+        border: 1px solid rgba(0, 246, 255, 0.35);
+        border-radius: 8px;
+        background: rgba(7, 14, 18, 0.9);
+        box-shadow: inset 0 0 14px rgba(0, 246, 255, 0.06);
+        overflow: hidden;
+    }
+
+    #ui-panel .ui-section:first-child {
+        display: flex !important;
     }
 
     .ui-label {
