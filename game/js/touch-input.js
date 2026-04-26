@@ -5,7 +5,7 @@
  */
 
 import { setSprintActive } from './mobile-controls.js';
-import { gameState, movePlayer } from './state.js';
+import { gameState, movePlayer, setBlockAim } from './state.js';
 
 // Track active touches for each button
 const activeTouches = new Map();
@@ -24,6 +24,29 @@ const movementTapQueue = [];
 let movementTapTimer = null;
 let lastQueuedMoveAt = 0;
 
+function getMovementDelta(key) {
+    if (key === 'ArrowLeft') return { dx: -1, dy: 0 };
+    if (key === 'ArrowRight') return { dx: 1, dy: 0 };
+    if (key === 'ArrowUp') return { dx: 0, dy: -1 };
+    if (key === 'ArrowDown') return { dx: 0, dy: 1 };
+    return { dx: 0, dy: 0 };
+}
+
+function moveOneTile(dx, dy) {
+    if (dx === 0 && dy === 0) return;
+    if (gameState.currentLevel === 7) {
+        gameState.level7HasWASDMovement = true;
+    }
+
+    const wasSprinting = gameState.isSprinting;
+    gameState.isSprinting = false;
+    try {
+        movePlayer(dx, dy, performance.now());
+    } finally {
+        gameState.isSprinting = wasSprinting;
+    }
+}
+
 /**
  * Initialize touch event handlers for mobile controls
  * @param {Object} controls - Control elements from mobile-controls.js
@@ -32,6 +55,10 @@ let lastQueuedMoveAt = 0;
  */
 export function initTouchInput(controls, keyDownHandler, keyUpHandler) {
     if (!controls) return;
+    if (controls.container?.dataset.touchInputBound === 'true') return;
+    if (controls.container) {
+        controls.container.dataset.touchInputBound = 'true';
+    }
 
     // Store keyUpHandler for sprint auto-release
     sprintKeyUpHandler = keyUpHandler;
@@ -116,29 +143,18 @@ function processMovementTapQueue(keyDownHandler, keyUpHandler) {
 }
 
 function performMovementTap(key, keyDownHandler, keyUpHandler) {
+    const { dx, dy } = getMovementDelta(key);
+
     if (gameState.blockActive) {
-        const fakeDownEvent = createKeyboardEvent('keydown', key);
-        keyDownHandler(fakeDownEvent);
-        const fakeUpEvent = createKeyboardEvent('keyup', key);
-        keyUpHandler(fakeUpEvent);
+        if (dx !== 0 || dy !== 0) {
+            setBlockAim(dx, dy);
+        }
         return;
     }
 
     if (gameState.gameStatus !== 'playing' || gameState.isPaused || gameState.isGeneratorUIOpen) return;
-
-    let dx = 0;
-    let dy = 0;
-    if (key === 'ArrowLeft') dx = -1;
-    else if (key === 'ArrowRight') dx = 1;
-    else if (key === 'ArrowUp') dy = -1;
-    else if (key === 'ArrowDown') dy = 1;
     if (dx === 0 && dy === 0) return;
-
-    if (gameState.currentLevel === 7) {
-        gameState.level7HasWASDMovement = true;
-    }
-
-    movePlayer(dx, dy, performance.now());
+    moveOneTile(dx, dy);
 }
 
 /**
@@ -150,6 +166,8 @@ function performMovementTap(key, keyDownHandler, keyUpHandler) {
  */
 function setupSprintButton(button, keyDownHandler, keyUpHandler) {
     if (!button) return;
+    if (button.dataset.touchBound === 'true') return;
+    button.dataset.touchBound = 'true';
 
     button.style.pointerEvents = 'auto';
     button.style.cursor = 'pointer';
@@ -209,6 +227,8 @@ function setupSprintButton(button, keyDownHandler, keyUpHandler) {
  */
 function setupTouchButton(button, key, keyDownHandler, keyUpHandler, tapMode = false) {
     if (!button) return;
+    if (button.dataset.touchBound === 'true') return;
+    button.dataset.touchBound = 'true';
 
     // Ensure button can receive pointer events
     button.style.pointerEvents = 'auto';
@@ -221,11 +241,18 @@ function setupTouchButton(button, key, keyDownHandler, keyUpHandler, tapMode = f
         e.stopPropagation();
 
         if (tapMode && MOVEMENT_KEYS.has(key)) {
+            const now = performance.now();
+            const lastTime = lastEventTime.get(button) || 0;
+            if (now - lastTime < 100) {
+                return;
+            }
+            lastEventTime.set(button, now);
+
             if (gameState.blockActive) {
-                const fakeEvent = createKeyboardEvent('keydown', key);
-                keyDownHandler(fakeEvent);
-                const fakeUpEvent = createKeyboardEvent('keyup', key);
-                keyUpHandler(fakeUpEvent);
+                const { dx, dy } = getMovementDelta(key);
+                if (dx !== 0 || dy !== 0) {
+                    setBlockAim(dx, dy);
+                }
                 return;
             }
 
