@@ -598,14 +598,21 @@
 
     /* Fix hint/alert positioning on mobile - ensure it's above controls */
     #bottomAlertBox {
-        bottom: 170px !important;
+        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
         max-width: 90% !important;
         font-size: 14px !important;
         padding: 12px 20px !important;
     }
 
+    #achievementNotificationContainer {
+        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
+        right: max(8px, env(safe-area-inset-right, 0px)) !important;
+        left: auto !important;
+        max-width: calc(100vw - 16px) !important;
+    }
+
     @keyframes slideUp {
-        from { bottom: 100px !important; opacity: 0; }
-        to { bottom: 170px !important; opacity: 1; }
+        from { bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important; opacity: 0; }
+        to { bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important; opacity: 1; }
     }
 }
