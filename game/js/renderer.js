@@ -14,6 +14,7 @@ export let CELL_SIZE = 20; // Changed to let for responsive scaling
 const canvas = document.getElementById('canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
 let renderOffsetTiles = 0;
+const MOBILE_VISIBLE_TILES = 28;
 
 // Offscreen cached background for static maze (walls/floor)
 let mazeBaseCanvas = null;
@@ -39,7 +40,7 @@ export function updateCanvasSize() {
 
             // Mobile crops the unplayable one-tile wall border so usable space fills the screen.
             renderOffsetTiles = 1;
-            CELL_SIZE = targetSize / (MAZE_WIDTH - 2);
+            CELL_SIZE = targetSize / MOBILE_VISIBLE_TILES;
             canvasScale = targetSize / 600;
 
             // Mark maze as dirty to rebuild with new cell size

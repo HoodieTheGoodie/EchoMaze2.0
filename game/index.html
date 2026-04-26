@@ -10,7 +10,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
-    <link rel="stylesheet" href="css/mobile-ui.css">
+    <link rel="stylesheet" href="css/mobile-ui.css?ver=v20260425b">
     <style>
         * {
             margin: 0;
@@ -1120,38 +1120,22 @@
     </script>
     <!-- Cache-busting query to ensure latest modules load -->
     <script>
-        window.__SMG_VER__ = 'v20251209_achievements_fix';
+        window.__SMG_VER__ = 'v20260425b';
     </script>
     <!-- Load background animation first -->
-    <script src="js/background.js?ver=v20251212a"></script>
-    <!-- Load game modules -->
-    <script type="module" src="js/particles.js?ver=v20251212a"></script>
-    <script type="module" src="js/audio.js?ver=v20251212a"></script>
-    <script type="module" src="js/config.js?ver=v20251212a"></script>
-    <script type="module" src="js/maze.js?ver=v20251212a"></script>
-    <script type="module" src="js/endless-progression.js?ver=v20251212a"></script>
-    <script type="module" src="js/endless-ui.js?ver=v20251212a"></script>
-    <script type="module" src="js/state.js?ver=v20250112c"></script>
-    <script type="module" src="js/renderer.js?ver=v20251212b"></script>
-    <script type="module" src="js/input.js?ver=v20251212a"></script>
-    <script type="module" src="js/achievement-conditions.js?ver=v20250112b"></script>
-    <script type="module" src="js/achievements.js?ver=v20250112c"></script>
-    <script type="module" src="js/theme-manager.js?ver=v20250112d"></script>
-    <script type="module" src="js/skins.js?ver=v20250112b"></script>
-    <script type="module" src="js/level11.js?ver=v20250110e"></script>
-    <script type="module" src="js/ui-notifications.js?ver=v20250109f"></script>
-    <script type="module" src="js/ui-panels.js?ver=v20250112e"></script>
-    <script type="module" src="js/dev-panel.js?ver=v20250112c"></script>
-        <script type="module" src="js/loading-screen.js?ver=v20250112a"></script>
-        <script type="module" src="js/accessibility.js?ver=v20250112a"></script>
-        <!-- Polish & Enhancement Modules -->
-        <script src="js/ui-polish.js?ver=v20250113a"></script>
-        <script src="js/ui-sounds.js?ver=v20250113a"></script>
-        <script src="js/menu-particles.js?ver=v20250113a"></script>
-        <script type="module" src="js/player-stats.js?ver=v20250113a"></script>
-        <script src="js/quick-restart.js?ver=v20250113a"></script>
-        <script src="js/keybinds.js?ver=v20250113a"></script>
-        <script src="js/skin-stats.js?ver=v20250113a"></script>
-    <script type="module" src="js/main.js?ver=v20250113a"></script>
+    <script src="js/background.js?ver=v20260425b"></script>
+    <!-- Standalone modules -->
+    <script type="module" src="js/loading-screen.js?ver=v20260425b"></script>
+    <script type="module" src="js/accessibility.js?ver=v20260425b"></script>
+    <script type="module" src="js/player-stats.js?ver=v20260425b"></script>
+    <!-- Non-module enhancements -->
+    <script src="js/ui-polish.js?ver=v20260425b"></script>
+    <script src="js/ui-sounds.js?ver=v20260425b"></script>
+    <script src="js/menu-particles.js?ver=v20260425b"></script>
+    <script src="js/quick-restart.js?ver=v20260425b"></script>
+    <script src="js/keybinds.js?ver=v20260425b"></script>
+    <script src="js/skin-stats.js?ver=v20260425b"></script>
+    <!-- Single entrypoint for the module graph -->
+    <script type="module" src="js/main.js?ver=v20260425b"></script>
 </body>
 </html>
