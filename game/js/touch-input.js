@@ -5,7 +5,7 @@
  */
 
 import { setSprintActive } from './mobile-controls.js';
-import { gameState } from './state.js';
+import { gameState, movePlayer } from './state.js';
 
 // Track active touches for each button
 const activeTouches = new Map();
@@ -68,9 +68,9 @@ function setupCanvasTapMovement(keyDownHandler, keyUpHandler) {
         const rect = canvas.getBoundingClientRect();
         const tapX = e.clientX - rect.left;
         const tapY = e.clientY - rect.top;
-        const cellSize = rect.width / 30;
-        const playerX = (gameState.player.x + 0.5) * cellSize;
-        const playerY = (gameState.player.y + 0.5) * cellSize;
+        const cellSize = rect.width / 28;
+        const playerX = (gameState.player.x - 1 + 0.5) * cellSize;
+        const playerY = (gameState.player.y - 1 + 0.5) * cellSize;
         const dx = tapX - playerX;
         const dy = tapY - playerY;
 
@@ -109,16 +109,36 @@ function processMovementTapQueue(keyDownHandler, keyUpHandler) {
         const key = movementTapQueue.shift();
         if (!key) return;
 
+        performMovementTap(key, keyDownHandler, keyUpHandler);
+        lastQueuedMoveAt = performance.now();
+        processMovementTapQueue(keyDownHandler, keyUpHandler);
+    }, wait);
+}
+
+function performMovementTap(key, keyDownHandler, keyUpHandler) {
+    if (gameState.blockActive) {
         const fakeDownEvent = createKeyboardEvent('keydown', key);
         keyDownHandler(fakeDownEvent);
+        const fakeUpEvent = createKeyboardEvent('keyup', key);
+        keyUpHandler(fakeUpEvent);
+        return;
+    }
 
-        setTimeout(() => {
-            const fakeUpEvent = createKeyboardEvent('keyup', key);
-            keyUpHandler(fakeUpEvent);
-            lastQueuedMoveAt = performance.now();
-            processMovementTapQueue(keyDownHandler, keyUpHandler);
-        }, 16);
-    }, wait);
+    if (gameState.gameStatus !== 'playing' || gameState.isPaused || gameState.isGeneratorUIOpen) return;
+
+    let dx = 0;
+    let dy = 0;
+    if (key === 'ArrowLeft') dx = -1;
+    else if (key === 'ArrowRight') dx = 1;
+    else if (key === 'ArrowUp') dy = -1;
+    else if (key === 'ArrowDown') dy = 1;
+    if (dx === 0 && dy === 0) return;
+
+    if (gameState.currentLevel === 7) {
+        gameState.level7HasWASDMovement = true;
+    }
+
+    movePlayer(dx, dy, performance.now());
 }
 
 /**

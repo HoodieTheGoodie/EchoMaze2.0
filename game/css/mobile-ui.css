@@ -24,20 +24,24 @@
         background: #05070d !important;
     }
 
+    body.game-active {
+        overflow-y: hidden;
+    }
+
     /* Portrait Mode Layout */
     #game-container {
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
-        gap: 8px !important;
-        padding: max(4px, env(safe-area-inset-top)) 4px max(10px, env(safe-area-inset-bottom)) !important;
+        gap: 3px !important;
+        padding: max(2px, env(safe-area-inset-top)) 0 max(4px, env(safe-area-inset-bottom)) !important;
         margin: 0 auto !important;
         justify-content: flex-start !important;
-        min-height: 100svh;
-        height: auto;
-        overflow: visible;
+        min-height: 0;
+        height: 100svh;
+        overflow: hidden;
         width: 100% !important;
-        max-width: 640px;
+        max-width: none;
     }
 
     #game-container > #canvas {
@@ -70,11 +74,11 @@
         inset: auto !important;
         transform: none !important;
         display: grid !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        gap: 6px !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 3px !important;
         width: min(100%, 600px) !important;
-        padding: 0 4px !important;
-        font-size: 0.78rem !important;
+        padding: 0 2px !important;
+        font-size: 0.68rem !important;
         justify-content: stretch !important;
         border: 0 !important;
         border-radius: 0 !important;
@@ -89,11 +93,11 @@
 
     #ui-panel .ui-section {
         display: flex !important;
-        min-height: 40px;
+        min-height: 28px;
         justify-content: space-between;
         align-items: center;
-        gap: 6px !important;
-        padding: 8px 9px;
+        gap: 4px !important;
+        padding: 4px 5px;
         border: 1px solid rgba(0, 246, 255, 0.35);
         border-radius: 8px;
         background: rgba(7, 14, 18, 0.9);
@@ -107,7 +111,7 @@
 
     .ui-label {
         color: #66f7ff;
-        font-size: 0.7rem;
+        font-size: 0.6rem;
         letter-spacing: 0;
         text-transform: uppercase;
         white-space: nowrap;
@@ -115,33 +119,40 @@
 
     /* Stamina bar - smaller on mobile */
     .stamina-bar {
-        width: 64px !important;
-        min-width: 64px;
-        flex: 0 0 64px;
+        display: none !important;
     }
 
     #pauseBtn {
         width: 100%;
+        min-height: 28px !important;
+        padding: 3px 6px !important;
+        font-size: 0.7rem !important;
     }
 
     #jumpIndicator {
         display: none !important;
     }
 
+    #ui-panel .ui-section:empty {
+        display: none !important;
+    }
+
     /* Canvas - square board, as wide as the phone allows */
     #canvas {
-        width: calc(100vw - 8px) !important;
+        width: calc(100vw - 2px) !important;
         height: auto !important;
         aspect-ratio: 1 / 1;
-        border: 1px solid rgba(0, 246, 255, 0.75) !important;
+        border: 0 !important;
+        outline: 1px solid rgba(0, 246, 255, 0.85) !important;
+        outline-offset: -1px;
         border-radius: 0 !important;
-        max-width: calc(100vw - 8px);
+        max-width: calc(100vw - 2px);
         max-width: 600px;
         max-height: 600px;
         flex-shrink: 0;
         display: block !important;
         margin: 0 auto !important;
-        box-shadow: 0 0 18px rgba(0, 246, 255, 0.28) !important;
+        box-shadow: 0 0 10px rgba(0, 246, 255, 0.24) !important;
         order: 1 !important;
     }
 
@@ -186,12 +197,7 @@
     }
 
     #versionTag {
-        position: static !important;
-        align-self: flex-end;
-        order: 4;
-        margin: 0 6px 0 0;
-        font-size: 0.68rem !important;
-        padding: 4px 7px !important;
+        display: none !important;
     }
 
     /* Show mobile-only elements only on mobile */
@@ -268,9 +274,9 @@
     display: none; /* Hidden by default, shown via JS on mobile */
     position: relative;
     width: min(100%, 600px);
-    min-height: 178px;
+    min-height: 126px;
     margin: 0 auto;
-    padding: 6px 4px 0;
+    padding: 2px 2px 0;
     pointer-events: auto;
     z-index: 500;
     touch-action: none;
@@ -279,11 +285,12 @@
 
 /* Show controls on mobile when game is active */
 @media (max-width: 768px) {
+    #game-container #mobile-controls,
     body.game-active #mobile-controls {
-        display: grid;
-        grid-template-columns: minmax(130px, 0.9fr) minmax(160px, 1.1fr);
+        display: grid !important;
+        grid-template-columns: minmax(120px, 0.85fr) minmax(156px, 1.15fr);
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         order: 3 !important;
     }
 }
@@ -291,8 +298,8 @@
 /* D-Pad Container (Left Side) */
 .mobile-dpad {
     position: relative;
-    width: min(42vw, 164px);
-    height: min(42vw, 164px);
+    width: min(31vw, 124px);
+    height: min(31vw, 124px);
     justify-self: center;
     pointer-events: none;
 }
@@ -317,8 +324,8 @@
 
 .dpad-btn {
     position: absolute;
-    width: 56px;
-    height: 56px;
+    width: 44px;
+    height: 44px;
     background: rgba(17, 14, 16, 0.92);
     border: 1px solid rgba(255, 209, 102, 0.72);
     border-radius: 8px;
@@ -384,12 +391,12 @@
 /* Action Buttons Container (Right Side) */
 .mobile-actions {
     position: relative;
-    width: min(50vw, 210px);
-    min-height: 166px;
+    width: min(58vw, 226px);
+    min-height: 122px;
     justify-self: center;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
     pointer-events: auto;
 }
 
@@ -397,7 +404,7 @@
 .action-btn {
     position: relative;
     width: auto;
-    height: 72px;
+    height: 58px;
     background: rgba(7, 18, 22, 0.92);
     border: 1px solid rgba(97, 218, 251, 0.78);
     border-radius: 8px;
@@ -405,8 +412,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    font-size: 1.05rem;
+    gap: 2px;
+    font-size: 0.92rem;
     color: white;
     text-shadow: 0 0 8px rgba(97, 218, 251, 0.55);
     user-select: none;
@@ -421,7 +428,7 @@
 }
 
 .action-btn-label {
-    font-size: 0.64rem;
+    font-size: 0.56rem;
     font-weight: 800;
     margin-top: 2px;
     opacity: 0.9;
@@ -452,7 +459,7 @@
     display: none; /* Hidden by default, shown via JS when bazooka is available */
     grid-column: 1 / -1;
     border-color: rgba(130, 200, 255, 0.9);
-    height: 48px;
+    height: 38px;
 }
 
 .action-reload:active {

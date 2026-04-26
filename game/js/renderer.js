@@ -13,6 +13,7 @@ import { level11State } from './level11.js';
 export let CELL_SIZE = 20; // Changed to let for responsive scaling
 const canvas = document.getElementById('canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
+let renderOffsetTiles = 0;
 
 // Offscreen cached background for static maze (walls/floor)
 let mazeBaseCanvas = null;
@@ -28,16 +29,17 @@ export function updateCanvasSize() {
     const isMobile = window.innerWidth <= 768;
 
     if (isMobile) {
-        // Mobile layout handles vertical scrolling; keep the board square and width-first.
-        const targetSize = Math.max(240, Math.min(window.innerWidth - 8, 600));
+        // Mobile layout is width-first; the maze should fill the canvas edge to edge.
+        const targetSize = Math.max(240, Math.min(window.innerWidth - 2, 600));
 
         // Update canvas size (guard against negative/zero)
         if (targetSize > 0) {
             canvas.width = targetSize;
             canvas.height = targetSize;
 
-            // Recalculate cell size to fit
-            CELL_SIZE = Math.max(1, Math.floor(targetSize / 30)); // 30x30 maze, minimum 1px
+            // Mobile crops the unplayable one-tile wall border so usable space fills the screen.
+            renderOffsetTiles = 1;
+            CELL_SIZE = targetSize / (MAZE_WIDTH - 2);
             canvasScale = targetSize / 600;
 
             // Mark maze as dirty to rebuild with new cell size
@@ -47,6 +49,7 @@ export function updateCanvasSize() {
         // Desktop: standard size
         canvas.width = 600;
         canvas.height = 600;
+        renderOffsetTiles = 0;
         CELL_SIZE = 20;
         canvasScale = 1;
         mazeBaseDirty = true;
@@ -97,6 +100,11 @@ function buildMazeBase() {
         neonColor = color.css;
     }
     
+    bctx.save();
+    if (renderOffsetTiles) {
+        bctx.translate(-renderOffsetTiles * CELL_SIZE, -renderOffsetTiles * CELL_SIZE);
+    }
+
     // Draw static walls/floor only (no exit/generators)
     for (let y = 0; y < MAZE_HEIGHT; y++) {
         for (let x = 0; x < MAZE_WIDTH; x++) {
@@ -116,7 +124,7 @@ function buildMazeBase() {
                 bctx.lineWidth = 2;
                 
                 // Top edge
-                if (y > 0 && gameState.maze[y - 1][x] !== CELL.WALL) {
+                if (y === 0 || gameState.maze[y - 1][x] !== CELL.WALL) {
                     bctx.beginPath();
                     bctx.moveTo(px, py);
                     bctx.lineTo(px + CELL_SIZE, py);
@@ -124,7 +132,7 @@ function buildMazeBase() {
                 }
                 
                 // Bottom edge
-                if (y < MAZE_HEIGHT - 1 && gameState.maze[y + 1][x] !== CELL.WALL) {
+                if (y === MAZE_HEIGHT - 1 || gameState.maze[y + 1][x] !== CELL.WALL) {
                     bctx.beginPath();
                     bctx.moveTo(px, py + CELL_SIZE);
                     bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE);
@@ -132,7 +140,7 @@ function buildMazeBase() {
                 }
                 
                 // Left edge
-                if (x > 0 && gameState.maze[y][x - 1] !== CELL.WALL) {
+                if (x === 0 || gameState.maze[y][x - 1] !== CELL.WALL) {
                     bctx.beginPath();
                     bctx.moveTo(px, py);
                     bctx.lineTo(px, py + CELL_SIZE);
@@ -140,7 +148,7 @@ function buildMazeBase() {
                 }
                 
                 // Right edge
-                if (x < MAZE_WIDTH - 1 && gameState.maze[y][x + 1] !== CELL.WALL) {
+                if (x === MAZE_WIDTH - 1 || gameState.maze[y][x + 1] !== CELL.WALL) {
                     bctx.beginPath();
                     bctx.moveTo(px + CELL_SIZE, py);
                     bctx.lineTo(px + CELL_SIZE, py + CELL_SIZE);
@@ -180,6 +188,7 @@ function buildMazeBase() {
             }
         }
     }
+    bctx.restore();
     mazeBaseDirty = false;
 }
 
@@ -587,6 +596,12 @@ export function render(currentTime) {
     // Clear and draw static background in one blit
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (mazeBaseCanvas) ctx.drawImage(mazeBaseCanvas, 0, 0);
+
+    ctx.save();
+    if (renderOffsetTiles) {
+        ctx.translate(-renderOffsetTiles * CELL_SIZE, -renderOffsetTiles * CELL_SIZE);
+    }
+
     // Overlay dynamic exit color and generators, entities, etc.
     drawDynamicMazeOverlays();
     drawTraps(currentTime);
@@ -600,6 +615,8 @@ export function render(currentTime) {
     drawPlayer();
     drawLevel11Items();
     drawLevel11Darkness();
+    ctx.restore();
+
     drawUI();
     
     if (gameState.isGeneratorUIOpen) {
