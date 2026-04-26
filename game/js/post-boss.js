@@ -1,7 +1,7 @@
 // post-boss.js - Level 11: "Redeem Yourself"
 
-import { gameState, MAZE_WIDTH, MAZE_HEIGHT, fadeToBlack, fadeFromBlack } from './state.js';
-import { CELL } from './maze.js';
+import { gameState, fadeToBlack, fadeFromBlack } from './state.js';
+import { CELL, MAZE_WIDTH, MAZE_HEIGHT } from './maze.js';
 import { playMusic, stopMusic } from './music.js';
 
 // Level 11 state - persists across room changes

@@ -1,6 +1,6 @@
 // boss.js - Level 10 Boss Controller (The Core)
 
-import { gameState, MAZE_WIDTH, MAZE_HEIGHT, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake, applyPlayerDamage } from './state.js';
+import { gameState, bfsDistancesFrom, fadeFromBlack, showTextSequence, disablePlayerInput, enablePlayerInput, showTopLore, showPrompt, clearScreenShake, applyPlayerDamage } from './state.js';
 import { startPreBossMusic, stopPreBossMusic, playExplosion } from './audio.js';
 
 // Dialog bar helper (DOM)
@@ -21,7 +21,7 @@ function setDialogBarLine(text, color = '#ffdd33', border = color) {
 }
 import { particles } from './particles.js';
 import { CELL_SIZE } from './renderer.js';
-import { CELL, generateMaze } from './maze.js';
+import { CELL, generateMaze, MAZE_WIDTH, MAZE_HEIGHT } from './maze.js';
 import { isMobile } from './mobile-controls.js';
 import { 
   BOSS_CORE_HP, BOSS_PHASE_DUR,

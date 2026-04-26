@@ -1,7 +1,7 @@
 // renderer.js - Canvas rendering
 
-import { gameState, SKILL_CHECK_ROTATION_TIME, MAZE_WIDTH, MAZE_HEIGHT, TELEPORT_CHARGE_TIME, COLLISION_SHIELD_RECHARGE_TIME, COLLISION_SHIELD_BREAK_FLASH, getRunClock } from './state.js';
-import { CELL } from './maze.js';
+import { gameState, SKILL_CHECK_ROTATION_TIME, TELEPORT_CHARGE_TIME, COLLISION_SHIELD_RECHARGE_TIME, COLLISION_SHIELD_BREAK_FLASH, getRunClock } from './state.js';
+import { CELL, MAZE_WIDTH, MAZE_HEIGHT } from './maze.js';
 import { particles } from './particles.js';
 import { getLevelColor, isBazookaMode } from './config.js';
 import { getSprite } from './sprites.js';
