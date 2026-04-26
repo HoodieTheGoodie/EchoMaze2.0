@@ -611,6 +611,14 @@
         max-width: calc(100vw - 16px) !important;
     }
 
+    #statusMessageBox {
+        top: auto !important;
+        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        max-width: calc(100vw - 20px) !important;
+    }
+
     @keyframes slideUp {
         from { bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important; opacity: 0; }
         to { bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important; opacity: 1; }
