@@ -37,14 +37,7 @@ function moveOneTile(dx, dy) {
     if (gameState.currentLevel === 7) {
         gameState.level7HasWASDMovement = true;
     }
-
-    const wasSprinting = gameState.isSprinting;
-    gameState.isSprinting = false;
-    try {
-        movePlayer(dx, dy, performance.now());
-    } finally {
-        gameState.isSprinting = wasSprinting;
-    }
+    movePlayer(dx, dy, performance.now());
 }
 
 /**

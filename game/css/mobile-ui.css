@@ -598,29 +598,72 @@
 
     /* Fix hint/alert positioning on mobile - ensure it's above controls */
     #bottomAlertBox {
-        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
+        bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important;
         max-width: 90% !important;
         font-size: 14px !important;
         padding: 12px 20px !important;
     }
 
     #achievementNotificationContainer {
-        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
-        right: max(8px, env(safe-area-inset-right, 0px)) !important;
-        left: auto !important;
-        max-width: calc(100vw - 16px) !important;
+        bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        width: calc(100vw - 16px) !important;
+        max-width: 420px !important;
+        align-items: center !important;
     }
 
     #statusMessageBox {
         top: auto !important;
-        bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important;
+        bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important;
         left: 50% !important;
         transform: translateX(-50%) !important;
         max-width: calc(100vw - 20px) !important;
     }
 
+    .achievement-notification {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 12px 14px !important;
+        transform: translateY(18px) scale(0.96) !important;
+    }
+
+    .achievement-notification.show {
+        transform: translateY(0) scale(1) !important;
+    }
+
+    .achievement-pop {
+        gap: 10px !important;
+    }
+
+    .achievement-icon-circle {
+        font-size: 34px !important;
+    }
+
+    .achievement-unlock-label {
+        font-size: 10px !important;
+        letter-spacing: 1px !important;
+    }
+
+    .achievement-title {
+        font-size: 15px !important;
+        letter-spacing: 0.5px !important;
+    }
+
+    .achievement-description,
+    .achievement-skin {
+        font-size: 11px !important;
+    }
+
+    .achievement-tier-badge {
+        padding: 6px 10px !important;
+        font-size: 10px !important;
+    }
+
     @keyframes slideUp {
-        from { bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important; opacity: 0; }
-        to { bottom: calc(170px + env(safe-area-inset-bottom, 0px)) !important; opacity: 1; }
+        from { bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important; opacity: 0; }
+        to { bottom: calc(108px + env(safe-area-inset-bottom, 0px)) !important; opacity: 1; }
     }
 }
