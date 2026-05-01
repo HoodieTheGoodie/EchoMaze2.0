@@ -7,3 +7,5 @@ Pause doesn't stop pig shot?
 Line zap on you just like stuns you.
 
 Update the timer to stop when the game ends.
+
+Still need to update mobile game boarder and notification placement.

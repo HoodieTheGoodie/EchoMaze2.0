@@ -3,6 +3,11 @@
    Separate file for all mobile-specific CSS
    ======================================== */
 
+.mobile-stat-icon,
+#pauseBtn .pause-icon {
+    display: none;
+}
+
 /* Mobile Detection & Base Styles */
 @media (max-width: 768px) {
     html {
@@ -44,8 +49,19 @@
         max-width: none;
     }
 
+    body:not(.game-active) #game-container,
+    body:not(.game-active) #mobileGameBanner,
+    body:not(.game-active) #ui-panel,
+    body:not(.game-active) #mobile-controls {
+        display: none !important;
+    }
+
     #game-container > #canvas {
         order: 1 !important;
+    }
+
+    #game-container > #mobileGameBanner {
+        order: 0 !important;
     }
 
     #game-container > #ui-panel {
@@ -68,36 +84,74 @@
         display: none !important;
     }
 
+    #mobileGameBanner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: min(calc(100vw - 12px), 590px);
+        min-height: 31px;
+        margin: 0 auto 3px;
+        padding: 4px 10px;
+        border: 0;
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(8, 18, 24, 0.94), rgba(5, 9, 15, 0.88));
+        box-shadow: inset 0 0 14px rgba(0, 246, 255, 0.06);
+        color: #dffcff;
+        font-size: 1rem;
+        font-weight: 900;
+        line-height: 1;
+        text-transform: uppercase;
+        text-shadow: 0 0 8px rgba(0, 246, 255, 0.55);
+        letter-spacing: 0;
+        flex-shrink: 0;
+    }
+
+    #mobileGameBanner img {
+        width: 20px;
+        height: 20px;
+        image-rendering: auto;
+        filter: drop-shadow(0 0 6px rgba(0, 246, 255, 0.45));
+    }
+
     /* Keep the main status panel under the board on mobile. */
     #ui-panel {
         position: relative !important;
         inset: auto !important;
         transform: none !important;
         display: grid !important;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-        gap: 3px !important;
-        width: min(100%, 600px) !important;
-        padding: 0 2px !important;
-        font-size: 0.68rem !important;
+        grid-template-columns:
+            minmax(0, 1.02fr)
+            minmax(0, 0.95fr)
+            minmax(0, 0.72fr)
+            minmax(0, 0.82fr)
+            minmax(0, 0.74fr)
+            minmax(0, 0.56fr)
+            minmax(28px, 0.42fr) !important;
+        grid-auto-flow: column !important;
+        gap: 2px !important;
+        width: min(calc(100vw - 2px), 600px) !important;
+        padding: 0 1px !important;
+        font-size: 0.58rem !important;
         justify-content: stretch !important;
         border: 0 !important;
         border-radius: 0 !important;
         box-shadow: none !important;
         background: transparent !important;
         backdrop-filter: none !important;
-        margin: 0 auto !important;
+        margin: 0 auto 7px !important;
         order: 2 !important;
         flex-shrink: 0;
-        overflow: visible !important;
+        overflow: hidden !important;
     }
 
     #ui-panel .ui-section {
         display: flex !important;
-        min-height: 28px;
-        justify-content: space-between;
+        min-height: 26px;
+        justify-content: center;
         align-items: center;
-        gap: 4px !important;
-        padding: 4px 5px;
+        gap: 1px !important;
+        padding: 3px 1px;
         border: 1px solid rgba(0, 246, 255, 0.35);
         border-radius: 8px;
         background: rgba(7, 14, 18, 0.9);
@@ -109,12 +163,77 @@
         display: flex !important;
     }
 
-    .ui-label {
-        color: #66f7ff;
-        font-size: 0.6rem;
+    #ui-panel .mobile-hidden-stat {
+        display: none !important;
+    }
+
+    .mobile-stat-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 13px;
+        min-width: 13px;
+        font-size: 0.72rem;
+        line-height: 1;
+        filter: drop-shadow(0 0 4px rgba(0, 246, 255, 0.25));
+    }
+
+    #ui-panel .ui-label {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+    }
+
+    .mobile-health-stat {
+        justify-content: center !important;
+        gap: 0 !important;
+    }
+
+    .mobile-health-stat #health {
+        font-size: 0.66rem;
         letter-spacing: 0;
-        text-transform: uppercase;
         white-space: nowrap;
+    }
+
+    .mobile-stamina-stat,
+    .mobile-shield-stat,
+    .mobile-generator-stat,
+    .mobile-trap-stat,
+    .mobile-time-stat {
+        justify-content: center !important;
+    }
+
+    #stamina,
+    #shieldStatus,
+    #generators,
+    #traps,
+    #timer {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    #shieldStatus {
+        min-width: 0 !important;
+        text-align: left !important;
+    }
+
+    #timer {
+        font-size: 0.5rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .mobile-trap-stat span:not(.mobile-stat-icon):not(.ui-label):not(#traps) {
+        display: none !important;
     }
 
     /* Stamina bar - smaller on mobile */
@@ -124,9 +243,35 @@
 
     #pauseBtn {
         width: 100%;
-        min-height: 28px !important;
-        padding: 3px 6px !important;
-        font-size: 0.7rem !important;
+        min-width: 0 !important;
+        min-height: 26px !important;
+        padding: 2px !important;
+        font-size: 0.88rem !important;
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #pauseBtn .pause-text {
+        display: none;
+    }
+
+    #pauseBtn .pause-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        width: 14px;
+        height: 15px;
+    }
+
+    #pauseBtn .pause-icon span {
+        display: block;
+        width: 4px;
+        height: 13px;
+        border-radius: 2px;
+        background: currentColor;
     }
 
     #jumpIndicator {
@@ -253,6 +398,10 @@
 
 /* Hide mobile-only elements on desktop */
 @media (min-width: 769px) {
+    #mobileGameBanner {
+        display: none !important;
+    }
+
     [data-mobile-only] {
         display: none !important;
     }
@@ -292,6 +441,8 @@
         align-items: center;
         gap: 4px;
         order: 3 !important;
+        visibility: visible !important;
+        opacity: 1 !important;
     }
 }
 
@@ -422,6 +573,11 @@
     box-shadow: inset 0 0 14px rgba(97, 218, 251, 0.08), 0 0 12px rgba(97, 218, 251, 0.12);
 }
 
+.action-btn-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
 .action-btn:active {
     background: rgba(97, 218, 251, 0.2);
     box-shadow: 0 0 18px rgba(97, 218, 251, 0.42);
@@ -453,6 +609,26 @@
 .action-sprint:active {
     background: rgba(255, 209, 102, 0.22);
     box-shadow: 0 0 18px rgba(255, 209, 102, 0.48);
+}
+
+.action-shield.is-charging {
+    background: rgba(7, 18, 22, 0.48);
+    box-shadow: inset 0 0 10px rgba(255, 119, 170, 0.08), 0 0 8px rgba(255, 119, 170, 0.1);
+}
+
+.action-shield.is-ready {
+    background: linear-gradient(180deg, rgba(255, 176, 211, 0.34), rgba(77, 22, 46, 0.82));
+    box-shadow: inset 0 0 16px rgba(255, 176, 211, 0.2), 0 0 16px rgba(255, 119, 170, 0.24);
+}
+
+.action-sprint.is-charging {
+    background: rgba(7, 18, 22, 0.48);
+    box-shadow: inset 0 0 10px rgba(255, 209, 102, 0.08), 0 0 8px rgba(255, 209, 102, 0.08);
+}
+
+.action-sprint.is-ready {
+    background: linear-gradient(180deg, rgba(255, 224, 143, 0.34), rgba(75, 54, 18, 0.82));
+    box-shadow: inset 0 0 16px rgba(255, 224, 143, 0.2), 0 0 16px rgba(255, 209, 102, 0.22);
 }
 
 .action-reload {
